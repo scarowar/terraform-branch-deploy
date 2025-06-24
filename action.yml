@@ -1,0 +1,591 @@
+name: "terraform-branch-deploy"
+
+description: "Enabling Terraform Branch Deployments through IssueOps with GitHub Actions."
+author: "Scarowar"
+
+branding:
+  icon: "git-branch"
+  color: "purple"
+
+inputs:
+  # --- Authentication & Permissions ---
+  github-token:
+    description: "The GitHub token for authentication. Requires 'contents: write', 'pull-requests: write', 'actions: read', and 'deployments: write' permissions."
+    required: true
+
+  # --- Terraform Tooling Configuration ---
+  terraform-version:
+    description: "The version of Terraform CLI to install. Instead of full version string you can also specify constraint string starting with '<' (for example '<1.13.0') to install the latest version satisfying the constraint. A value of 'latest' will install the latest version of Terraform CLI. Defaults to 'latest'."
+    required: false
+    default: "latest"
+
+  # --- Terraform Project Path Configuration ---
+  working-directory:
+    description: "The default path to the Terraform code, relative to the repository root. This can be overridden per environment in .tf-branch-deploy.yml."
+    required: false
+    default: "."
+
+  # --- IssueOps Command Triggers ---
+  noop-trigger:
+    description: "The comment trigger (e.g., '.plan') that initiates a Terraform plan without applying."
+    required: false
+    default: ".plan"
+  trigger:
+    description: "The comment trigger (e.g., '.apply') that initiates a Terraform apply."
+    required: false
+    default: ".apply"
+
+  # --- Deployment Logic & Rollback Settings ---
+  stable_branch:
+    description: "The name of the stable branch (e.g., 'main' or 'develop') used for rollback deployments."
+    required: false
+    default: "main"
+
+  # --- Skip Mode for Early Environment Extraction ---
+  skip:
+    description: "If true, the action will only extract and output the target environment and related info, then exit early without running any setup, dependency installation, or deployment steps. Useful for workflows that need to determine the environment and access environment-scoped secrets without performing a deployment."
+    required: false
+    default: "false"
+
+  # --- Admins and Admins PAT (branch-deploy passthrough) ---
+  admins:
+    description: "A comma separated list of GitHub usernames or teams that should be considered admins by this Action. Admins can deploy pull requests without the need for branch protection approvals. Example: 'monalisa,octocat,my-org/my-team'"
+    required: false
+    default: "false"
+  admins_pat:
+    description: "A GitHub personal access token with 'read:org' scopes. This is only needed if you are using the 'admins' option with a GitHub org team. For example: 'my-org/my-team'"
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: "📥 Initial Repository Checkout (for action's internal scripts)"
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.sha }}
+        fetch-depth: 1
+
+    - name: "🛠️ Install Common System Utilities (Linux/macOS)"
+      if: ${{ inputs.skip != 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        SUDO=""
+        if command -v sudo >/dev/null 2>&1; then
+          SUDO="sudo"
+        fi
+        if [[ "${{ runner.os }}" == "Linux" ]]; then
+          if command -v apt-get >/dev/null 2>&1; then
+            echo "📦 Updating apt-get and installing common dependencies..."
+            $SUDO apt-get update -y
+            for cmd in git curl unzip ca-certificates software-properties-common xz-utils; do
+              if ! command -v "$cmd" >/dev/null 2>&1; then
+                echo "Installing $cmd..."
+                $SUDO apt-get install -y "$cmd"
+              else
+                echo "✅ $cmd is already installed."
+              fi
+            done
+          elif command -v yum >/dev/null 2>&1; then
+            echo "📦 Updating yum and installing common dependencies..."
+            $SUDO yum makecache
+            for cmd in git curl unzip ca-certificates xz-utils; do
+              if ! command -v "$cmd" >/dev/null 2>&1; then
+                echo "Installing $cmd..."
+                $SUDO yum install -y "$cmd"
+              else
+                echo "✅ $cmd is already installed."
+              fi
+            done
+          else
+            echo "::warning::Neither apt-get nor yum found on Linux. Please ensure git, curl, unzip, ca-certificates, software-properties-common (for apt), and xz-utils are available on your self-hosted runner image."
+          fi
+        elif [[ "${{ runner.os }}" == "macOS" ]]; then
+          if command -v brew >/dev/null 2>&1; then
+            echo "🍺 Updating Homebrew and installing common dependencies..."
+            brew update
+            for cmd in git curl unzip; do
+              if ! command -v "$cmd" >/dev/null 2>&1; then
+                echo "Installing $cmd..."
+                brew install "$cmd"
+              else
+                echo "✅ $cmd is already installed."
+              fi
+            done
+          else
+            echo "::warning::Homebrew not found on macOS. Please ensure git, curl, and unzip are available on your self-hosted runner image."
+          fi
+        elif [[ "${{ runner.os }}" == "Windows" ]]; then
+            echo "::warning::Windows runners detected. Please ensure all required utilities (git, curl, unzip) are pre-installed or installable via Chocolatey/Winget if not already present on your self-hosted runner image."
+        else
+            echo "::warning::Unsupported OS: ${{ runner.os }}. Please ensure all required utilities are available on your self-hosted runner image."
+        fi
+
+    - name: "🌐 Setup Node.js Environment"
+      if: ${{ inputs.skip != 'true' }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    - name: "🐍 Setup Python Environment and Dependencies"
+      if: ${{ inputs.skip != 'true' }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: "📜 Install yq (YAML Processor)"
+      if: ${{ inputs.skip != 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        if command -v yq >/dev/null 2>&1; then
+          echo "✅ yq is already installed. Version:"
+          yq --version
+        else
+          echo "⬇️ Installing yq..."
+          YQ_VERSION="v4.45.4"
+          OS_TYPE=$(uname -s)
+          ARCH=$(uname -m)
+
+          case "$OS_TYPE" in
+            Linux)
+              case "$ARCH" in
+                x86_64) ARCH_TAG=amd64 ;;
+                aarch64) ARCH_TAG=arm64 ;;
+                *) echo "::error::Unsupported Linux architecture for yq: $ARCH" && exit 1 ;;
+              esac
+              YQ_URL="https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${ARCH_TAG}"
+              DEST_PATH="/usr/local/bin/yq"
+              ;;
+            Darwin)
+              case "$ARCH" in
+                x86_64) ARCH_TAG=amd64 ;;
+                arm64) ARCH_TAG=arm64 ;;
+                *) echo "::error::Unsupported macOS architecture for yq: $ARCH" && exit 1 ;;
+              esac
+              YQ_URL="https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_darwin_${ARCH_TAG}"
+              DEST_PATH="/usr/local/bin/yq"
+              ;;
+            MINGW*|CYGWIN*|MSYS*)
+              ARCH_TAG=amd64
+              YQ_URL="https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_windows_${ARCH_TAG}.exe"
+              DEST_PATH="/c/ProgramData/chocolatey/lib/yq/tools/yq.exe"
+              mkdir -p "$(dirname "$DEST_PATH")"
+              ;;
+            *)
+              echo "::error::Unsupported OS for yq installation: $OS_TYPE"
+              exit 1
+              ;;
+          esac
+
+          echo "Attempting to download yq from: $YQ_URL to $DEST_PATH"
+          if ! curl -sSL "$YQ_URL" -o "$DEST_PATH"; then
+            echo "::error::Failed to download yq from $YQ_URL. Check network connectivity or URL."
+            exit 1
+          fi
+          chmod +x "$DEST_PATH"
+          echo "$DEST_PATH" >> $GITHUB_PATH
+          yq --version
+          echo "✅ yq installed successfully."
+        fi
+
+    - name: "📜 Install tfcmt"
+      if: ${{ inputs.skip != 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        if command -v tfcmt >/dev/null 2>&1; then
+          echo "✅ tfcmt is already installed. Version:"
+          tfcmt --version
+        else
+          echo "⬇️ Installing tfcmt..."
+          TFCMT_VERSION="v4.14.7"
+          OS_TYPE=$(uname -s | tr '[:upper:]' '[:lower:]')
+          ARCH=$(uname -m)
+
+          case "$ARCH" in
+            x86_64) ARCH_TAG=amd64 ;;
+            arm64) ARCH_TAG=arm64 ;;
+            aarch64) ARCH_TAG=arm64 ;;
+            *) echo "::error::Unsupported architecture for tfcmt: $ARCH" && exit 1 ;;
+          esac
+
+          if [[ "$OS_TYPE" == "darwin" ]]; then
+            ARCH_TAG_MAC="universal"
+          fi
+
+          TFCMT_FILENAME="tfcmt_${OS_TYPE}_${ARCH_TAG_MAC:-$ARCH_TAG}.tar.gz"
+          TFCMT_URL="https://github.com/suzuki-shunsuke/tfcmt/releases/download/${TFCMT_VERSION}/${TFCMT_FILENAME}"
+
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            TFCMT_URL="https://github.com/suzuki-shunsuke/tfcmt/releases/download/${TFCMT_VERSION}/tfcmt_${TFCMT_VERSION}_windows_amd64.zip"
+            echo "Attempting to download tfcmt from: $TFCMT_URL"
+            if ! (Invoke-WebRequest -Uri "$TFCMT_URL" -OutFile "tfcmt.zip" -UseBasicParsing); then
+              echo "::error::Failed to download tfcmt.zip from $TFCMT_URL."
+              exit 1
+            fi
+            Expand-Archive -Path "tfcmt.zip" -DestinationPath "${env:GITHUB_WORKSPACE}/.tfcmt_bin"
+            echo "${env:GITHUB_WORKSPACE}/.tfcmt_bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+            echo "✅ tfcmt installed successfully on Windows."
+          else
+            echo "Attempting to download tfcmt from: $TFCMT_URL"
+            if ! curl -sSL "$TFCMT_URL" | tar -xz -C /usr/local/bin; then
+              echo "::error::Failed to download and extract tfcmt from $TFCMT_URL."
+              exit 1
+            fi
+            tfcmt --version
+            echo "✅ tfcmt installed successfully."
+          fi
+        fi
+
+    - name: "🚦 Pre-flight Checks"
+      id: preflight
+      run: |
+        set -euo pipefail
+        CONFIG_FILE="${GITHUB_WORKSPACE}/.tf-branch-deploy.yml"
+        if [ -f "$CONFIG_FILE" ]; then
+          ENVS=$(yq e '.environments | keys | .[]' "$CONFIG_FILE" | tr '\n' ',' | sed 's/,$//')
+          echo "✅ Discovered environments: ${ENVS}"
+          echo "available_envs=${ENVS}" >> "$GITHUB_OUTPUT"
+        else
+          echo "available_envs=" >> "$GITHUB_OUTPUT"
+          echo "::notice::No .tf-branch-deploy.yml found at '${CONFIG_FILE}'. Proceeding with default 'production' environment only."
+        fi
+      shell: bash
+
+    - name: "🛸 IssueOps Command Dispatcher"
+      id: branch-deploy
+      uses: github/branch-deploy@e837cad62fcc6f5f45997baafd69c57ea9b0641d
+      with:
+        github_token: ${{ inputs.github-token }}
+        noop_trigger: ${{ inputs.noop-trigger }}
+        trigger: ${{ inputs.trigger }}
+        environment_targets: "${{ steps.preflight.outputs.available_envs || 'production' }}"
+        stable_branch: ${{ inputs.stable_branch }}
+        admins: ${{ inputs.admins }}
+        admins_pat: ${{ inputs.admins_pat }}
+
+    # Early exit for skip mode: output environment info and stop
+    - name: "🔎 Early Exit for Skip Mode"
+      if: ${{ inputs.skip == 'true' }}
+      id: skip
+      run: |
+        echo "env=${{ steps.branch-deploy.outputs.environment }}" >> $GITHUB_OUTPUT
+        echo "continue=${{ steps.branch-deploy.outputs.continue }}" >> $GITHUB_OUTPUT
+        echo "noop=${{ steps.branch-deploy.outputs.noop }}" >> $GITHUB_OUTPUT
+        echo "sha=${{ steps.branch-deploy.outputs.sha }}" >> $GITHUB_OUTPUT
+        exit 0
+      shell: bash
+
+    - name: "📥 Checkout Target Code for Terraform Execution"
+      if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.continue == 'true' }}
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ steps.branch-deploy.outputs.sha }}
+        fetch-depth: 0
+        path: repo_checkout
+
+    - name: "🔑 Ensure prepare_tf_branch_deploy.py is executable"
+      if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.continue == 'true' }}
+      run: |
+        set -euo pipefail
+        chmod +x ${GITHUB_ACTION_PATH}/scripts/prepare_tf_branch_deploy.py
+      shell: bash
+
+    - name: "📝 Prepare terraform-branch-deploy Commands"
+      if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.continue == 'true' }}
+      id: prepare_cmds
+      run: |
+        set -euo pipefail
+        VENV_PATH="${GITHUB_WORKSPACE}/.venv-terraform-branch-deploy"
+
+        echo "🐍 Setting up Python virtual environment at: $VENV_PATH"
+        python3 -m venv "$VENV_PATH"
+        source "$VENV_PATH/bin/activate"
+        echo "✅ Python virtual environment activated."
+
+        echo "⬇️ Upgrading pip..."
+        pip install --upgrade pip
+        echo "✅ pip upgraded."
+
+        echo "Installing Python dependencies from requirements.txt..."
+        pip install -r "${GITHUB_ACTION_PATH}/scripts/requirements.txt"
+        echo "✅ Python dependencies installed."
+
+        python "${GITHUB_ACTION_PATH}/scripts/prepare_tf_branch_deploy.py" \
+          "${{ inputs.working-directory }}" \
+          "${{ steps.branch-deploy.outputs.environment }}" \
+          "${{ steps.branch-deploy.outputs.params }}"
+      shell: bash
+      working-directory: repo_checkout
+
+    - name: "⚙️ Setup Terraform CLI"
+      if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.continue == 'true' }}
+      uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+      with:
+        terraform_version: ${{ inputs.terraform-version }}
+
+    - name: "🌱 Terraform Init"
+      if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.continue == 'true' }}
+      id: init
+      run: |
+        set -euo pipefail
+        echo "Initializing Terraform backend and modules..."
+        terraform init ${{ steps.prepare_cmds.outputs.init_args }}
+        echo "✅ Terraform Init completed."
+      shell: bash
+      working-directory: repo_checkout/${{ steps.prepare_cmds.outputs.working_dir }}
+
+    - name: "🧹 Terraform Format Check"
+      if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.continue == 'true' }}
+      id: fmt
+      run: |
+        set -euo pipefail
+        echo "Checking Terraform format..."
+        terraform fmt -check
+        echo "✅ Terraform format check passed."
+      shell: bash
+      working-directory: repo_checkout/${{ steps.prepare_cmds.outputs.working_dir }}
+
+    - name: "✅ Terraform Validate"
+      if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.continue == 'true' }}
+      id: validate
+      run: |
+        set -euo pipefail
+        echo "Validating Terraform configuration..."
+        terraform validate
+        echo "✅ Terraform validation passed."
+      shell: bash
+      working-directory: repo_checkout/${{ steps.prepare_cmds.outputs.working_dir }}
+
+    # Rollback Plan and Apply:
+    - name: "🚨 Rollback Plan and Apply with tfcmt"
+      if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.ref == inputs.stable_branch && steps.branch-deploy.outputs.noop == 'false' }}
+      id: rollback_tfcmt
+      run: |
+        set -euo pipefail
+        echo "🚨 Performing immediate plan and apply for stable branch rollback with tfcmt."
+
+        PLAN_BINARY_FILE="rollback.plan"
+        TFCMT_ISSUE_NUMBER=${{ github.event.issue.number || github.event.pull_request.number }}
+
+        echo "Running terraform plan for rollback and saving binary..."
+        terraform plan ${{ steps.prepare_cmds.outputs.plan_args }} -no-color -out="$PLAN_BINARY_FILE"
+        PLAN_EXIT_CODE=$?
+
+        if [ "$PLAN_EXIT_CODE" -eq 1 ]; then
+          echo "::error::Terraform plan for rollback failed with a critical error. Cannot proceed with apply."
+          exit 1
+        fi
+
+        echo "Running tfcmt apply for rollback using the generated plan..."
+        TFCMT_COMMAND="tfcmt apply \
+          --owner=${{ github.repository_owner }} \
+          --repo=${{ github.event.repository.name }} \
+          --sha=${{ github.sha }} \
+          --pr=${TFCMT_ISSUE_NUMBER} \
+          -- \
+          terraform apply -auto-approve ${PLAN_BINARY_FILE}"
+
+        echo "Executing tfcmt command: $TFCMT_COMMAND"
+        ${TFCMT_COMMAND}
+        TFCMT_EXIT_CODE=$?
+
+        echo "tfcmt_exit_code=$TFCMT_EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+        if [ "$TFCMT_EXIT_CODE" -eq 1 ]; then
+          echo "::error::Terraform rollback apply (via tfcmt) failed with a critical error."
+        elif [ "$TFCMT_EXIT_CODE" -eq 0 ]; then
+          echo "✅ Terraform rollback apply (via tfcmt) completed successfully."
+        else
+          echo "::warning::Terraform rollback apply (via tfcmt) completed with non-zero exit code: $TFCMT_EXIT_CODE. Review the tfcmt output for details."
+        fi
+        exit "$TFCMT_EXIT_CODE"
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      working-directory: repo_checkout/${{ steps.prepare_cmds.outputs.working_dir }}
+
+    # Terraform Plan:
+    - name: "📋 Terraform Plan with tfcmt"
+      if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.ref != inputs.stable_branch && steps.branch-deploy.outputs.noop == 'true' }}
+      id: plan_tfcmt
+      run: |
+        set -euo pipefail
+
+        TFCMT_ISSUE_NUMBER=${{ github.event.issue.number || github.event.pull_request.number }}
+        PLAN_BINARY_FILE="tfplan-${{ steps.branch-deploy.outputs.sha }}.binary"
+
+        TFCMT_COMMAND="tfcmt plan \
+          --owner=${{ github.repository_owner }} \
+          --repo=${{ github.event.repository.name }} \
+          --sha=${{ github.sha }} \
+          --pr=${TFCMT_ISSUE_NUMBER} \
+          -- \
+          terraform plan ${{ steps.prepare_cmds.outputs.plan_args }} -out=${PLAN_BINARY_FILE}"
+
+        echo "Running tfcmt command: $TFCMT_COMMAND"
+        ${TFCMT_COMMAND}
+        TFCMT_EXIT_CODE=$?
+
+        echo "tfcmt_exit_code=$TFCMT_EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+        if [ "$TFCMT_EXIT_CODE" -eq 1 ]; then
+          echo "::error::Terraform plan (via tfcmt) failed with a critical error."
+        elif [ "$TFCMT_EXIT_CODE" -eq 2 ]; then
+          echo "::notice::Terraform plan (via tfcmt) indicates infrastructure changes are pending."
+        else
+          echo "::notice::Terraform plan (via tfcmt) indicates no changes are required."
+        fi
+        exit "$TFCMT_EXIT_CODE"
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      working-directory: repo_checkout/${{ steps.prepare_cmds.outputs.working_dir }}
+
+    - name: "📦 Upload Plan Binary Artifact"
+      if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.ref != inputs.stable_branch && steps.branch-deploy.outputs.noop == 'true' }}
+      uses: actions/upload-artifact@v3
+      with:
+        name: terraform-plan-bin-${{ steps.branch-deploy.outputs.sha }}
+        path: repo_checkout/${{ steps.prepare_cmds.outputs.working_dir }}/tfplan-${{ steps.branch-deploy.outputs.sha }}.binary
+        compression-level: 0
+
+    - name: "🏷️ Tag Commit with Plan Run ID"
+      shell: bash
+      if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.ref != inputs.stable_branch && steps.branch-deploy.outputs.noop == 'true' }}
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+        TAG_NAME="terraform-branch-deploy/plan/${{ steps.branch-deploy.outputs.environment }}/${{ github.run_id }}/${{ steps.branch-deploy.outputs.sha }}"
+        TAG_MESSAGE="terraform-branch-deploy plan artifact from run ${{ github.run_id }}. Triggered by @${{ github.actor }} on $(date -u)."
+
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+        if git rev-parse -q --verify "refs/tags/$TAG_NAME" >/dev/null; then
+          echo "Overwriting existing plan tag for this commit and environment: $TAG_NAME"
+          git tag -f "$TAG_NAME" "${{ steps.branch-deploy.outputs.sha }}" -m "$TAG_MESSAGE"
+        else
+          echo "Creating git tag: $TAG_NAME"
+          git tag "$TAG_NAME" "${{ steps.branch-deploy.outputs.sha }}" -m "$TAG_MESSAGE"
+        fi
+
+        if ! git push origin "refs/tags/$TAG_NAME"; then
+          echo "::warning::Failed to push git tag normally. Attempting force push. This might be due to a race condition or tag already existing remotely. Ensure the workflow has 'contents: write' permission."
+          if ! git push -f origin "refs/tags/$TAG_NAME"; then
+            echo "::error::Failed to push git tag, even with force. Ensure the workflow has 'contents: write' permission and no branch protection rules are preventing this operation."
+            exit 1
+          fi
+        fi
+        echo "✅ Tagging complete."
+      working-directory: repo_checkout
+
+    # Terraform Apply:
+    - name: "🔍 Find Plan Run ID from Git Tag"
+      if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.ref != inputs.stable_branch && steps.branch-deploy.outputs.noop == 'false' }}
+      id: find_run_id
+      run: |
+        set -euo pipefail
+        git fetch --tags
+
+        COMMIT_SHA="${{ steps.branch-deploy.outputs.sha }}"
+        TARGET_ENV="${{ steps.branch-deploy.outputs.environment }}"
+
+        echo "Searching for plan tag for commit '$COMMIT_SHA' in environment '$TARGET_ENV'..."
+        TAG=$(git for-each-ref "refs/tags/terraform-branch-deploy/plan/${TARGET_ENV}/*/${COMMIT_SHA}" \
+          --sort=-creatordate --format='%(refname:short)' | head -n 1)
+
+        if [ -z "$TAG" ]; then
+          echo "::error::No terraform-branch-deploy plan tag found for commit '$COMMIT_SHA' in environment '$TARGET_ENV'."
+          echo "Please ensure a plan was run and completed successfully for this commit and environment (e.g., '.plan to $TARGET_ENV') before attempting apply."
+          exit 1
+        fi
+
+        echo "✅ Found tag: $TAG"
+        RUN_ID=$(echo "$TAG" | awk -F/ '{print $4}')
+
+        if [ -z "$RUN_ID" ]; then
+          echo "::error::Could not extract RUN_ID from tag '$TAG'. Tag format might be unexpected."
+          exit 1
+        fi
+
+        echo "Extracted RUN_ID: $RUN_ID"
+        echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
+      shell: bash
+      working-directory: repo_checkout
+
+    - name: "⬇️ Download Plan Binary Artifact"
+      if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.ref != inputs.stable_branch && steps.branch-deploy.outputs.noop == 'false' }}
+      uses: dawidd6/action-download-artifact@ac66b43f0e6a346234dd65d4d0c8fbb31cb316e5
+      with:
+        github_token: ${{ inputs.github-token }}
+        run_id: ${{ steps.find_run_id.outputs.run_id }}
+        name: terraform-plan-bin-${{ steps.branch-deploy.outputs.sha }}
+        path: repo_checkout/${{ steps.prepare_cmds.outputs.working_dir }}
+
+    - name: "🚀 Terraform Apply with tfcmt"
+      if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.ref != inputs.stable_branch && steps.branch-deploy.outputs.noop == 'false' }}
+      id: apply_tfcmt
+      run: |
+        set -euo pipefail
+        PLAN_BINARY_FILE="tfplan-${{ steps.branch-deploy.outputs.sha }}.binary"
+
+        if [ ! -f "$PLAN_BINARY_FILE" ]; then
+          echo "::error::Terraform plan binary '$PLAN_BINARY_FILE' not found. Ensure the plan step completed successfully and the artifact was uploaded/downloaded correctly."
+          exit 1
+        fi
+
+        TFCMT_ISSUE_NUMBER=${{ github.event.issue.number || github.event.pull_request.number }}
+
+        TFCMT_COMMAND="tfcmt apply \
+          --owner=${{ github.repository_owner }} \
+          --repo=${{ github.event.repository.name }} \
+          --sha=${{ github.sha }} \
+          --pr=${TFCMT_ISSUE_NUMBER} \
+          -- \
+          terraform apply ${{ steps.prepare_cmds.outputs.apply_args }} -auto-approve ${PLAN_BINARY_FILE}"
+
+        echo "Running tfcmt command: $TFCMT_COMMAND"
+        ${TFCMT_COMMAND}
+        TFCMT_EXIT_CODE=$?
+
+        echo "tfcmt_exit_code=$TFCMT_EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+        if [ "$TFCMT_EXIT_CODE" -eq 1 ]; then
+          echo "::error::Terraform apply (via tfcmt) failed with a critical error."
+        elif [ "$TFCMT_EXIT_CODE" -eq 0 ]; then
+          echo "::notice::Terraform apply (via tfcmt) completed successfully."
+        else
+          echo "::warning::Terraform apply (via tfcmt) completed with non-zero exit code: $TFCMT_EXIT_CODE."
+        fi
+        exit "$TFCMT_EXIT_CODE"
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      working-directory: repo_checkout/${{ steps.prepare_cmds.outputs.working_dir }}
+
+    - name: "🧹 Cleanup Plan Tag After Apply"
+      if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.ref != inputs.stable_branch && steps.branch-deploy.outputs.noop == 'false' && success() && steps.apply_tfcmt.outcome == 'success' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        TAG_NAME="terraform-branch-deploy/plan/${{ steps.branch-deploy.outputs.environment }}/${{ github.run_id }}/${{ steps.branch-deploy.outputs.sha }}"
+        echo "::notice::🧹 Attempting to delete local tag: $TAG_NAME"
+        if git tag -d "$TAG_NAME"; then
+          echo "::notice::✅ Local tag deleted: $TAG_NAME"
+        else
+          echo "::warning::Local tag $TAG_NAME did not exist or could not be deleted."
+        fi
+
+        echo "::notice::🧹 Attempting to delete remote tag: $TAG_NAME"
+        if git push --delete origin "$TAG_NAME"; then
+          echo "::notice::✅ Remote tag deleted: $TAG_NAME"
+        else
+          echo "::warning::Remote tag $TAG_NAME did not exist or could not be deleted."
+        fi
+
+        echo "::notice::🧹 Plan tag cleanup complete."
+      working-directory: repo_checkout
