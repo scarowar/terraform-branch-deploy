@@ -66,8 +66,12 @@ runs:
         ref: ${{ github.sha }}
         fetch-depth: 1
 
+    - name: "🌐 Setup Node.js Environment"
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
     - name: "🔎 Validate .tf-branch-deploy.yml against schema"
-      if: ${{ inputs.skip != 'true' }}
       shell: bash
       run: |
         set -euo pipefail
@@ -136,12 +140,6 @@ runs:
         else
             echo "::warning::Unsupported OS: ${{ runner.os }}. Please ensure all required utilities are available on your self-hosted runner image."
         fi
-
-    - name: "🌐 Setup Node.js Environment"
-      if: ${{ inputs.skip != 'true' }}
-      uses: actions/setup-node@v4
-      with:
-        node-version: "20"
 
     - name: "🐍 Setup Python Environment and Dependencies"
       if: ${{ inputs.skip != 'true' }}
