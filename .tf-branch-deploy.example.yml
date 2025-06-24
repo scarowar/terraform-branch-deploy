@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=./tf-branch-deploy.schema.json
+
+defaults:
+  var-files:
+    paths:
+      - common.tfvars
+  backend-configs:
+    paths:
+      - backend-common.tfbackend
+  plan-args:
+    args:
+      - "-compact-warnings"
+  apply-args:
+    args:
+      - "-auto-approve"
+  init-args:
+    args:
+      - "-upgrade"
+
+environments:
+  dev:
+    working-directory: ./terraform/dev
+    backend-configs:
+      paths:
+        - ./terraform/dev/dev.s3.tfbackend
+    var-files:
+      paths:
+        - ./terraform/dev/dev.tfvars
+
+  prod:
+    working-directory: ./terraform/prod
+    backend-configs:
+      paths:
+        - ./terraform/prod/prod.s3.tfbackend
+    var-files:
+      inherit: false
+      paths:
+        - ./terraform/prod/prod.tfvars
+        - ./terraform/prod/secrets.prod.tfvars
+    plan-args:
+      inherit: false
+      args:
+        - "-parallelism=25"
+    apply-args:
+      args:
+        - "-parallelism=10"

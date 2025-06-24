@@ -1,0 +1,206 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "terraform-branch-deploy configuration schema",
+  "description": "Schema for .tf-branch-deploy.yml used by the terraform-branch-deploy GitHub Action.",
+  "type": "object",
+  "properties": {
+    "defaults": {
+      "type": "object",
+      "description": "Default values for all environments.",
+      "properties": {
+        "var-files": {
+          "type": "object",
+          "description": "Default variable files for all environments.",
+          "properties": {
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "List of variable file paths."
+            }
+          },
+          "required": [
+            "paths"
+          ]
+        },
+        "backend-configs": {
+          "type": "object",
+          "description": "Default backend config files for all environments.",
+          "properties": {
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "List of backend config file paths."
+            }
+          },
+          "required": [
+            "paths"
+          ]
+        },
+        "plan-args": {
+          "type": "object",
+          "description": "Default plan arguments for all environments.",
+          "properties": {
+            "args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "List of arguments for terraform plan."
+            }
+          },
+          "required": [
+            "args"
+          ]
+        },
+        "apply-args": {
+          "type": "object",
+          "description": "Default apply arguments for all environments.",
+          "properties": {
+            "args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "List of arguments for terraform apply."
+            }
+          },
+          "required": [
+            "args"
+          ]
+        },
+        "init-args": {
+          "type": "object",
+          "description": "Default init arguments for all environments.",
+          "properties": {
+            "args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "List of arguments for terraform init."
+            }
+          },
+          "required": [
+            "args"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "environments": {
+      "type": "object",
+      "description": "Environment-specific configuration.",
+      "patternProperties": {
+        "^[a-zA-Z0-9_-]+$": {
+          "type": "object",
+          "properties": {
+            "working-directory": {
+              "type": "string",
+              "description": "Path to the Terraform code for this environment, relative to repo root."
+            },
+            "backend-configs": {
+              "type": "object",
+              "description": "Backend config files for this environment.",
+              "properties": {
+                "inherit": {
+                  "type": "boolean",
+                  "description": "Whether to inherit backend-configs from defaults. Defaults to true."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "List of backend config file paths."
+                }
+              },
+              "additionalProperties": false
+            },
+            "var-files": {
+              "type": "object",
+              "description": "Variable files for this environment.",
+              "properties": {
+                "inherit": {
+                  "type": "boolean",
+                  "description": "Whether to inherit var-files from defaults. Defaults to true."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "List of variable file paths."
+                }
+              },
+              "additionalProperties": false
+            },
+            "plan-args": {
+              "type": "object",
+              "description": "Arguments for terraform plan in this environment.",
+              "properties": {
+                "inherit": {
+                  "type": "boolean",
+                  "description": "Whether to inherit plan-args from defaults. Defaults to true."
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "List of arguments for terraform plan."
+                }
+              },
+              "additionalProperties": false
+            },
+            "apply-args": {
+              "type": "object",
+              "description": "Arguments for terraform apply in this environment.",
+              "properties": {
+                "inherit": {
+                  "type": "boolean",
+                  "description": "Whether to inherit apply-args from defaults. Defaults to true."
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "List of arguments for terraform apply."
+                }
+              },
+              "additionalProperties": false
+            },
+            "init-args": {
+              "type": "object",
+              "description": "Arguments for terraform init in this environment.",
+              "properties": {
+                "inherit": {
+                  "type": "boolean",
+                  "description": "Whether to inherit init-args from defaults. Defaults to true."
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "List of arguments for terraform init."
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "environments"
+  ],
+  "additionalProperties": false
+}
