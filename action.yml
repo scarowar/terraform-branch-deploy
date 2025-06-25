@@ -566,3 +566,26 @@ runs:
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
       working-directory: repo_checkout/${{ steps.prepare_cmds.outputs.working_dir }}
+
+    - name: "🧹 Cleanup Plan Tag After Apply"
+      if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.ref != inputs.stable_branch && steps.branch-deploy.outputs.noop == 'false' && success() && steps.apply_tfcmt.outcome == 'success' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        TAG_NAME="terraform-branch-deploy/plan/${{ steps.branch-deploy.outputs.environment }}/${{ github.run_id }}/${{ steps.branch-deploy.outputs.sha }}"
+        echo "::notice::🧹 Attempting to delete local tag: $TAG_NAME"
+        if git tag -d "$TAG_NAME"; then
+          echo "::notice::✅ Local tag deleted: $TAG_NAME"
+        else
+          echo "::warning::Local tag $TAG_NAME did not exist or could not be deleted."
+        fi
+
+        echo "::notice::🧹 Attempting to delete remote tag: $TAG_NAME"
+        if git push --delete origin "$TAG_NAME"; then
+          echo "::notice::✅ Remote tag deleted: $TAG_NAME"
+        else
+          echo "::warning::Remote tag $TAG_NAME did not exist or could not be deleted."
+        fi
+
+        echo "::notice::🧹 Plan tag cleanup complete."
+      working-directory: repo_checkout
