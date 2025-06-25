@@ -1,0 +1,33 @@
+name: "Question or Support"
+description: "Ask a question or request support for terraform-branch-deploy"
+title: "[Question] <short description>"
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have a question or need help? Please check the [Discussions](https://github.com/scarowar/terraform-branch-deploy/discussions) first. If your question isn't answered there, fill out the details below.
+  - type: input
+    id: summary
+    attributes:
+      label: "Summary"
+      description: "A short summary of your question or support request."
+      placeholder: "e.g., How do I use this action with private modules?"
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: "Details"
+      description: "Please provide as much detail as possible."
+      placeholder: "Describe your question, what you've tried, and any relevant context."
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: "Additional context"
+      description: "Any other information, configuration, or context that might help us help you."
+      placeholder: "Environment, OS, runner, etc."
+    validations:
+      required: false
