@@ -1,0 +1,49 @@
+name: "Feature request"
+description: "Suggest an idea or improvement for terraform-branch-deploy"
+title: "[Feature] <short description>"
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting a feature! Please fill out the details below to help us understand your idea.
+  - type: input
+    id: summary
+    attributes:
+      label: "Summary"
+      description: "A short summary of your feature request."
+      placeholder: "e.g., Support for custom branch naming patterns."
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Problem to solve"
+      description: "What problem would this feature solve?"
+      placeholder: "Describe the use case or pain point."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: "Proposed solution"
+      description: "How would you like to see this implemented?"
+      placeholder: "Describe your idea or a possible implementation."
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Alternatives considered"
+      description: "Have you considered any alternative solutions or workarounds?"
+      placeholder: "List any alternatives or workarounds you've tried."
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: "Additional context"
+      description: "Any other information, context, or examples to help us understand your request."
+      placeholder: "Links, screenshots, etc."
+    validations:
+      required: false

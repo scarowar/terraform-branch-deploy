@@ -1,0 +1,74 @@
+name: "Bug report"
+description: "Report a problem with terraform-branch-deploy"
+title: "[Bug] <short description>"
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug! Please fill out the details below to help us reproduce and fix the issue.
+  - type: input
+    id: summary
+    attributes:
+      label: "Summary"
+      description: "A short summary of the bug."
+      placeholder: "e.g., Action fails when branch name contains a slash."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: "Steps to reproduce"
+      description: "How can we reproduce the bug? Please provide step-by-step instructions."
+      placeholder: "1. ...\n2. ...\n3. ..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: "Expected behavior"
+      description: "What did you expect to happen?"
+      placeholder: "Describe what you expected to see."
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: "Actual behavior"
+      description: "What actually happened? Include error messages, logs, or screenshots if possible."
+      placeholder: "Paste error output or describe the observed behavior."
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: "Action version"
+      description: "Which version of terraform-branch-deploy are you using? (e.g., v1.2.3)"
+      placeholder: "v1.2.3"
+    validations:
+      required: false
+  - type: textarea
+    id: config
+    attributes:
+      label: "Relevant configuration (optional)"
+      description: "Paste any relevant configuration (YAML, workflow, or Terraform) that could help reproduce the issue."
+      placeholder: |
+        Example:
+        ```yaml
+        jobs:
+          deploy:
+            uses: scarowar/terraform-branch-deploy@v1
+            with:
+              ...
+        ```
+      render: yaml
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: "Additional context"
+      description: "Any other information, configuration, or context that might help us understand the issue."
+      placeholder: "Environment, OS, runner, etc."
+    validations:
+      required: false
