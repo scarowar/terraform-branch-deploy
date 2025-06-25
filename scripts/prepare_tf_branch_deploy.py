@@ -5,30 +5,36 @@ import os
 import yaml
 import shlex
 from pathlib import Path
-from typing import Any, Dict, List, Callable
+from typing import Any, Dict, List
 
 
 # --- Logging Helpers ---
-def _get_log_function(
-    level: str, prefix: str, github_command: str = ""
-) -> Callable[[str], None]:
+def log_debug(msg: str) -> None:
     """
-    Factory function to create logging functions that always print,
-    but use GitHub Actions annotations for DEBUG, WARNING, and ERROR.
+    Logs a debug-level message.
+    These messages are only visible in the Actions UI when debug logging is enabled.
+    Args:
+        msg (str): The debug message to log.
     """
-    if level == "DEBUG":
-        return lambda msg: print(f"::debug::{msg}")
-    elif level == "WARNING":
-        return lambda msg: print(f"::warning::{msg}")
-    elif level == "ERROR":
-        return lambda msg: print(f"::error::{msg}")
-    else:
-        return lambda msg: print(f"{prefix} {msg}")
+    print(f"::debug::{msg}")
 
 
-log_debug = _get_log_function("DEBUG", "🐛 DEBUG:", "debug")
-log_info = _get_log_function("INFO", "💡 INFO:")
-log_warning = _get_log_function("WARNING", "⚠️ WARNING:", "warning")
+def log_info(msg: str) -> None:
+    """
+    Logs an informational message.
+    Args:
+        msg (str): The info message to log (should use emoji description: value format).
+    """
+    print(msg)
+
+
+def log_warning(msg: str) -> None:
+    """
+    Logs a warning-level message.
+    Args:
+        msg (str): The warning message to log.
+    """
+    print(f"::warning::{msg}")
 
 
 def log_section(title: str) -> None:
@@ -42,7 +48,7 @@ def error_exit(message: str) -> None:
     Args:
         message (str): The error message to log and print.
     """
-    _get_log_function("ERROR", "❌ ERROR:")(message)
+    print(f"::error::{message}")
     sys.exit(1)
 
 
@@ -209,9 +215,8 @@ def main() -> None:
     config_path = original_repo_root_path / config_file_name
     config: Dict[str, Any] = {}
     if config_path.is_file():
-        log_info(
-            f"✅ Found {config_file_name} at '{config_path}'. Parsing configuration for environment: '{env_name}'"
-        )
+        log_info(f"✅ Found {config_file_name}: {config_path}")
+        log_info(f"🌍 Environment: {env_name}")
         with open(config_path, "r") as f:
             try:
                 config = yaml.safe_load(f) or {}
@@ -220,7 +225,7 @@ def main() -> None:
                 error_exit(f"Error parsing {config_file_name}: {e}")
     else:
         log_info(
-            f"⚠️ No {config_file_name} found at '{config_path}'. Using action defaults and assuming 'production' environment configuration."
+            f"⚠️ No {config_file_name} found: {config_path}. Using action defaults and assuming 'production' environment configuration."
         )
 
     # --- Validate Environment (if specified) ---
@@ -257,7 +262,7 @@ def main() -> None:
 
     effective_working_dir_for_output = config_working_dir_rel_to_repo_root
     log_info(
-        f"Calculated effective Terraform working directory: '{effective_working_dir_for_output}' (relative to repo_checkout)"
+        f"📁 Terraform Working Directory (relative to repo_checkout): {effective_working_dir_for_output}"
     )
 
     # --- Build Terraform Arguments: init, plan, apply ---
@@ -395,7 +400,7 @@ def main() -> None:
     log_info(
         f"📁 Terraform Working Directory (relative to repo_checkout): {effective_working_dir_for_output}"
     )
-    log_info(f"🏗️  Terraform Init Arguments: {final_init_args_str}")
+    log_info(f"🏗️ Terraform Init Arguments: {final_init_args_str}")
     log_info(f"📋 Terraform Plan Arguments: {final_plan_args_str}")
     log_info(f"🚀 Terraform Apply Arguments: {final_apply_args_str}")
     log_info("✅ Configuration prepared for Terraform execution.")
