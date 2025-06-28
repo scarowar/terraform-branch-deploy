@@ -128,6 +128,15 @@ runs:
       with:
         node-version: "20"
 
+    - name: "🔎 Validate .tf-branch-deploy.yml against schema"
+      uses: GrantBirki/json-yaml-validate@250fa0dc7d7f4a888b24dc2a6b2ff589753fba70
+      with:
+        files: .tf-branch-deploy.yml
+        json_schema: ${GITHUB_ACTION_PATH}/tf-branch-deploy.schema.json
+        yaml_as_json: true
+        mode: fail
+        comment: "true"
+
     - name: "🐍 Setup Python Environment and Dependencies"
       if: ${{ inputs.skip != 'true' }}
       uses: actions/setup-python@v5
@@ -446,7 +455,7 @@ runs:
 
     - name: "📦 Upload Plan Binary Artifact"
       if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.ref != inputs.stable_branch && steps.branch-deploy.outputs.noop == 'true' }}
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: terraform-plan-bin-${{ steps.branch-deploy.outputs.sha }}
         path: repo_checkout/${{ steps.prepare_cmds.outputs.working_dir }}/tfplan-${{ steps.branch-deploy.outputs.sha }}.binary
