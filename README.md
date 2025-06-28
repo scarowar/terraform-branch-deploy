@@ -4,6 +4,7 @@
 ![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)
 ![pre-commit](https://github.com/scarowar/terraform-branch-deploy/actions/workflows/pre-commit.yml/badge.svg)
 ![CodeQL](https://github.com/scarowar/terraform-branch-deploy/actions/workflows/codeql.yml/badge.svg)
+![Dependabot](https://img.shields.io/badge/dependabot-enabled-brightgreen?logo=dependabot)
 
 A GitHub Action and IssueOps integration for automated Terraform deployments.
 
