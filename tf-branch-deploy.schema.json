@@ -4,6 +4,17 @@
   "description": "Schema for .tf-branch-deploy.yml used by the terraform-branch-deploy GitHub Action.",
   "type": "object",
   "properties": {
+    "default-environment": {
+      "type": "string",
+      "description": "The name of the default environment to deploy to. If not set, defaults to 'production'. Example: by default, if you type .deploy, it will assume 'production' as the default environment."
+    },
+    "production-environments": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "A list of environments that should be treated as 'production'. By default, GitHub will set the 'production_environment' to 'true' if the environment name is 'production'. This option allows you to override that behavior so you can use 'prod', 'prd', 'main', 'production-eu', etc. as your production environment name."
+    },
     "defaults": {
       "type": "object",
       "description": "Default values for all environments.",
@@ -200,7 +211,9 @@
     }
   },
   "required": [
-    "environments"
+    "environments",
+    "default-environment",
+    "production-environments"
   ],
   "additionalProperties": false
 }
