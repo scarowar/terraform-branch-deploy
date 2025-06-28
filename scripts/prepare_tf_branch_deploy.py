@@ -223,17 +223,21 @@ def main() -> None:
                 log_debug(f"Loaded config: {config}")
             except yaml.YAMLError as e:
                 error_exit(f"Error parsing {config_file_name}: {e}")
+
+        # --- Ensure environments section exists and contains at least one environment ---
+        environments = config.get("environments", {})
+        if not isinstance(environments, dict) or not environments:
+            error_exit(
+                f"Configuration Error: 'environments' section is missing or empty in '{config_file_name}'. At least one environment must be defined."
+            )
     else:
         log_info(
             f"⚠️ No {config_file_name} found: {config_path}. Using action defaults and assuming 'production' environment configuration."
         )
+        environments = {"production": {}}
 
-    # --- Validate Environment (if specified) ---
-    if (
-        env_name
-        and env_name != "production"
-        and env_name not in config.get("environments", {})
-    ):
+    # --- Validate that the requested environment exists (if specified and not 'production') ---
+    if env_name and env_name != "production" and env_name not in environments:
         error_exit(
             f"Configuration Error: Environment '{env_name}' not found in '{config_file_name}'."
         )

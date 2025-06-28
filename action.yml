@@ -178,10 +178,43 @@ runs:
         CONFIG_FILE="${GITHUB_WORKSPACE}/.tf-branch-deploy.yml"
         if [ -f "$CONFIG_FILE" ]; then
           ENVS=$(yq e '.environments | keys | .[]' "$CONFIG_FILE" | tr '\n' ',' | sed 's/,$//')
+          if [ -z "$ENVS" ]; then
+            echo "::error::🚫 No environments defined in .tf-branch-deploy.yml. At least one environment must be present under 'environments'." >&2
+            exit 1
+          fi
+
+          DEFAULT_ENV=$(yq e '."default-environment"' "$CONFIG_FILE")
+          if [ -z "$DEFAULT_ENV" ] || [ "$DEFAULT_ENV" = "null" ]; then
+            echo "::error::🚫 'default-environment' is missing or empty at the root of .tf-branch-deploy.yml." >&2
+            exit 1
+          fi
+          if ! echo "$ENVS" | grep -qw "$DEFAULT_ENV"; then
+            echo "::error::🚫 'default-environment' ('$DEFAULT_ENV') is not defined in 'environments'." >&2
+            exit 1
+          fi
+
+          PROD_ENVS=$(yq e '."production-environments" | join(",")' "$CONFIG_FILE")
+          if [ -z "$PROD_ENVS" ] || [ "$PROD_ENVS" = "null" ]; then
+            echo "::error::🚫 'production-environments' is missing or empty at the root of .tf-branch-deploy.yml." >&2
+            exit 1
+          fi
+          IFS=',' read -ra PROD_ENV_ARR <<< "$PROD_ENVS"
+          for prod_env in "${PROD_ENV_ARR[@]}"; do
+            if ! echo "$ENVS" | grep -qw "$prod_env"; then
+              echo "::error::🚫 production-environment '$prod_env' is not defined in 'environments'." >&2
+              exit 1
+            fi
+          done
           echo "✅ Discovered environments: ${ENVS}"
+          echo "🌍 Default environment: ${DEFAULT_ENV}"
+          echo "🔒 Production environments: ${PROD_ENVS}"
           echo "available_envs=${ENVS}" >> "$GITHUB_OUTPUT"
+          echo "default_environment=${DEFAULT_ENV}" >> "$GITHUB_OUTPUT"
+          echo "production_environments=${PROD_ENVS}" >> "$GITHUB_OUTPUT"
         else
-          echo "available_envs=" >> "$GITHUB_OUTPUT"
+          echo "available_envs=production" >> "$GITHUB_OUTPUT"
+          echo "default_environment=production" >> "$GITHUB_OUTPUT"
+          echo "production_environments=production" >> "$GITHUB_OUTPUT"
           echo "::notice::No .tf-branch-deploy.yml found at '${CONFIG_FILE}'. Proceeding with default 'production' environment only."
         fi
       shell: bash
@@ -193,7 +226,9 @@ runs:
         github_token: ${{ inputs.github-token }}
         noop_trigger: ${{ inputs.noop-trigger }}
         trigger: ${{ inputs.trigger }}
-        environment_targets: "${{ steps.preflight.outputs.available_envs || 'production' }}"
+        environment_targets: "${{ steps.preflight.outputs.available_envs }}"
+        environment: ${{ steps.preflight.outputs.default_environment }}
+        production_environments: ${{ steps.preflight.outputs.production_environments }}
         stable_branch: ${{ inputs.stable_branch }}
         admins: ${{ inputs.admins }}
         admins_pat: ${{ inputs.admins_pat }}

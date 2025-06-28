@@ -1,5 +1,11 @@
 # yaml-language-server: $schema=./tf-branch-deploy.schema.json
 
+default-environment: prod
+
+production-environments:
+  - prod
+  - production-eu
+
 defaults:
   var-files:
     paths:
