@@ -128,116 +128,48 @@ runs:
       with:
         node-version: "20"
 
+    - name: "🔎 Validate .tf-branch-deploy.yml against schema"
+      uses: GrantBirki/json-yaml-validate@250fa0dc7d7f4a888b24dc2a6b2ff589753fba70
+      with:
+        files: .tf-branch-deploy.yml
+        json_schema: ${{ github.action_path }}/tf-branch-deploy.schema.json
+        yaml_as_json: true
+        mode: fail
+        comment: "true"
+
     - name: "🐍 Setup Python Environment and Dependencies"
       if: ${{ inputs.skip != 'true' }}
       uses: actions/setup-python@v5
       with:
         python-version: "3.12"
 
-    - name: "📜 Install yq (YAML Processor)"
+    - name: "🔧 Setup Aqua Installer"
       if: ${{ inputs.skip != 'true' }}
-      shell: bash
+      uses: aquaproj/aqua-installer@d1fe50798dbadd4eb5b98957290ca175f6b4870f
+      with:
+        aqua_version: v2.53.3
+        enable_aqua_install: "false"
+
+    - name: "📦 Install CLI tools from aqua.yaml"
+      if: ${{ inputs.skip != 'true' }}
       run: |
         set -euo pipefail
-        if command -v yq >/dev/null 2>&1; then
-          echo "✅ yq is already installed. Version:"
-          yq --version
-        else
-          echo "⬇️ Installing yq..."
-          YQ_VERSION="v4.45.4"
-          OS_TYPE=$(uname -s)
-          ARCH=$(uname -m)
+        cd "${GITHUB_ACTION_PATH}"
+        echo "🔧 Installing CLI tools with aqua"
+        aqua install
 
-          case "$OS_TYPE" in
-            Linux)
-              case "$ARCH" in
-                x86_64) ARCH_TAG=amd64 ;;
-                aarch64) ARCH_TAG=arm64 ;;
-                *) echo "::error::Unsupported Linux architecture for yq: $ARCH" && exit 1 ;;
-              esac
-              YQ_URL="https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${ARCH_TAG}"
-              DEST_PATH="/usr/local/bin/yq"
-              ;;
-            Darwin)
-              case "$ARCH" in
-                x86_64) ARCH_TAG=amd64 ;;
-                arm64) ARCH_TAG=arm64 ;;
-                *) echo "::error::Unsupported macOS architecture for yq: $ARCH" && exit 1 ;;
-              esac
-              YQ_URL="https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_darwin_${ARCH_TAG}"
-              DEST_PATH="/usr/local/bin/yq"
-              ;;
-            MINGW*|CYGWIN*|MSYS*)
-              ARCH_TAG=amd64
-              YQ_URL="https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_windows_${ARCH_TAG}.exe"
-              DEST_PATH="/c/ProgramData/chocolatey/lib/yq/tools/yq.exe"
-              mkdir -p "$(dirname "$DEST_PATH")"
-              ;;
-            *)
-              echo "::error::Unsupported OS for yq installation: $OS_TYPE"
-              exit 1
-              ;;
-          esac
-
-          echo "Attempting to download yq from: $YQ_URL to $DEST_PATH"
-          if ! curl -sSL "$YQ_URL" -o "$DEST_PATH"; then
-            echo "::error::Failed to download yq from $YQ_URL. Check network connectivity or URL."
+        echo "🔍 Verifying installed CLI tools:"
+        for tool in tfcmt yq; do
+          if ! command -v "$tool" >/dev/null 2>&1; then
+            echo "::error::❌ $tool not found after aqua install!"
             exit 1
           fi
-          chmod +x "$DEST_PATH"
-          echo "$DEST_PATH" >> $GITHUB_PATH
-          yq --version
-          echo "✅ yq installed successfully."
-        fi
-
-    - name: "📜 Install tfcmt"
-      if: ${{ inputs.skip != 'true' }}
+          echo "✅ $tool found: $($tool --version 2>&1 | head -n 1)"
+        done
+        echo "🎉 All CLI tools from aqua.yaml are installed and available in PATH."
       shell: bash
-      run: |
-        set -euo pipefail
-        if command -v tfcmt >/dev/null 2>&1; then
-          echo "✅ tfcmt is already installed. Version:"
-          tfcmt --version
-        else
-          echo "⬇️ Installing tfcmt..."
-          TFCMT_VERSION="v4.14.7"
-          OS_TYPE=$(uname -s | tr '[:upper:]' '[:lower:]')
-          ARCH=$(uname -m)
-
-          case "$ARCH" in
-            x86_64) ARCH_TAG=amd64 ;;
-            arm64) ARCH_TAG=arm64 ;;
-            aarch64) ARCH_TAG=arm64 ;;
-            *) echo "::error::Unsupported architecture for tfcmt: $ARCH" && exit 1 ;;
-          esac
-
-          if [[ "$OS_TYPE" == "darwin" ]]; then
-            ARCH_TAG_MAC="universal"
-          fi
-
-          TFCMT_FILENAME="tfcmt_${OS_TYPE}_${ARCH_TAG_MAC:-$ARCH_TAG}.tar.gz"
-          TFCMT_URL="https://github.com/suzuki-shunsuke/tfcmt/releases/download/${TFCMT_VERSION}/${TFCMT_FILENAME}"
-
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            TFCMT_URL="https://github.com/suzuki-shunsuke/tfcmt/releases/download/${TFCMT_VERSION}/tfcmt_${TFCMT_VERSION}_windows_amd64.zip"
-            echo "Attempting to download tfcmt from: $TFCMT_URL"
-            if ! (Invoke-WebRequest -Uri "$TFCMT_URL" -OutFile "tfcmt.zip" -UseBasicParsing); then
-              echo "::error::Failed to download tfcmt.zip from $TFCMT_URL."
-              exit 1
-            fi
-            Expand-Archive -Path "tfcmt.zip" -DestinationPath "${env:GITHUB_WORKSPACE}/.tfcmt_bin"
-            echo "${env:GITHUB_WORKSPACE}/.tfcmt_bin" | Out-File -FilePath $env:GITHUB_PATH -Append
-            echo "✅ tfcmt installed successfully on Windows."
-          else
-            echo "Attempting to download tfcmt from: $TFCMT_URL"
-            if ! curl -sSL "$TFCMT_URL" | tar -xz -C /usr/local/bin; then
-              echo "::error::Failed to download and extract tfcmt from $TFCMT_URL."
-              exit 1
-            fi
-            tfcmt --version
-            echo "✅ tfcmt installed successfully."
-          fi
-        fi
+      env:
+        GH_TOKEN: ${{ github.token }}
 
     - name: "🚦 Pre-flight Checks"
       id: preflight
@@ -405,6 +337,7 @@ runs:
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
+        AQUA_CONFIG: ${{ github.action_path }}/aqua.yaml
       working-directory: repo_checkout/${{ steps.prepare_cmds.outputs.working_dir }}
 
     # Terraform Plan:
@@ -442,11 +375,12 @@ runs:
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
+        AQUA_CONFIG: ${{ github.action_path }}/aqua.yaml
       working-directory: repo_checkout/${{ steps.prepare_cmds.outputs.working_dir }}
 
     - name: "📦 Upload Plan Binary Artifact"
       if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.ref != inputs.stable_branch && steps.branch-deploy.outputs.noop == 'true' }}
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: terraform-plan-bin-${{ steps.branch-deploy.outputs.sha }}
         path: repo_checkout/${{ steps.prepare_cmds.outputs.working_dir }}/tfplan-${{ steps.branch-deploy.outputs.sha }}.binary
@@ -565,6 +499,7 @@ runs:
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
+        AQUA_CONFIG: ${{ github.action_path }}/aqua.yaml
       working-directory: repo_checkout/${{ steps.prepare_cmds.outputs.working_dir }}
 
     - name: "🧹 Cleanup Plan Tag After Apply"

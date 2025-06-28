@@ -1,0 +1,10 @@
+# aqua.yaml - CLI tool dependencies for terraform-branch-deploy
+# See: https://aquaproj.github.io/docs/reference/aqua-yaml/
+
+registries:
+  - type: standard
+    ref: v4.381.0
+
+packages:
+  - name: suzuki-shunsuke/tfcmt@v4.14.7
+  - name: mikefarah/yq@v4.45.4
