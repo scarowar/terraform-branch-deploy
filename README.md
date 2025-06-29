@@ -67,6 +67,12 @@ Interact with `terraform-branch-deploy` by commenting on your Pull Requests.
 >
 > Examples:  `.plan | -var=env=dev`, `.apply | -target=module.example`
 
+## Demo 🎥
+
+A video demo showing Terraform Branch Deploy in action
+
+[Terraform Branch Deploy Demo](https://github.com/user-attachments/assets/15b1c060-9be5-4203-9c5d-caa088c2535d)
+
 ## Get Started 💪
 
 ### 1. Create your GitHub Actions Workflow file (e.g., .github/workflows/terraform-deploy.yml) 📝
