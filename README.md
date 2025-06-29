@@ -1,61 +1,75 @@
+
 # Terraform Branch Deploy Action 🚀
 
 ![Open Source Love](https://badges.frapsoft.com/os/v1/open-source.svg?v=103)
 ![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)
-![pre-commit](https://github.com/scarowar/terraform-branch-deploy/actions/workflows/pre-commit.yml/badge.svg)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=scarowar_terraform-branch-deploy&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=scarowar_terraform-branch-deploy)
 ![CodeQL](https://github.com/scarowar/terraform-branch-deploy/actions/workflows/codeql.yml/badge.svg)
 ![Dependabot](https://img.shields.io/badge/dependabot-enabled-brightgreen?logo=dependabot)
+![pre-commit](https://github.com/scarowar/terraform-branch-deploy/actions/workflows/pre-commit.yml/badge.svg)
 
 A GitHub Action and IssueOps integration for automated Terraform deployments.
-
 ---
 
-Building upon the foundation of [branch-deploy](https://github.com/github/branch-deploy), this action enables branch-based Terraform deployments:
+Building on the foundation of [branch-deploy](https://github.com/github/branch-deploy), this action enables branch-based Terraform deployments.
 
-- 💬 **ChatOps Commands**: Trigger Terraform plans and applies directly from PR comments.
-- ⚙️ **Highly Configurable**: Tailor deployments with `.tf-branch-deploy.yml` for environments, arguments, and more.
-- 🔒 **Branch Protection Aware**: Enforces PR review and CI status checks before deployment.
-- 🔓 **Deployment Locks**: Prevents conflicting deployments for environment stability.
-- 🌍 **Multi-Environment**: Deploy Terraform to distinct environments with tailored configs.
-- ➕ **Dynamic Arguments**: Pass extra Terraform CLI arguments securely via comments.
-- 🔄 **Branch Rollbacks**: Promote or rollback to a stable state.
-- ✅ **Pre-Deploy Checks**: Runs essential Terraform format and validation checks before operations.
-
+- 💬 Trigger Terraform plans and applies directly from PR comments using ChatOps commands.
+- ⚙️ Customize environments, arguments, and more with a highly configurable `.tf-branch-deploy.yml`.
+- 🔒 Enforce PR review and CI status checks before deployment with branch protection awareness.
+- 🛡️ Prevent conflicting deployments and ensure environment stability with deployment locks.
+- 🌍 Deploy Terraform to multiple environments, each with tailored configurations.
+- ➕ Pass extra Terraform CLI arguments securely via comments for dynamic operations.
+- 🔄 Promote or roll back to a stable state with branch rollbacks.
+- ✅ Run essential Terraform format and validation checks before any operation.
 
 ## Available Commands 💬
 
 Interact with `terraform-branch-deploy` by commenting on your Pull Requests.
 
-- `.plan` - Run `terraform plan` for the `default-environment`. This operates in "noop" mode, showing potential changes without applying them. Extra Terraform CLI arguments can be appended after a pipe (`|`). Example: `.plan | -var=env=dev`
-- `.apply` - Run `terraform apply` for the `default-environment`. ***\*Requires a previous successful\** `.plan` \**for the same commit and environment.\****
-- `.plan to <environment>` - Run `terraform plan` for a specific `<environment>`. Extra Terraform CLI arguments can be appended after a pipe (`|`). Example: `.plan to dev | -var=debug=true`
-- `.apply to <environment>` - Run `terraform apply` for a specific `<environment>`. ***\*Requires a previous successful\** `.plan` \**for the same commit and environment.\****
-- `.apply <branch> to <environment>` - Apply changes from `<branch>` to the specified `<environment>`. This is useful for promoting a branch to any configured environment, or for rolling back to a `stable_branch` if `<environment>` is your `stable_branch`. This command does **not** require a prior plan. Extra Terraform CLI arguments can be appended after a pipe (`|`). Example: `.apply to staging | -target=module.my_resource`
-- `.apply <branch>` - Rollback the `default-environment` to `<branch>`. This command does **not** require a prior plan. Extra Terraform CLI arguments can be appended after a pipe (`|`). Example: `.apply feat/old-release | -target=module.legacy_app`
+- `.plan` — Run `terraform plan` for the default environment (noop mode).
+- `.apply` — Run `terraform apply` for the default environment (requires prior
+  successful `.plan`).
+- `.plan to <environment>` — Run `terraform plan` for a specific environment.
+- `.apply to <environment>` — Run `terraform apply` for a specific environment
+  (requires prior successful `.plan`).
+- `.apply <branch> to <environment>` — Rollback from a branch to an environment
+  (no prior plan required).
+- `.apply <branch>` — Rollback the default environment to a branch (no prior plan
+  required).
 ---
-- `.lock` - Obtain the deployment lock for the `default-environment`. This lock will persist until explicitly released, preventing conflicting deployments.
-- `.lock --reason <text>` - Obtain the deployment lock for the `default-environment` with a custom reason.
-- `.lock <environment>` - Obtain the deployment lock for the specified `<environment>`.
-- `.lock <environment> --reason <text>` - Obtain the deployment lock for the specified `<environment>` with a custom reason.
-- `.lock --global` - Obtain a global deployment lock. This lock blocks deployments across **all** environments and persists until explicitly released.
-- `.lock --global --reason <text>` - Obtain a global deployment lock with a custom reason.
+- `.lock` — Obtain the deployment lock for the default environment.
+- `.lock --reason <text>` — Obtain the deployment lock for the default
+  environment with a reason.
+- `.lock <environment>` — Obtain the deployment lock for a specific environment.
+- `.lock <environment> --reason <text>` — Obtain the deployment lock for a
+  specific environment with a reason.
+- `.lock --global` — Obtain a global deployment lock.
+- `.lock --global --reason <text>` — Obtain a global deployment lock with a
+  reason.
 ---
-- `.unlock` - Release the deployment lock for the `default-environment` (if one exists).
-- `.unlock <environment>` - Release the deployment lock for the specified `<environment>` (if one exists).
-- `.unlock --global` - Release the global deployment lock (if one exists).
+- `.unlock` — Release the deployment lock for the default environment.
+- `.unlock <environment>` — Release the deployment lock for a specific
+  environment.
+- `.unlock --global` — Release the global deployment lock.
 ---
-- `.lock --details` - Show information about the current deployment lock for the `default-environment` (if one exists).
-- `.lock <environment> --details` - Get information about the current deployment lock for the specified `<environment>` (if one exists).
-- `.lock --global --details` - Show information about the current global deployment lock (if one exists).
+- `.lock --details` — Show info about the current deployment lock for the default
+  environment.
+- `.lock <environment> --details` — Show info about the current deployment lock
+  for a specific environment.
+- `.lock --global --details` — Show info about the current global deployment
+  lock.
+- `.wcid` — Alias for `.lock --details` ("Where Can I Deploy?").
 ---
-- `.wcid` - Alias for `.lock --details`. ("Where Can I Deploy?")
----
-- `.help` - Show this help message.
+- `.help` — Show this help message.
 
+> You can append extra Terraform CLI arguments to any of these commands using a pipe (`|`): 
+> `.plan`, `.plan to <environment>`, `.apply`, `.apply to <environment>`, `.apply <branch>`, `.apply <branch> to <environment>` 
+>
+> Examples:  `.plan | -var=env=dev`, `.apply | -target=module.example`
 
-##  Get Started 💪
+## Get Started 💪
 
-### 1. Create your GitHub Actions Workflow file (e.g., `.github/workflows/terraform-deploy.yml`):
+### 1. Create your GitHub Actions Workflow file (e.g., .github/workflows/terraform-deploy.yml) 📝
 
 This workflow processes comments on Pull Requests, triggering your `terraform-branch-deploy` action which then orchestrates the full Terraform operation.
 
@@ -97,7 +111,7 @@ jobs:
           # admins_pat: ${{ secrets.ORG_ADMINS_PAT }} # Required if using org teams in 'admins' input.
 ```
 
-### 2. Create your `terraform-branch-deploy` configuration file (`.tf-branch-deploy.yml`):
+### 2. Create your terraform-branch-deploy configuration file (.tf-branch-deploy.yml) ⚙️
 
 This file should be placed in the root of your repository (`.tf-branch-deploy.yml`) and defines your environments, default values, and overrides for Terraform operations. If this file is not present, the action will default to a single environment named `production`.
 
@@ -122,64 +136,64 @@ defaults: # Default configurations that apply to all environments unless explici
       - common.tfvars # Path to a common .tfvars file, relative to the working-directory of each environment.
   plan-args: # Default arguments for `terraform plan` command across all environments.
     args:
-      - "-compact-warnings" # Example: Suppress compact warnings by default.
+      - "-compact-warnings"
 
 environments: # Environment-specific configurations, overriding or extending the 'defaults'.
   dev: # Configuration for the 'dev' environment.
     working-directory: ./terraform/dev # Path to the Terraform code for 'dev', relative to the repository root.
     backend-configs: # Backend configuration files specific to the 'dev' environment.
       paths:
-        - ./terraform/dev/dev.s3.tfbackend # Example: S3 backend config for dev.
+        - ./terraform/dev/dev.s3.tfbackend
     var-files: # Variable files specific to the 'dev' environment.
       paths:
-        - ./terraform/dev/dev.tfvars # Example: Dev-specific variable file.
+        - ./terraform/dev/dev.tfvars
 
   prod: # Configuration for the 'prod' environment.
     working-directory: ./terraform/prod # Path to the Terraform code for 'prod', relative to the repository root.
     backend-configs: # Backend configuration files specific to the 'prod' environment.
       paths:
-        - ./terraform/prod/prod.s3.tfbackend # Example: S3 backend config for prod.
+        - ./terraform/prod/prod.s3.tfbackend
     var-files: # Variable files specific to the 'prod' environment.
       inherit: false # Set to 'false' to prevent inheriting 'common.tfvars' from 'defaults'.
       paths:
-        - ./terraform/prod/prod.tfvars # Prod-specific variable file.
-        - ./terraform/prod/secrets.prod.tfvars # Example: Sensitive variables for production.
+        - ./terraform/prod/prod.tfvars
+        - ./terraform/prod/secrets.prod.tfvars
     plan-args: # Arguments for `terraform plan` specific to 'prod'.
       inherit: false # Set to 'false' to prevent inheriting 'plan-args' from 'defaults'.
       args:
-        - "-parallelism=25" # Example: Higher parallelism for production plans.
+        - "-parallelism=25"
     apply-args: # Arguments for `terraform apply` specific to 'prod'.
       args:
-        - "-parallelism=10" # Example: Lower parallelism for production applies.
+        - "-parallelism=10"
 ```
 
-### 3. Trigger a deployment:
+### 3. Trigger a deployment 🚦
 
 To trigger a deployment, comment on a pull request with one of the [supported commands](#available-commands). For example:
 
 - **`.plan`**: To run a `terraform plan` for your `default-environment` (e.g., `dev`).
 <p align="left">
-  <img src="./images/plan-example.png" alt="Example of plan">
+  <img src="./images/plan-example.png" alt="Example of plan" width="850">
 </p>
 
 - **`.apply to dev`**: To run a `terraform apply` for the `dev` environment (requires a prior successful `.plan to dev`).
 <p align="left">
-  <img src="./images/apply-example.png" alt="Example of apply">
+  <img src="./images/apply-example.png" alt="Example of apply" width="850">
 </p>
 
 - **`.apply main to prod`**: To roll back the `prod` environment to the state of the `main` branch.
 <p align="left">
-  <img src="./images/rollback-example.png" alt="Example of rollback">
+  <img src="./images/rollback-example.png" alt="Example of rollback" width="850">
 </p>
 
 - **`.lock`**: To obtain a deployment lock for your `default-environment` (e.g., `dev`). This prevents other deployments to the same environment until the lock is released.
 <p align="left">
-  <img src="./images/lock-example.png" alt="Example of lock">
+  <img src="./images/lock-example.png" alt="Example of lock" width="850">
 </p>
 
 - **`.unlock`**: To release a deployment lock for your `default-environment` (e.g., `dev`) if lock exists. This allows subsequent deployments to proceed.
 <p align="left">
-  <img src="./images/unlock-example.png" alt="Example of unlock">
+  <img src="./images/unlock-example.png" alt="Example of unlock" width="850">
 </p>
 
 
@@ -210,14 +224,14 @@ Branch deployments are a battle-tested way of deploying your changes to a given 
 
 #### Branch Deployment Core Concepts ⭐
 
-> Note: The `main` branch is considered the base repository branch for all examples below.
+> Note: The `main` branch is considered the base repository branch below.
 
 - The `main` branch is always considered to be a stable and deployable branch for your Terraform infrastructure.
 - All infrastructure changes are deployed to a target environment **before** they are merged to the `main` branch.
 - To roll back a branch deployment (e.g., in a production environment), you deploy the `main` branch to that environment.
 - `noop` deployments (i.e., `terraform plan`) should not make changes but rather report what they "would" have done, and typically do not require approval or review before starting.
 
-#### **Why use branch deployments?**
+#### Why use branch deployments ❓
 
 > To put the **merge -> deploy** model in the past for your infrastructure changes!
 
@@ -236,29 +250,29 @@ The `terraform-branch-deploy` action accepts the following inputs:
 | `noop-trigger`      | The comment trigger (e.g., `.plan`) that initiates a Terraform plan, operating in **"noop" mode** (shows changes without applying). | `false`      | `'.plan'`   | `'.tfplan'`                   |
 | `trigger`           | The comment trigger (e.g., `.apply`) that initiates a Terraform apply operation. | `false`      | `'.apply'`  | `'.tfapply'`                  |
 | `stable_branch`     | The name of the stable branch (e.g., `'main'`, `'develop'`) used as a reference for rollback deployments. | `false`      | `'main'`    | `'production'`                |
-| `skip`              | If `true`, the action will only extract the target environment, command details, and related info, then exit early. Useful for [Advanced Usage](https://gemini.google.com/app/cf529ee598dc5d05#advanced-usage-environment-scoped-deployments-with-skip-mode-🌍) with environment-scoped secrets. | `false`      | `'false'`   | `'true'`                      |
+| `skip`              | If `true`, the action will only extract the target environment, command details, and related info, then exit early. Useful for advanced usage with environment-scoped secrets. | `false`      | `'false'`   | `'true'`                      |
 | `admins`            | A comma-separated list of GitHub usernames or teams (e.g., `'monalisa,octocat,my-org/my-team'`) considered administrators. **Admins can deploy without branch protection approvals.** | `false`      | `'false'`   | `'octocat,team-x'`            |
 | `admins_pat`        | A GitHub personal access token with **`read:org` scopes**. This is only needed if using the `admins` input with a GitHub organization team (e.g., `'my-org/my-team'`). | `false`      | `'false'`   | `ghp_xxx`                     |
 
 
-## Troubleshooting & Support
+## Troubleshooting & Support 🛠️
 
 - For common issues, see [GitHub Discussions](https://github.com/scarowar/terraform-branch-deploy/discussions) or open an [issue](https://github.com/scarowar/terraform-branch-deploy/issues).
 - For bug reports, feature requests, or questions, use the provided [issue templates](.github/ISSUE_TEMPLATE/).
 - For security concerns, see [SECURITY.md](./SECURITY.md).
 
 
-## Contributing
+## Contributing 🤝
 
 Contributions are welcome! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines, code style, and how to run pre-commit checks.
 
 
-## License
+## License 📄
 
 MIT License. See [LICENSE](./LICENSE).
 
 
-## Acknowledgements & References
+## Acknowledgements & References 🙏
 
 - [IssueOps](https://issue-ops.github.io/docs/): ChatOps for GitHub Actions.
 - [branch-deploy](https://github.com/github/branch-deploy): Enables branch deployments through IssueOps.
