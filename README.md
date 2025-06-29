@@ -62,8 +62,8 @@ Interact with `terraform-branch-deploy` by commenting on your Pull Requests.
 ---
 - `.help` — Show this help message.
 
-> You can append extra Terraform CLI arguments to any of these commands using a pipe (`|`): 
-> `.plan`, `.plan to <environment>`, `.apply`, `.apply to <environment>`, `.apply <branch>`, `.apply <branch> to <environment>` 
+> You can append extra Terraform CLI arguments to any of these commands using a pipe (`|`):
+> `.plan`, `.plan to <environment>`, `.apply`, `.apply to <environment>`, `.apply <branch>`, `.apply <branch> to <environment>`
 >
 > Examples:  `.plan | -var=env=dev`, `.apply | -target=module.example`
 
