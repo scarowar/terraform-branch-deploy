@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 
+
 import sys
 import os
 import yaml
 import shlex
 from pathlib import Path
 from typing import Any, Dict, List
+
+# --- Constants ---
+CONFIG_FILE_NAME = ".tf-branch-deploy.yml"
 
 
 # --- Logging Helpers ---
@@ -125,7 +129,7 @@ def get_relative_path_for_tf(
         tf_working_dir_absolute (Path): Absolute path to the Terraform working directory.
     Returns:
         str: A path suitable for use as a Terraform CLI argument, relative to the working directory if possible,
-             otherwise absolute.
+        otherwise absolute.
     """
     p = Path(original_path_from_config)
 
@@ -166,20 +170,21 @@ def get_relative_path_for_tf(
     )
 
 
-def main() -> None:
+def validate_inputs(argv: list[str]) -> tuple[str, str, str]:
     """
-    Main entry point for prepare_tf_branch_deploy.py.
-    Validates input, loads configuration, processes arguments and paths, and writes outputs for GitHub Actions.
+    Validates and parses command-line arguments for the script.
+    Args:
+        argv (list[str]): List of command-line arguments.
+    Returns:
+        tuple[str, str, str]: default_working_dir, env_name, dynamic_params_str
     """
-    # --- Robust Input Validation ---
-    if len(sys.argv) != 4:
+    if len(argv) != 4:
         error_exit(
-            f"Usage: {sys.argv[0]} <default_working_dir> <env_name> <dynamic_params_str>"
+            f"Usage: {argv[0]} <default_working_dir> <env_name> <dynamic_params_str>"
         )
-
-    default_working_dir: str = sys.argv[1]
-    env_name: str = sys.argv[2]
-    dynamic_params_str: str = sys.argv[3]
+    default_working_dir: str = argv[1]
+    env_name: str = argv[2]
+    dynamic_params_str: str = argv[3]
 
     log_debug(f"Script received default_working_dir: '{default_working_dir}'")
     log_debug(f"Script received env_name: '{env_name}'")
@@ -191,8 +196,15 @@ def main() -> None:
         error_exit("Invalid or empty environment name argument provided to script.")
     if not isinstance(dynamic_params_str, str):
         error_exit("Invalid dynamic_params_str argument provided to script.")
+    return default_working_dir, env_name, dynamic_params_str
 
-    # --- GITHUB_OUTPUT Validation ---
+
+def validate_github_output() -> str:
+    """
+    Validates the GITHUB_OUTPUT environment variable and its parent directory.
+    Returns:
+        str: The output file path.
+    """
     output_path = os.getenv("GITHUB_OUTPUT")
     if not output_path:
         error_exit("GITHUB_OUTPUT environment variable not set. Cannot write outputs.")
@@ -200,18 +212,23 @@ def main() -> None:
         error_exit(
             f"Parent directory for GITHUB_OUTPUT ('{Path(output_path).parent}') does not exist or is not accessible."
         )
+    return output_path
 
-    base_repo_path_for_tf_code = Path(os.getcwd())
-    log_debug(
-        f"Script executing from base_repo_path_for_tf_code (repo_checkout): {base_repo_path_for_tf_code}"
-    )
 
-    original_repo_root_path = Path(os.getenv("GITHUB_WORKSPACE"))
-    log_debug(f"Original repository root (GITHUB_WORKSPACE): {original_repo_root_path}")
-
-    # --- Load Configuration File ---
-    config_file_name = ".tf-branch-deploy.yml"
-
+def load_config(
+    original_repo_root_path: Path,
+    env_name: str,
+    config_file_name: str = CONFIG_FILE_NAME,
+) -> tuple[dict, dict]:
+    """
+    Loads the YAML configuration file and validates the environments section.
+    Args:
+        original_repo_root_path (Path): Path to the repository root.
+        env_name (str): The environment name.
+        config_file_name (str): The config file name.
+    Returns:
+        tuple[dict, dict]: The loaded config and environments dict.
+    """
     config_path = original_repo_root_path / config_file_name
     config: Dict[str, Any] = {}
     if config_path.is_file():
@@ -224,7 +241,6 @@ def main() -> None:
             except yaml.YAMLError as e:
                 error_exit(f"Error parsing {config_file_name}: {e}")
 
-        # --- Ensure environments section exists and contains at least one environment ---
         environments = config.get("environments", {})
         if not isinstance(environments, dict) or not environments:
             error_exit(
@@ -235,14 +251,44 @@ def main() -> None:
             f"⚠️ No {config_file_name} found: {config_path}. Using action defaults and assuming 'production' environment configuration."
         )
         environments = {"production": {}}
+        config["environments"] = environments
+    return config, environments
 
-    # --- Validate that the requested environment exists (if specified and not 'production') ---
+
+def validate_environment(
+    env_name: str, environments: dict, config_file_name: str = CONFIG_FILE_NAME
+) -> None:
+    """
+    Validates that the requested environment exists in the configuration.
+    Args:
+        env_name (str): The environment name.
+        environments (dict): The environments section from config.
+        config_file_name (str): The config file name.
+    """
     if env_name and env_name != "production" and env_name not in environments:
         error_exit(
             f"Configuration Error: Environment '{env_name}' not found in '{config_file_name}'."
         )
 
-    # --- Determine Effective Terraform Working Directory ---
+
+def resolve_working_dir(
+    config: dict,
+    env_name: str,
+    default_working_dir: str,
+    base_repo_path_for_tf_code: Path,
+    config_file_name: str = CONFIG_FILE_NAME,
+) -> tuple[str, Path]:
+    """
+    Determines the effective Terraform working directory based on config and environment.
+    Args:
+        config (dict): The loaded configuration.
+        env_name (str): The environment name.
+        default_working_dir (str): The default working directory.
+        base_repo_path_for_tf_code (Path): The repo root for TF code.
+        config_file_name (str): The config file name.
+    Returns:
+        tuple[str, Path]: The effective working dir (relative) and its absolute Path.
+    """
     config_working_dir_rel_to_repo_root: str = (
         config.get("environments", {})
         .get(env_name, {})
@@ -268,12 +314,26 @@ def main() -> None:
     log_info(
         f"📁 Terraform Working Directory (relative to repo_checkout): {effective_working_dir_for_output}"
     )
+    return effective_working_dir_for_output, tf_module_absolute_path
 
-    # --- Build Terraform Arguments: init, plan, apply ---
+
+def build_init_args(
+    config: dict,
+    env_name: str,
+    original_repo_root_path: Path,
+    tf_module_absolute_path: Path,
+) -> list[str]:
+    """
+    Builds the list of Terraform init arguments, including backend configs.
+    Args:
+        config (dict): The loaded configuration.
+        env_name (str): The environment name.
+        original_repo_root_path (Path): The repo root.
+        tf_module_absolute_path (Path): The TF working directory.
+    Returns:
+        list[str]: The list of init arguments.
+    """
     init_args_list: List[str] = []
-    plan_args_list: List[str] = []
-    apply_args_list: List[str] = []
-
     backend_configs_section = (
         config.get("environments", {}).get(env_name, {}).get("backend-configs", {})
     )
@@ -313,7 +373,26 @@ def main() -> None:
 
     init_args_list.extend(process_args(config, env_name, "init-args", ""))
     log_debug(f"Collected all init args: {init_args_list}")
+    return init_args_list
 
+
+def build_plan_args(
+    config: dict,
+    env_name: str,
+    original_repo_root_path: Path,
+    tf_module_absolute_path: Path,
+) -> list[str]:
+    """
+    Builds the list of Terraform plan arguments, including var-files.
+    Args:
+        config (dict): The loaded configuration.
+        env_name (str): The environment name.
+        original_repo_root_path (Path): The repo root.
+        tf_module_absolute_path (Path): The TF working directory.
+    Returns:
+        list[str]: The list of plan arguments.
+    """
+    plan_args_list: List[str] = []
     var_files_section = (
         config.get("environments", {}).get(env_name, {}).get("var-files", {})
     )
@@ -353,11 +432,32 @@ def main() -> None:
 
     plan_args_list.extend(process_args(config, env_name, "plan-args", ""))
     log_debug(f"Collected all plan args: {plan_args_list}")
+    return plan_args_list
 
+
+def build_apply_args(config: dict, env_name: str) -> list[str]:
+    """
+    Builds the list of Terraform apply arguments.
+    Args:
+        config (dict): The loaded configuration.
+        env_name (str): The environment name.
+    Returns:
+        list[str]: The list of apply arguments.
+    """
+    apply_args_list: List[str] = []
     apply_args_list.extend(process_args(config, env_name, "apply-args", ""))
     log_debug(f"Collected all apply args: {apply_args_list}")
+    return apply_args_list
 
-    # --- Layer on dynamic flags from comment with robust sanitization ---
+
+def parse_dynamic_flags(dynamic_params_str: str) -> list[str]:
+    """
+    Parses and sanitizes dynamic flags from the input string.
+    Args:
+        dynamic_params_str (str): The dynamic parameters string.
+    Returns:
+        list[str]: The list of allowed dynamic flags.
+    """
     allowed_dynamic_flags_prefixes: List[str] = [
         "--target=",
         "-target=",
@@ -382,14 +482,25 @@ def main() -> None:
             log_warning(
                 f"Ignoring potentially malicious or unsupported dynamic flag from comment: '{param}'. Only flags starting with '{', '.join(allowed_dynamic_flags_prefixes)}' are allowed."
             )
+    return dynamic_flags
 
-    plan_args_list.extend(dynamic_flags)
 
-    # --- Write final values to GitHub Actions Output ---
-    final_init_args_str: str = " ".join(shlex.quote(arg) for arg in init_args_list)
-    final_plan_args_str: str = " ".join(shlex.quote(arg) for arg in plan_args_list)
-    final_apply_args_str: str = " ".join(shlex.quote(arg) for arg in apply_args_list)
-
+def write_outputs(
+    output_path: str,
+    effective_working_dir_for_output: str,
+    final_init_args_str: str,
+    final_plan_args_str: str,
+    final_apply_args_str: str,
+) -> None:
+    """
+    Writes the prepared outputs to the GITHUB_OUTPUT file.
+    Args:
+        output_path (str): The output file path.
+        effective_working_dir_for_output (str): The working directory.
+        final_init_args_str (str): The init args string.
+        final_plan_args_str (str): The plan args string.
+        final_apply_args_str (str): The apply args string.
+    """
     try:
         with open(output_path, "a") as f:
             f.write(f"working_dir={effective_working_dir_for_output}\n")
@@ -400,6 +511,21 @@ def main() -> None:
     except Exception as e:
         error_exit(f"Failed to write to GITHUB_OUTPUT file '{output_path}': {e}")
 
+
+def print_summary(
+    effective_working_dir_for_output: str,
+    final_init_args_str: str,
+    final_plan_args_str: str,
+    final_apply_args_str: str,
+) -> None:
+    """
+    Prints a summary of the prepared configuration to the logs.
+    Args:
+        effective_working_dir_for_output (str): The working directory.
+        final_init_args_str (str): The init args string.
+        final_plan_args_str (str): The plan args string.
+        final_apply_args_str (str): The apply args string.
+    """
     log_section("📝 terraform-branch-deploy configuration summary:")
     log_info(
         f"📁 Terraform Working Directory (relative to repo_checkout): {effective_working_dir_for_output}"
@@ -408,6 +534,56 @@ def main() -> None:
     log_info(f"📋 Terraform Plan Arguments: {final_plan_args_str}")
     log_info(f"🚀 Terraform Apply Arguments: {final_apply_args_str}")
     log_info("✅ Configuration prepared for Terraform execution.")
+
+
+def main() -> None:
+    """
+    Entry point for the script. Validates inputs, loads configuration, prepares arguments,
+    writes outputs for GitHub Actions, and prints a summary for the user.
+    """
+    default_working_dir, env_name, dynamic_params_str = validate_inputs(sys.argv)
+    output_path = validate_github_output()
+    base_repo_path_for_tf_code = Path(os.getcwd())
+    log_debug(
+        f"Script executing from base_repo_path_for_tf_code (repo_checkout): {base_repo_path_for_tf_code}"
+    )
+    original_repo_root_path = Path(os.getenv("GITHUB_WORKSPACE"))
+    log_debug(f"Original repository root (GITHUB_WORKSPACE): {original_repo_root_path}")
+
+    config, environments = load_config(original_repo_root_path, env_name)
+    validate_environment(env_name, environments)
+    effective_working_dir_for_output, tf_module_absolute_path = resolve_working_dir(
+        config, env_name, default_working_dir, base_repo_path_for_tf_code
+    )
+
+    init_args_list = build_init_args(
+        config, env_name, original_repo_root_path, tf_module_absolute_path
+    )
+    plan_args_list = build_plan_args(
+        config, env_name, original_repo_root_path, tf_module_absolute_path
+    )
+    apply_args_list = build_apply_args(config, env_name)
+
+    dynamic_flags = parse_dynamic_flags(dynamic_params_str)
+    plan_args_list.extend(dynamic_flags)
+
+    final_init_args_str: str = " ".join(shlex.quote(arg) for arg in init_args_list)
+    final_plan_args_str: str = " ".join(shlex.quote(arg) for arg in plan_args_list)
+    final_apply_args_str: str = " ".join(shlex.quote(arg) for arg in apply_args_list)
+
+    write_outputs(
+        output_path,
+        effective_working_dir_for_output,
+        final_init_args_str,
+        final_plan_args_str,
+        final_apply_args_str,
+    )
+    print_summary(
+        effective_working_dir_for_output,
+        final_init_args_str,
+        final_plan_args_str,
+        final_apply_args_str,
+    )
 
 
 if __name__ == "__main__":
