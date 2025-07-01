@@ -1,13 +1,13 @@
 
 # Terraform Branch Deploy Action 🚀
 
-![Open Source Love](https://badges.frapsoft.com/os/v1/open-source.svg?v=103)
 ![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/scarowar/terraform-branch-deploy/badge)](https://scorecard.dev/viewer/?uri=github.com/scarowar/terraform-branch-deploy)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=scarowar_terraform-branch-deploy&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=scarowar_terraform-branch-deploy)
 ![CodeQL](https://github.com/scarowar/terraform-branch-deploy/actions/workflows/codeql.yml/badge.svg)
 ![Dependabot](https://img.shields.io/badge/dependabot-enabled-brightgreen?logo=dependabot)
-![pre-commit](https://github.com/scarowar/terraform-branch-deploy/actions/workflows/pre-commit.yml/badge.svg)
+[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/scarowar/terraform-branch-deploy/main.svg)](https://results.pre-commit.ci/latest/github/scarowar/terraform-branch-deploy/main)
+
 
 A GitHub Action and IssueOps integration for automated Terraform deployments.
 ---
