@@ -246,6 +246,7 @@ runs:
             tfcmt --version
             echo "✅ tfcmt installed successfully."
           fi
+        fi
 
     - name: "🚦 Pre-flight Checks"
       id: preflight
