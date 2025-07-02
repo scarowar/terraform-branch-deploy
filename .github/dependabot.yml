@@ -13,17 +13,6 @@ updates:
       - "dependencies"
     open-pull-requests-limit: 5
 
-  # Aqua dependencies
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    commit-message:
-      prefix: "aqua"
-    labels:
-      - "dependencies"
-    open-pull-requests-limit: 5
-
   # GitHub Actions workflows
   - package-ecosystem: "github-actions"
     directory: "/.github/workflows"
