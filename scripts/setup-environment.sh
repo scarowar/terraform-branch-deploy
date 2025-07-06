@@ -86,6 +86,7 @@ echo "::group::Install CLI tools (yq and tfcmt)"
 # Set default versions (can be overridden by environment variables)
 YQ_VERSION="${YQ_VERSION:-v4.45.4}"
 TFCMT_VERSION="${TFCMT_VERSION:-v4.14.7}"
+TFCMT_VERSION_NO_V="${TFCMT_VERSION#v}"
 
 # Install yq (YAML Processor)
 if command -v yq >/dev/null 2>&1; then
@@ -207,7 +208,7 @@ else
   fi
 
   # Checksum verification
-  CHECKSUM_URL="https://github.com/suzuki-shunsuke/tfcmt/releases/download/${TFCMT_VERSION}/tfcmt_${TFCMT_VERSION}_checksums.txt"
+  CHECKSUM_URL="https://github.com/suzuki-shunsuke/tfcmt/releases/download/${TFCMT_VERSION}/tfcmt_${TFCMT_VERSION_NO_V}_checksums.txt"
   echo "Downloading checksums from ${CHECKSUM_URL}"
   if ! CHECKSUM_CONTENT=$(curl -sSL "${CHECKSUM_URL}"); then
       echo "::error::Failed to download checksums for tfcmt from ${CHECKSUM_URL}"
