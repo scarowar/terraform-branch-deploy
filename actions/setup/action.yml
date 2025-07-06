@@ -1,0 +1,81 @@
+name: 🛠️ Setup Environment
+description: Sets up the environment and tools for terraform-branch-deploy operations, including dependency installation and configuration validation.
+
+inputs:
+  skip:
+    description: When true, skips most setup steps (Node.js, Python, yq/tfcmt installation) but still validates configuration and extracts environment information.
+    required: false
+    default: "false"
+  github-token:
+    description: GitHub token for authentication. Required for tool installation and repository operations.
+    required: true
+  main-action-path:
+    description: Path to the main action directory containing scripts and dependencies.
+    required: false
+    default: .
+
+outputs:
+  available_envs:
+    description: Comma-separated list of available environment names discovered from .tf-branch-deploy.yml configuration.
+    value: ${{ steps.preflight.outputs.available_envs }}
+  default_environment:
+    description: The default environment name as specified in .tf-branch-deploy.yml configuration.
+    value: ${{ steps.preflight.outputs.default_environment }}
+  production_environments:
+    description: Comma-separated list of environment names marked as production in .tf-branch-deploy.yml configuration.
+    value: ${{ steps.preflight.outputs.production_environments }}
+
+runs:
+  using: composite
+  steps:
+  - name: 📥 Checkout User Repository at Target Commit
+    uses: actions/checkout@v4
+    with:
+      ref: ${{ github.sha }}
+      fetch-depth: 1
+      path: user-repo
+
+  - name: 🔎 Validate .tf-branch-deploy.yml against schema
+    uses: GrantBirki/json-yaml-validate@250fa0dc7d7f4a888b24dc2a6b2ff589753fba70 # v3.3.2
+    with:
+      files: user-repo/.tf-branch-deploy.yml
+      json_schema: ${{ inputs.main-action-path }}/tf-branch-deploy.schema.json
+      yaml_as_json: true
+      mode: fail
+      comment: "true"
+
+  - name: 🌐 Setup Node.js Environment
+    if: ${{ inputs.skip != 'true' }}
+    uses: actions/setup-node@v4
+    with:
+      node-version: "20"
+
+  - name: 🐍 Setup Python Environment
+    if: ${{ inputs.skip != 'true' }}
+    uses: actions/setup-python@v5
+    with:
+      python-version: "3.12"
+
+  - name: 🛠️ Setup Environment and Tools
+    if: ${{ inputs.skip != 'true' }}
+    shell: bash
+    run: |
+      set -euo pipefail
+      chmod +x ${{ inputs.main-action-path }}/scripts/setup-environment.sh
+      ${{ inputs.main-action-path }}/scripts/setup-environment.sh
+    env:
+      GH_TOKEN: ${{ inputs.github-token }}
+      RUNNER_OS: ${{ runner.os }}
+      SELF_ACTION_PATH: ${{ inputs.main-action-path }}
+      USER_REPO_PATH: ${{ github.workspace }}/user-repo
+      GITHUB_WORKSPACE: ${{ github.workspace }}
+
+  - name: 🚦 Pre-flight Checks
+    id: preflight
+    shell: bash
+    run: |
+      set -euo pipefail
+      chmod +x ${{ inputs.main-action-path }}/scripts/pre-flight-checks.sh
+      ${{ inputs.main-action-path }}/scripts/pre-flight-checks.sh
+    env:
+      USER_REPO_PATH: ${{ github.workspace }}/user-repo

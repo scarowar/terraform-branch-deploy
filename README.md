@@ -9,7 +9,7 @@
 [![pre-commit.ci status](https://results.pre-commit.ci/badge/github/scarowar/terraform-branch-deploy/main.svg)](https://results.pre-commit.ci/latest/github/scarowar/terraform-branch-deploy/main)
 
 
-A GitHub Action and IssueOps integration for automated Terraform deployments.
+A GitHub Action and IssueOps integration for automated Terraform deployments
 ---
 
 Building on the foundation of [branch-deploy](https://github.com/github/branch-deploy), this action enables branch-based Terraform deployments.
