@@ -32,6 +32,7 @@ done
 if [[ ${#MISSING_VARS[@]} -gt 0 ]]; then
 	echo "::error::Missing required environment variables: ${MISSING_VARS[*]}"
 	echo "::error::💡 Ensure all required environment variables are passed to the script."
+	echo "::endgroup::"
 	exit 1
 fi
 
