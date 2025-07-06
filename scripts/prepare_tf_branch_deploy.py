@@ -547,8 +547,9 @@ def main() -> None:
     log_debug(
         f"Script executing from base_repo_path_for_tf_code (repo_checkout): {base_repo_path_for_tf_code}"
     )
-    original_repo_root_path = Path(os.getenv("GITHUB_WORKSPACE"))
-    log_debug(f"Original repository root (GITHUB_WORKSPACE): {original_repo_root_path}")
+    # Use the current working directory (user-repo) for config file location
+    original_repo_root_path = base_repo_path_for_tf_code
+    log_debug(f"Repository root for config file: {original_repo_root_path}")
 
     config, environments = load_config(original_repo_root_path, env_name)
     validate_environment(env_name, environments)
