@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+if [[ $# -lt 1 ]]; then
+  echo "::error::❌ No command supplied. Supported commands: plan, apply, rollback" >&2
+  exit 1
+fi
 COMMAND=$1
 shift
 
