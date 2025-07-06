@@ -23,7 +23,8 @@ jobs:
       - name: 🔧 Get version from tag
         id: get_version
         run: |
-          echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+          raw_tag="${{ github.event.release.tag_name }}"
+          echo "version=${raw_tag#v}" >> "$GITHUB_OUTPUT"
 
       - name: 🌳 Create GHES release branch
         run: |
@@ -37,29 +38,33 @@ jobs:
           set -euo pipefail
           echo "Downgrading actions in action.yml files for GHES compatibility..."
 
-          files_to_change=$(find . -type f -name "action.yml")
+          files_to_change=$(find . -type f -name "action.yml" -print0)
 
           if [ -z "$files_to_change" ]; then
             echo "::error::No action.yml files found to process."
             exit 1
           fi
 
-          # Find all action.yml files and downgrade upload-artifact from v4 to v3
-          echo "$files_to_change" | xargs sed -i 's|actions/upload-artifact@v4|actions/upload-artifact@v3|g'
+          printf '%s' "$files_to_change" | \
+            xargs -0 sed -i 's|actions/upload-artifact@v4|actions/upload-artifact@v3|g'
 
           echo "✅ Actions downgraded successfully."
 
       - name: ⬆️ Commit and push changes
+        id: commit_and_push
         run: |
           # Check if there are changes to commit
           if git diff --quiet; then
             echo "No changes to commit. Skipping commit and push."
+            echo "pushed=false" >> $GITHUB_OUTPUT
           else
             git commit -am "chore: downgrade actions for GHES compatibility"
             git push -u origin release/v${{ steps.get_version.outputs.version }}-ghes
+            echo "pushed=true" >> $GITHUB_OUTPUT
           fi
 
       - name: 🎉 Create GHES Release
+        if: steps.commit_and_push.outputs.pushed == 'true'
         run: |
           set -euo pipefail
           VERSION="${{ steps.get_version.outputs.version }}"
@@ -75,6 +80,6 @@ jobs:
             --notes "$RELEASE_NOTES"
 
       - name: 🧹 Cleanup release branch
-        if: always()
+        if: always() && steps.commit_and_push.outputs.pushed == 'true'
         run: |
-          git push origin --delete release/v${{ steps.get_version.outputs.version }}-ghes
+          git push origin --delete release/v${{ steps.get_version.outputs.version }}-ghes || true
