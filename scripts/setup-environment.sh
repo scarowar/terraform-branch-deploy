@@ -33,7 +33,7 @@ else
   if [[ ${RUNNER_OS} == "Linux" ]]; then
     if command -v apt-get >/dev/null 2>&1; then
       echo "Using apt-get to install missing dependencies..."
-      ${SUDO} apt-get update -y
+      ${SUDO} apt-get update
       for tool in "${MISSING_TOOLS[@]}"; do
         echo "Installing ${tool}..."
         ${SUDO} apt-get install -y "${tool}"
@@ -136,7 +136,7 @@ else
   fi
 
   # Checksum verification for yq
-  CHECKSUM_URL="https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_checksums.txt"
+  CHECKSUM_URL="https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/checksums"
   echo "Downloading checksums from ${CHECKSUM_URL}"
   if ! CHECKSUM_CONTENT=$(curl -sSL "${CHECKSUM_URL}"); then
       echo "::error::Failed to download checksums for yq from ${CHECKSUM_URL}"
