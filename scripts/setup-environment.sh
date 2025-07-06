@@ -194,7 +194,7 @@ else
   TFCMT_URL="https://github.com/suzuki-shunsuke/tfcmt/releases/download/${TFCMT_VERSION}/${TFCMT_FILENAME}"
 
   if [[ "${RUNNER_OS}" == "Windows" ]]; then
-    TFCMT_FILENAME="tfcmt_${TFCMT_VERSION}_windows_amd64.zip"
+    TFCMT_FILENAME="tfcmt_windows_${ARCH_TAG}.tar.gz"
     TFCMT_URL="https://github.com/suzuki-shunsuke/tfcmt/releases/download/${TFCMT_VERSION}/${TFCMT_FILENAME}"
   fi
 
@@ -235,7 +235,7 @@ else
   echo "✅ Checksum verified for tfcmt"
 
   if [[ "${RUNNER_OS}" == "Windows" ]]; then
-    unzip -q "${TEMP_DIR}/${TFCMT_FILENAME}" -d "${TEMP_DIR}"
+    tar -xzf "${TEMP_DIR}/${TFCMT_FILENAME}" -C "${TEMP_DIR}"
     ${SUDO} cp "${TEMP_DIR}/tfcmt.exe" "/usr/local/bin/tfcmt.exe"
     echo "✅ tfcmt installed successfully on Windows."
   else

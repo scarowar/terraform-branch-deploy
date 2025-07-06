@@ -58,7 +58,7 @@ run_tfcmt() {
 	)
 
 	echo "🚀 Executing: ${tfcmt_command[*]}"
-	eval "${tfcmt_command[*]}"
+	"${tfcmt_command[@]}"
 	local tfcmt_exit_code=$?
 
 	echo "tfcmt_exit_code=${tfcmt_exit_code}" >>"${GITHUB_OUTPUT}"
