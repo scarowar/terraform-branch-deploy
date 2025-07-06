@@ -14,14 +14,20 @@ CONFIG_FILE="${USER_REPO_PATH}/.tf-branch-deploy.yml"
 if [[ -f "${CONFIG_FILE}" ]]; then
   echo "🔍 Analyzing configuration file..."
   # Extract all environment names from the configuration
-  ENVS=$(yq e '.environments | keys | .[]' "${CONFIG_FILE}" | tr '\n' ',' | sed 's/,$//')
+  if ! ENVS=$(yq e '.environments | keys | .[]' "${CONFIG_FILE}" 2>/dev/null | tr '\n' ',' | sed 's/,$//'); then
+    echo "❌ Failed to parse environments from .tf-branch-deploy.yml. Please check YAML syntax." >&2
+    exit 1
+  fi
   if [[ -z "${ENVS}" ]]; then
     echo "❌ No environments defined in .tf-branch-deploy.yml. At least one environment must be present under 'environments'." >&2
     exit 1
   fi
 
   # Validate default environment configuration
-  DEFAULT_ENV=$(yq e '."default-environment"' "${CONFIG_FILE}")
+  if ! DEFAULT_ENV=$(yq e '."default-environment"' "${CONFIG_FILE}" 2>/dev/null); then
+    echo "❌ Failed to parse default-environment from .tf-branch-deploy.yml. Please check YAML syntax." >&2
+    exit 1
+  fi
   if [[ -z "${DEFAULT_ENV}" ]] || [[ "${DEFAULT_ENV}" = "null" ]]; then
     echo "❌ 'default-environment' is missing or empty at the root of .tf-branch-deploy.yml." >&2
     exit 1
@@ -32,7 +38,10 @@ if [[ -f "${CONFIG_FILE}" ]]; then
   fi
 
   # Validate production environments configuration
-  PROD_ENVS=$(yq e '."production-environments" | join(",")' "${CONFIG_FILE}")
+  if ! PROD_ENVS=$(yq e '."production-environments" | join(",")' "${CONFIG_FILE}" 2>/dev/null); then
+    echo "❌ Failed to parse production-environments from .tf-branch-deploy.yml. Please check YAML syntax." >&2
+    exit 1
+  fi
   if [[ -z "${PROD_ENVS}" ]] || [[ "${PROD_ENVS}" = "null" ]]; then
     echo "❌ 'production-environments' is missing or empty at the root of .tf-branch-deploy.yml." >&2
     exit 1
