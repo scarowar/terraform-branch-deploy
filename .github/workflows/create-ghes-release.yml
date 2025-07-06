@@ -36,17 +36,17 @@ jobs:
         run: |
           set -euo pipefail
           echo "Downgrading actions in action.yml files for GHES compatibility..."
-          
+
           files_to_change=$(find . -type f -name "action.yml")
-          
+
           if [ -z "$files_to_change" ]; then
             echo "::error::No action.yml files found to process."
             exit 1
           fi
-          
+
           # Find all action.yml files and downgrade upload-artifact from v4 to v3
           echo "$files_to_change" | xargs sed -i 's|actions/upload-artifact@v4|actions/upload-artifact@v3|g'
-          
+
           echo "✅ Actions downgraded successfully."
 
       - name: ⬆️ Commit and push changes
@@ -65,10 +65,10 @@ jobs:
           VERSION="${{ steps.get_version.outputs.version }}"
           GHES_TAG="v${VERSION}-ghes"
           RELEASE_BRANCH="release/${GHES_TAG}"
-          
+
           # Get release notes from the original release, with a fallback for an empty body
           RELEASE_NOTES=$(gh release view "${{ github.event.release.tag_name }}" --json body --jq .body) || RELEASE_NOTES="See original release for details."
-          
+
           gh release create "$GHES_TAG" \
             --target "$RELEASE_BRANCH" \
             --title "v${VERSION} (GHES)" \
