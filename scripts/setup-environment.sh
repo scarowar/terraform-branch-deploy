@@ -127,12 +127,46 @@ else
   esac
 
   echo "Attempting to download yq from: ${YQ_URL} to ${DEST_PATH}"
-  if ! ${SUDO} curl -sSL "${YQ_URL}" -o "${DEST_PATH}"; then
+  TEMP_YQ_PATH=$(mktemp)
+  trap 'rm -f -- "$TEMP_YQ_PATH"' EXIT
+
+  if ! curl -sSL "${YQ_URL}" -o "${TEMP_YQ_PATH}"; then
     echo "::error::Failed to download yq from ${YQ_URL}. Check network connectivity or URL."
     exit 1
   fi
+
+  # Checksum verification for yq
+  CHECKSUM_URL="https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_checksums.txt"
+  echo "Downloading checksums from ${CHECKSUM_URL}"
+  if ! CHECKSUM_CONTENT=$(curl -sSL "${CHECKSUM_URL}"); then
+      echo "::error::Failed to download checksums for yq from ${CHECKSUM_URL}"
+      exit 1
+  fi
+  YQ_FILENAME=$(basename "${YQ_URL}")
+  EXPECTED_CHECKSUM=$(echo "${CHECKSUM_CONTENT}" | grep "${YQ_FILENAME}" | awk '{print $1}')
+
+  if [[ -z "${EXPECTED_CHECKSUM}" ]]; then
+      echo "::error::Could not find checksum for ${YQ_FILENAME} in checksum file."
+      exit 1
+  fi
+
+  echo "Verifying checksum for yq..."
+  if command -v sha256sum >/dev/null 2>&1; then
+    ACTUAL_CHECKSUM=$(sha256sum "${TEMP_YQ_PATH}" | awk '{print $1}')
+  else
+    ACTUAL_CHECKSUM=$(shasum -a 256 "${TEMP_YQ_PATH}" | awk '{print $1}')
+  fi
+
+  if [[ "${ACTUAL_CHECKSUM}" != "${EXPECTED_CHECKSUM}" ]]; then
+    echo "::error::Checksum verification failed for yq. Expected ${EXPECTED_CHECKSUM}, got ${ACTUAL_CHECKSUM}"
+    exit 1
+  fi
+  echo "✅ Checksum verified for yq"
+
+  ${SUDO} mv "${TEMP_YQ_PATH}" "${DEST_PATH}"
   ${SUDO} chmod +x "${DEST_PATH}"
   echo "✅ yq installed successfully."
+  trap - EXIT
 fi
 
 # Install tfcmt
@@ -159,25 +193,58 @@ else
   TFCMT_URL="https://github.com/suzuki-shunsuke/tfcmt/releases/download/${TFCMT_VERSION}/${TFCMT_FILENAME}"
 
   if [[ "${RUNNER_OS}" == "Windows" ]]; then
-    TFCMT_URL="https://github.com/suzuki-shunsuke/tfcmt/releases/download/${TFCMT_VERSION}/tfcmt_${TFCMT_VERSION}_windows_amd64.zip"
-    echo "Attempting to download tfcmt from: ${TFCMT_URL}"
-    TEMP_DIR=$(mktemp -d)
-    if ! curl -sSL "${TFCMT_URL}" -o "${TEMP_DIR}/tfcmt.zip"; then
-      echo "::error::Failed to download tfcmt.zip from ${TFCMT_URL}."
+    TFCMT_FILENAME="tfcmt_${TFCMT_VERSION}_windows_amd64.zip"
+    TFCMT_URL="https://github.com/suzuki-shunsuke/tfcmt/releases/download/${TFCMT_VERSION}/${TFCMT_FILENAME}"
+  fi
+
+  TEMP_DIR=$(mktemp -d)
+  trap 'rm -rf -- "$TEMP_DIR"' EXIT
+
+  echo "Attempting to download tfcmt from: ${TFCMT_URL}"
+  if ! curl -sSL "${TFCMT_URL}" -o "${TEMP_DIR}/${TFCMT_FILENAME}"; then
+    echo "::error::Failed to download tfcmt archive from ${TFCMT_URL}."
+    exit 1
+  fi
+
+  # Checksum verification
+  CHECKSUM_URL="https://github.com/suzuki-shunsuke/tfcmt/releases/download/${TFCMT_VERSION}/tfcmt_${TFCMT_VERSION}_checksums.txt"
+  echo "Downloading checksums from ${CHECKSUM_URL}"
+  if ! CHECKSUM_CONTENT=$(curl -sSL "${CHECKSUM_URL}"); then
+      echo "::error::Failed to download checksums for tfcmt from ${CHECKSUM_URL}"
       exit 1
-    fi
-    unzip -q "${TEMP_DIR}/tfcmt.zip" -d "${TEMP_DIR}"
+  fi
+  EXPECTED_CHECKSUM=$(echo "${CHECKSUM_CONTENT}" | grep "${TFCMT_FILENAME}" | awk '{print $1}')
+
+  if [[ -z "${EXPECTED_CHECKSUM}" ]]; then
+      echo "::error::Could not find checksum for ${TFCMT_FILENAME} in checksum file."
+      exit 1
+  fi
+
+  echo "Verifying checksum for ${TFCMT_FILENAME}..."
+  if command -v sha256sum >/dev/null 2>&1; then
+    ACTUAL_CHECKSUM=$(sha256sum "${TEMP_DIR}/${TFCMT_FILENAME}" | awk '{print $1}')
+  else
+    ACTUAL_CHECKSUM=$(shasum -a 256 "${TEMP_DIR}/${TFCMT_FILENAME}" | awk '{print $1}')
+  fi
+
+  if [[ "${ACTUAL_CHECKSUM}" != "${EXPECTED_CHECKSUM}" ]]; then
+    echo "::error::Checksum verification failed for tfcmt. Expected ${EXPECTED_CHECKSUM}, got ${ACTUAL_CHECKSUM}"
+    exit 1
+  fi
+  echo "✅ Checksum verified for tfcmt"
+
+  if [[ "${RUNNER_OS}" == "Windows" ]]; then
+    unzip -q "${TEMP_DIR}/${TFCMT_FILENAME}" -d "${TEMP_DIR}"
     ${SUDO} cp "${TEMP_DIR}/tfcmt.exe" "/usr/local/bin/tfcmt.exe"
-    rm -rf "${TEMP_DIR}"
     echo "✅ tfcmt installed successfully on Windows."
   else
-    echo "Attempting to download tfcmt from: ${TFCMT_URL}"
-    if ! curl -sSL "${TFCMT_URL}" | ${SUDO} tar -xz -C /usr/local/bin; then
-      echo "::error::Failed to download and extract tfcmt from ${TFCMT_URL}."
+    if ! ${SUDO} tar -xz -f "${TEMP_DIR}/${TFCMT_FILENAME}" -C /usr/local/bin; then
+      echo "::error::Failed to extract tfcmt from ${TEMP_DIR}/${TFCMT_FILENAME}."
       exit 1
     fi
     echo "✅ tfcmt installed successfully."
   fi
+  trap - EXIT
 fi
 
 # Verify all CLI tools are properly installed and accessible
