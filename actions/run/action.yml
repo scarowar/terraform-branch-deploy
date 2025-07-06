@@ -75,7 +75,7 @@ runs:
       set -euo pipefail
       echo "🔧 Preparing Terraform commands for environment '${{ inputs.environment }}'..."
       source "${GITHUB_WORKSPACE}/.venv-terraform-branch-deploy/bin/activate"
-      python "${{ inputs.main-action-path }}/scripts/prepare_tf_branch_deploy.py" \
+      python "${GITHUB_WORKSPACE}/${{ inputs.main-action-path }}/scripts/prepare_tf_branch_deploy.py" \
         "${{ inputs.working-directory }}" \
         "${{ inputs.environment }}" \
         "${{ inputs.params }}"
@@ -96,7 +96,18 @@ runs:
     run: |
       set -euo pipefail
       echo "Initializing Terraform backend and modules..."
-      terraform init ${{ steps.prepare_cmds.outputs.init_args }}
+      # Helper to decode base64 and split into array
+      decode_and_split() {
+        local var_b64="$1"
+        local arr_name="$2"
+        local decoded
+        decoded=$(echo "$var_b64" | base64 -d)
+        # shellcheck disable=SC2034
+        IFS=$'\n' read -r -d '' -a "$arr_name" < <(printf '%s\0' "$decoded")
+      }
+
+      decode_and_split "${{ steps.prepare_cmds.outputs.init_args_b64 }}" INIT_ARGS
+      terraform init -input=false "${INIT_ARGS[@]}"
       echo "✅ Terraform Init completed."
     shell: bash
     working-directory: user-repo/${{ steps.prepare_cmds.outputs.working_dir }}
@@ -167,16 +178,29 @@ runs:
     run: |
       set -euo pipefail
       echo "🔧 Preparing terraform ${{ inputs.command }} execution..."
-      ARGS=""
+
+      # Helper to decode base64 and split into array
+      decode_and_split() {
+        local var_b64="$1"
+        local arr_name="$2"
+        local decoded
+        decoded=$(echo "$var_b64" | base64 -d)
+        # shellcheck disable=SC2034
+        IFS=$'\n' read -r -d '' -a "$arr_name" < <(printf '%s\0' "$decoded")
+      }
+
       if [ "${{ inputs.command }}" == "plan" ] || [ "${{ inputs.command }}" == "rollback" ]; then
-        ARGS="${{ steps.prepare_cmds.outputs.plan_args }}"
-        echo "📋 Using plan arguments for ${{ inputs.command }} operation"
+        decode_and_split "${{ steps.prepare_cmds.outputs.plan_args_b64 }}" PLAN_ARGS
+        echo "📋 Using plan arguments for ${{ inputs.command }} operation: ${PLAN_ARGS[*]}"
+        ARGS=("${PLAN_ARGS[@]}")
       else
-        ARGS="${{ steps.prepare_cmds.outputs.apply_args }}"
-        echo "🚀 Using apply arguments for ${{ inputs.command }} operation"
+        decode_and_split "${{ steps.prepare_cmds.outputs.apply_args_b64 }}" APPLY_ARGS
+        echo "🚀 Using apply arguments for ${{ inputs.command }} operation: ${APPLY_ARGS[*]}"
+        ARGS=("${APPLY_ARGS[@]}")
       fi
+
       echo "🎯 Executing terraform ${{ inputs.command }} with tfcmt integration..."
-      ${{ inputs.main-action-path }}/scripts/run-terraform.sh ${{ inputs.command }} $ARGS
+      ${GITHUB_WORKSPACE}/${{ inputs.main-action-path }}/scripts/run-terraform.sh ${{ inputs.command }} "${ARGS[@]}"
     env:
       GITHUB_TOKEN: ${{ inputs.github-token }}
       GITHUB_EVENT_ISSUE_NUMBER: ${{ inputs.github_event_issue_number }}
@@ -187,17 +211,16 @@ runs:
 
   - name: 📦 Upload Plan Binary Artifact
     if: ${{ inputs.command == 'plan' }}
-    uses: actions/upload-artifact@v4
+    uses: actions/upload-artifact@v3
     with:
       name: terraform-plan-bin-${{ inputs.sha }}
       path: user-repo/${{ steps.prepare_cmds.outputs.working_dir }}/tfplan-${{ inputs.sha }}.binary
-      compression-level: 0
 
   - name: 🏷️ Tag Commit with Plan Run ID
     if: ${{ inputs.command == 'plan' }}
     shell: bash
     run: |
-      ${{ inputs.main-action-path }}/scripts/manage-git-tags.sh create
+      ${GITHUB_WORKSPACE}/${{ inputs.main-action-path }}/scripts/manage-git-tags.sh create
     env:
       GH_TOKEN: ${{ inputs.github-token }}
       ENVIRONMENT: ${{ inputs.environment }}
@@ -210,7 +233,7 @@ runs:
     if: ${{ inputs.command == 'apply' && success() && steps.run_tfcmt.outcome == 'success' }}
     shell: bash
     run: |
-      ${{ inputs.main-action-path }}/scripts/manage-git-tags.sh delete
+      ${GITHUB_WORKSPACE}/${{ inputs.main-action-path }}/scripts/manage-git-tags.sh delete
     env:
       GH_TOKEN: ${{ inputs.github-token }}
       ENVIRONMENT: ${{ inputs.environment }}

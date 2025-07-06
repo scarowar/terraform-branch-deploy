@@ -4,7 +4,6 @@
 import sys
 import os
 import yaml
-import shlex
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -452,37 +451,18 @@ def build_apply_args(config: dict, env_name: str) -> list[str]:
 
 def parse_dynamic_flags(dynamic_params_str: str) -> list[str]:
     """
-    Parses and sanitizes dynamic flags from the input string.
+    Parses dynamic flags from the input string.
     Args:
-        dynamic_params_str (str): The dynamic parameters string.
+        dynamic_params_str (str): The raw parameters string from the workflow (e.g., branch-deploy params output).
     Returns:
-        list[str]: The list of allowed dynamic flags.
+        list[str]: The list of parsed arguments, suitable for direct use in Terraform CLI commands.
     """
-    allowed_dynamic_flags_prefixes: List[str] = [
-        "--target=",
-        "-target=",
-        "-var=",
-        "--var=",
-    ]
-    dynamic_flags: List[str] = []
-
-    parsed_params = shlex.split(dynamic_params_str)
-    log_debug(f"Parsed dynamic params from comment: {parsed_params}")
-
-    for param in parsed_params:
-        is_allowed = False
-        for allowed_prefix in allowed_dynamic_flags_prefixes:
-            if param.startswith(allowed_prefix):
-                is_allowed = True
-                break
-
-        if is_allowed:
-            dynamic_flags.append(param)
-        else:
-            log_warning(
-                f"Ignoring potentially malicious or unsupported dynamic flag from comment: '{param}'. Only flags starting with '{', '.join(allowed_dynamic_flags_prefixes)}' are allowed."
-            )
-    return dynamic_flags
+    log_debug(f"Raw dynamic_params_str received: {dynamic_params_str!r}")
+    try:
+        return dynamic_params_str.split(" ")
+    except Exception as e:
+        log_warning(f"Failed to parse dynamic params with shlex: {e}")
+        return []
 
 
 def write_outputs(
@@ -502,11 +482,19 @@ def write_outputs(
         final_apply_args_str (str): The apply args string.
     """
     try:
+        import base64
+
         with open(output_path, "a") as f:
             f.write(f"working_dir={effective_working_dir_for_output}\n")
-            f.write(f"init_args={final_init_args_str}\n")
-            f.write(f"plan_args={final_plan_args_str}\n")
-            f.write(f"apply_args={final_apply_args_str}\n")
+            f.write(
+                f"init_args_b64={base64.b64encode(final_init_args_str.encode()).decode()}\n"
+            )
+            f.write(
+                f"plan_args_b64={base64.b64encode(final_plan_args_str.encode()).decode()}\n"
+            )
+            f.write(
+                f"apply_args_b64={base64.b64encode(final_apply_args_str.encode()).decode()}\n"
+            )
         log_debug(f"Successfully wrote outputs to GITHUB_OUTPUT: {output_path}")
     except Exception as e:
         error_exit(f"Failed to write to GITHUB_OUTPUT file '{output_path}': {e}")
@@ -568,9 +556,10 @@ def main() -> None:
     dynamic_flags = parse_dynamic_flags(dynamic_params_str)
     plan_args_list.extend(dynamic_flags)
 
-    final_init_args_str: str = " ".join(shlex.quote(arg) for arg in init_args_list)
-    final_plan_args_str: str = " ".join(shlex.quote(arg) for arg in plan_args_list)
-    final_apply_args_str: str = " ".join(shlex.quote(arg) for arg in apply_args_list)
+    # Output as newline-separated for safe array handling in shell
+    final_init_args_str: str = "\n".join(init_args_list)
+    final_plan_args_str: str = "\n".join(plan_args_list)
+    final_apply_args_str: str = "\n".join(apply_args_list)
 
     write_outputs(
         output_path,
@@ -581,9 +570,9 @@ def main() -> None:
     )
     print_summary(
         effective_working_dir_for_output,
-        final_init_args_str,
-        final_plan_args_str,
-        final_apply_args_str,
+        final_init_args_str.replace("\n", " | "),
+        final_plan_args_str.replace("\n", " | "),
+        final_apply_args_str.replace("\n", " | "),
     )
 
 

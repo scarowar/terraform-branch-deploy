@@ -48,15 +48,21 @@ run_tfcmt() {
 
 	echo "🔧 Preparing tfcmt command for terraform ${tf_command}..."
 
+	local terraform_command_and_args=(
+    terraform
+    "${tf_command}"
+    "${tf_args[@]}"
+  )
+
 	local tfcmt_command=(
-		tfcmt "${tf_command}"
-		--owner="${GITHUB_REPOSITORY_OWNER}"
-		--repo="${GITHUB_REPOSITORY_NAME}"
-		--sha="${SHA}"
-		--pr="${TFCMT_ISSUE_NUMBER}"
-		--
-		terraform "${tf_args[@]}"
-	)
+    tfcmt "${tf_command}"
+    --owner="${GITHUB_REPOSITORY_OWNER}"
+    --repo="${GITHUB_REPOSITORY_NAME}"
+    --sha="${SHA}"
+    --pr="${TFCMT_ISSUE_NUMBER}"
+    --
+    "${terraform_command_and_args[@]}"
+  )
 
 	echo "🚀 Executing: ${tfcmt_command[*]}"
 	"${tfcmt_command[@]}"
@@ -96,7 +102,7 @@ plan)
 	echo "💡 Review the generated plan carefully before proceeding with apply"
 	echo "::endgroup::"
 
-	run_tfcmt_with_exit plan plan "$@" -out="${PLAN_BINARY_FILE}"
+	run_tfcmt_with_exit plan "$@" -out="${PLAN_BINARY_FILE}"
 	;;
 apply)
 	echo "::group::🚀 Terraform Apply Execution"
@@ -114,7 +120,7 @@ apply)
 	echo "🔄 Applying infrastructure changes with auto-approval..."
 	echo "::endgroup::"
 
-	run_tfcmt_with_exit apply apply -auto-approve "$@" "${PLAN_BINARY_FILE}"
+	run_tfcmt_with_exit apply -auto-approve "$@" "${PLAN_BINARY_FILE}"
 	;;
 rollback)
 	echo "::group::🚨 Emergency Rollback to Stable Branch"
@@ -128,7 +134,7 @@ rollback)
 	echo "::group::📋 Generating Rollback Plan"
 	echo "🔍 Planning rollback deployment to validate stable branch state..."
 	echo "📁 Rollback plan will be saved as: ${PLAN_BINARY_FILE}"
-	run_tfcmt plan plan "$@" -out="${PLAN_BINARY_FILE}"
+	run_tfcmt plan "$@" -out="${PLAN_BINARY_FILE}"
 	plan_exit_code=$?
 	echo "::endgroup::"
 
@@ -146,7 +152,7 @@ rollback)
 	echo "⚡ Applying rollback plan to restore stable infrastructure state..."
 	echo "🔄 Auto-approving rollback changes for emergency recovery..."
 	echo "::endgroup::"
-	run_tfcmt_with_exit apply apply -auto-approve "${PLAN_BINARY_FILE}"
+	run_tfcmt_with_exit apply -auto-approve "${PLAN_BINARY_FILE}"
 	;;
 *)
 	echo "::error::❌ Unknown command '${COMMAND}' for run-terraform.sh" >&2

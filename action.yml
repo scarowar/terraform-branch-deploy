@@ -57,6 +57,20 @@ inputs:
     required: false
     default: "false"
 
+outputs:
+  env:
+    description: "Extracted environment"
+    value: ${{ steps.skip.outputs.env }}
+  continue:
+    description: "Continue flag"
+    value: ${{ steps.skip.outputs.continue }}
+  noop:
+    description: "Noop flag"
+    value: ${{ steps.skip.outputs.noop }}
+  sha:
+    description: "Commit SHA"
+    value: ${{ steps.skip.outputs.sha }}
+
 runs:
   using: composite
   steps:
@@ -68,12 +82,23 @@ runs:
       ACTION_REF: ${{ github.action_ref }}
 
   - name: 📥 Checkout Action Repository
+    if: ${{ github.server_url == 'https://github.com' }}
     uses: actions/checkout@v4
     with:
       repository: scarowar/terraform-branch-deploy
       ref: ${{ steps.set_ref.outputs.ref }}
       path: .this-action
-      token: ${{ inputs.github-token }}
+
+  - name: 📥 Clone Action Repository (GHES Workaround)
+    if: ${{ github.server_url != 'https://github.com' }}
+    run: |
+      rm -rf .this-action
+      mkdir -p .this-action
+      git clone https://github.com/scarowar/terraform-branch-deploy.git .this-action
+      cd .this-action
+      git checkout "${{ steps.set_ref.outputs.ref }}"
+      cd - # Go back to the original directory
+    shell: bash
 
   - name: 🛠️ Setup Environment
     id: setup
@@ -81,9 +106,43 @@ runs:
     with:
       skip: ${{ inputs.skip }}
       github-token: ${{ inputs.github-token }}
-      main-action-path: ${{ github.action_path }}
+      main-action-path: ./.this-action
 
   - name: 🛸 IssueOps Command Dispatcher
+    if: ${{ inputs.skip == 'true' }}
+    id: branch-deploy-skip
+    uses: github/branch-deploy@e837cad62fcc6f5f45997baafd69c57ea9b0641d # v10.4.2
+    with:
+      github_token: ${{ inputs.github-token }}
+      noop_trigger: ${{ inputs.noop-trigger }}
+      trigger: ${{ inputs.trigger }}
+      environment_targets: "${{ steps.setup.outputs.available_envs }}"
+      environment: ${{ steps.setup.outputs.default_environment }}
+      production_environments: "${{ steps.setup.outputs.production_environments }}"
+      stable_branch: ${{ inputs.stable_branch }}
+      admins: ${{ inputs.admins }}
+      admins_pat: ${{ inputs.admins_pat }}
+      skip_completing: true
+
+  - name: Delete Issue/PR Comment
+    if: ${{ steps.branch-deploy-skip.outputs.initial_comment_id }}
+    uses: actions/github-script@v7
+    with:
+      github-token: ${{ inputs.github-token }}
+      script: |
+        const owner = context.repo.owner;
+        const repo = context.repo.repo;
+        const comment_id = process.env.COMMENT_ID;
+        await github.rest.issues.deleteComment({
+          owner,
+          repo,
+          comment_id: Number(comment_id)
+        });
+    env:
+      COMMENT_ID: ${{ steps.branch-deploy-skip.outputs.initial_comment_id }}
+
+  - name: 🛸 IssueOps Command Dispatcher
+    if: ${{ inputs.skip != 'true' }}
     id: branch-deploy
     uses: github/branch-deploy@e837cad62fcc6f5f45997baafd69c57ea9b0641d # v10.4.2
     with:
@@ -101,10 +160,10 @@ runs:
     if: ${{ inputs.skip == 'true' }}
     id: skip
     run: |
-      echo "env=${{ steps.branch-deploy.outputs.environment }}" >> $GITHUB_OUTPUT
-      echo "continue=${{ steps.branch-deploy.outputs.continue }}" >> $GITHUB_OUTPUT
-      echo "noop=${{ steps.branch-deploy.outputs.noop }}" >> $GITHUB_OUTPUT
-      echo "sha=${{ steps.branch-deploy.outputs.sha }}" >> $GITHUB_OUTPUT
+      echo "env=${{ steps.branch-deploy-skip.outputs.environment }}" >> $GITHUB_OUTPUT
+      echo "continue=${{ steps.branch-deploy-skip.outputs.continue }}" >> $GITHUB_OUTPUT
+      echo "noop=${{ steps.branch-deploy-skip.outputs.noop }}" >> $GITHUB_OUTPUT
+      echo "sha=${{ steps.branch-deploy-skip.outputs.sha }}" >> $GITHUB_OUTPUT
       exit 0
     shell: bash
 
@@ -124,7 +183,7 @@ runs:
       github_event_issue_number: ${{ github.event.issue.number || github.event.pull_request.number }}
       github_repository_owner: ${{ github.repository_owner }}
       github_repository_name: ${{ github.event.repository.name }}
-      main-action-path: ${{ github.action_path }}
+      main-action-path: ./.this-action
 
   - name: 📋 Perform Plan
     if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.continue == 'true' && steps.branch-deploy.outputs.ref != inputs.stable_branch && steps.branch-deploy.outputs.noop == 'true' }}
@@ -142,7 +201,7 @@ runs:
       github_event_issue_number: ${{ github.event.issue.number || github.event.pull_request.number }}
       github_repository_owner: ${{ github.repository_owner }}
       github_repository_name: ${{ github.event.repository.name }}
-      main-action-path: ${{ github.action_path }}
+      main-action-path: ./.this-action
 
   - name: 🚀 Perform Apply
     if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.continue == 'true' && steps.branch-deploy.outputs.ref != inputs.stable_branch && steps.branch-deploy.outputs.noop == 'false' }}
@@ -160,4 +219,4 @@ runs:
       github_event_issue_number: ${{ github.event.issue.number || github.event.pull_request.number }}
       github_repository_owner: ${{ github.repository_owner }}
       github_repository_name: ${{ github.event.repository.name }}
-      main-action-path: ${{ github.action_path }}
+      main-action-path: ./.this-action
