@@ -1,0 +1,219 @@
+name: 🚀 Execute Terraform Operations
+description: Executes Terraform plan, apply, or rollback operations with comprehensive validation, artifact management, and pull request integration via tfcmt.
+
+inputs:
+  command:
+    description: "The command to run: plan, apply, or rollback"
+    required: true
+  github-token:
+    description: GitHub token
+    required: true
+  terraform-version:
+    description: The version of Terraform CLI to install
+    required: false
+    default: latest
+  working-directory:
+    description: The default path to the Terraform code
+    required: false
+    default: .
+  sha:
+    description: The commit SHA to run against
+    required: true
+  environment:
+    description: The target environment
+    required: true
+  params:
+    description: Dynamic parameters from the issue comment
+    required: false
+  github_run_id:
+    description: The ID of the GitHub Actions run
+    required: true
+  github_actor:
+    description: The user who triggered the action
+    required: true
+  github_event_issue_number:
+    description: The issue or pull request number
+    required: true
+  github_repository_owner:
+    description: The owner of the repository
+    required: true
+  github_repository_name:
+    description: The name of the repository
+    required: true
+  main-action-path:
+    description: Path to the main action directory containing scripts and dependencies.
+    required: true
+
+outputs:
+  tfcmt_exit_code:
+    description: The exit code from the tfcmt command
+    value: ${{ steps.run_tfcmt.outputs.tfcmt_exit_code }}
+
+runs:
+  using: composite
+  steps:
+  - name: 📥 Checkout User Repository with Full History
+    uses: actions/checkout@v4
+    with:
+      ref: ${{ inputs.sha }}
+      fetch-depth: 0
+      path: user-repo
+
+  - name: 🔑 Ensure Scripts are Executable
+    run: |
+      set -euo pipefail
+      echo "🔧 Setting execute permissions for terraform-branch-deploy scripts..."
+      chmod +x ${{ inputs.main-action-path }}/scripts/prepare_tf_branch_deploy.py
+      chmod +x ${{ inputs.main-action-path }}/scripts/run-terraform.sh
+      chmod +x ${{ inputs.main-action-path }}/scripts/manage-git-tags.sh
+      echo "✅ Scripts are now executable"
+    shell: bash
+
+  - name: 📝 Prepare terraform-branch-deploy Commands
+    id: prepare_cmds
+    run: |
+      set -euo pipefail
+      echo "🔧 Preparing Terraform commands for environment '${{ inputs.environment }}'..."
+      source "${GITHUB_WORKSPACE}/.venv-terraform-branch-deploy/bin/activate"
+      python "${{ inputs.main-action-path }}/scripts/prepare_tf_branch_deploy.py" \
+        "${{ inputs.working-directory }}" \
+        "${{ inputs.environment }}" \
+        "${{ inputs.params }}"
+      echo "✅ Terraform commands prepared successfully"
+    shell: bash
+    working-directory: user-repo
+    env:
+      USER_REPO_PATH: ${{ github.workspace }}/user-repo
+      GITHUB_WORKSPACE: ${{ github.workspace }}
+
+  - name: ⚙️ Setup Terraform CLI
+    uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+    with:
+      terraform_version: ${{ inputs.terraform-version }}
+
+  - name: 🌱 Terraform Init
+    id: init
+    run: |
+      set -euo pipefail
+      echo "Initializing Terraform backend and modules..."
+      terraform init ${{ steps.prepare_cmds.outputs.init_args }}
+      echo "✅ Terraform Init completed."
+    shell: bash
+    working-directory: user-repo/${{ steps.prepare_cmds.outputs.working_dir }}
+
+  - name: 🧹 Terraform Format Check
+    id: fmt
+    run: |
+      set -euo pipefail
+      echo "Checking Terraform format..."
+      terraform fmt -check
+      echo "✅ Terraform format check passed."
+    shell: bash
+    working-directory: user-repo/${{ steps.prepare_cmds.outputs.working_dir }}
+
+  - name: ✅ Terraform Validate
+    id: validate
+    run: |
+      set -euo pipefail
+      echo "Validating Terraform configuration..."
+      terraform validate
+      echo "✅ Terraform validation passed."
+    shell: bash
+    working-directory: user-repo/${{ steps.prepare_cmds.outputs.working_dir }}
+
+  - name: 🔍 Find Plan Run ID from Git Tag
+    if: ${{ inputs.command == 'apply' }}
+    id: find_run_id
+    run: |
+      set -euo pipefail
+      echo "::group::🔍 Locating Plan Artifact"
+      git fetch --tags
+      COMMIT_SHA="${{ inputs.sha }}"
+      TARGET_ENV="${{ inputs.environment }}"
+      echo "🔎 Searching for plan tag for commit '$COMMIT_SHA' in environment '$TARGET_ENV'..."
+      TAG=$(git for-each-ref "refs/tags/terraform-branch-deploy/plan/${TARGET_ENV}/*/${COMMIT_SHA}" \
+        --sort=-creatordate --format='%(refname:short)' | head -n 1)
+      if [ -z "$TAG" ]; then
+        echo "::error::🚨 No terraform-branch-deploy plan tag found for commit '$COMMIT_SHA' in environment '$TARGET_ENV'."
+        echo "::error::💡 Ensure a plan was generated for this commit and environment before applying."
+        exit 1
+      fi
+      echo "✅ Found plan tag: $TAG"
+      RUN_ID=$(echo "$TAG" | awk -F/ '{print $4}')
+      if [ -z "$RUN_ID" ]; then
+        echo "::error::🚨 Could not extract RUN_ID from tag '$TAG'."
+        echo "::error::💡 Tag format may be corrupted. Check git tag structure."
+        exit 1
+      fi
+      echo "🎯 Extracted RUN_ID: $RUN_ID"
+      echo "✅ Plan artifact location identified successfully"
+      echo "::endgroup::"
+      echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
+    shell: bash
+    working-directory: user-repo
+
+  - name: ⬇️ Download Plan Binary Artifact
+    if: ${{ inputs.command == 'apply' }}
+    uses: dawidd6/action-download-artifact@ac66b43f0e6a346234dd65d4d0c8fbb31cb316e5 # v11
+    with:
+      github_token: ${{ inputs.github-token }}
+      run_id: ${{ steps.find_run_id.outputs.run_id }}
+      name: terraform-plan-bin-${{ inputs.sha }}
+      path: user-repo/${{ steps.prepare_cmds.outputs.working_dir }}
+
+  - name: 🚀 Run Terraform Command
+    id: run_tfcmt
+    shell: bash
+    run: |
+      set -euo pipefail
+      echo "🔧 Preparing terraform ${{ inputs.command }} execution..."
+      ARGS=""
+      if [ "${{ inputs.command }}" == "plan" ] || [ "${{ inputs.command }}" == "rollback" ]; then
+        ARGS="${{ steps.prepare_cmds.outputs.plan_args }}"
+        echo "📋 Using plan arguments for ${{ inputs.command }} operation"
+      else
+        ARGS="${{ steps.prepare_cmds.outputs.apply_args }}"
+        echo "🚀 Using apply arguments for ${{ inputs.command }} operation"
+      fi
+      echo "🎯 Executing terraform ${{ inputs.command }} with tfcmt integration..."
+      ${{ inputs.main-action-path }}/scripts/run-terraform.sh ${{ inputs.command }} $ARGS
+    env:
+      GITHUB_TOKEN: ${{ inputs.github-token }}
+      GITHUB_EVENT_ISSUE_NUMBER: ${{ inputs.github_event_issue_number }}
+      GITHUB_REPOSITORY_OWNER: ${{ inputs.github_repository_owner }}
+      GITHUB_REPOSITORY_NAME: ${{ inputs.github_repository_name }}
+      SHA: ${{ inputs.sha }}
+    working-directory: user-repo/${{ steps.prepare_cmds.outputs.working_dir }}
+
+  - name: 📦 Upload Plan Binary Artifact
+    if: ${{ inputs.command == 'plan' }}
+    uses: actions/upload-artifact@v4
+    with:
+      name: terraform-plan-bin-${{ inputs.sha }}
+      path: user-repo/${{ steps.prepare_cmds.outputs.working_dir }}/tfplan-${{ inputs.sha }}.binary
+      compression-level: 0
+
+  - name: 🏷️ Tag Commit with Plan Run ID
+    if: ${{ inputs.command == 'plan' }}
+    shell: bash
+    run: |
+      ${{ inputs.main-action-path }}/scripts/manage-git-tags.sh create
+    env:
+      GH_TOKEN: ${{ inputs.github-token }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      RUN_ID: ${{ inputs.github_run_id }}
+      SHA: ${{ inputs.sha }}
+      GITHUB_ACTOR: ${{ inputs.github_actor }}
+    working-directory: user-repo
+
+  - name: 🧹 Cleanup Plan Tag After Apply
+    if: ${{ inputs.command == 'apply' && success() && steps.run_tfcmt.outcome == 'success' }}
+    shell: bash
+    run: |
+      ${{ inputs.main-action-path }}/scripts/manage-git-tags.sh delete
+    env:
+      GH_TOKEN: ${{ inputs.github-token }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      RUN_ID: ${{ steps.find_run_id.outputs.run_id }}
+      SHA: ${{ inputs.sha }}
+    working-directory: user-repo
