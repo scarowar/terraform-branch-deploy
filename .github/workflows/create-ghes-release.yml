@@ -1,0 +1,85 @@
+name: Create GHES Compatible Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build-ghes-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: 🔧 Get version from tag
+        id: get_version
+        run: |
+          raw_tag="${{ github.event.release.tag_name }}"
+          echo "version=${raw_tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: 🌳 Create GHES release branch
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b release/v${{ steps.get_version.outputs.version }}-ghes
+
+      - name: 🔄 Downgrade actions for GHES
+        id: downgrade
+        run: |
+          set -euo pipefail
+          echo "Downgrading actions in action.yml files for GHES compatibility..."
+
+          files_to_change=$(find . -type f -name "action.yml" -print0)
+
+          if [ -z "$files_to_change" ]; then
+            echo "::error::No action.yml files found to process."
+            exit 1
+          fi
+
+          printf '%s' "$files_to_change" | \
+            xargs -0 sed -i 's|actions/upload-artifact@v4|actions/upload-artifact@v3|g'
+
+          echo "✅ Actions downgraded successfully."
+
+      - name: ⬆️ Commit and push changes
+        id: commit_and_push
+        run: |
+          # Check if there are changes to commit
+          if git diff --quiet; then
+            echo "No changes to commit. Skipping commit and push."
+            echo "pushed=false" >> $GITHUB_OUTPUT
+          else
+            git commit -am "chore: downgrade actions for GHES compatibility"
+            git push -u origin release/v${{ steps.get_version.outputs.version }}-ghes
+            echo "pushed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 🎉 Create GHES Release
+        if: steps.commit_and_push.outputs.pushed == 'true'
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.get_version.outputs.version }}"
+          GHES_TAG="v${VERSION}-ghes"
+          RELEASE_BRANCH="release/${GHES_TAG}"
+
+          # Get release notes from the original release, with a fallback for an empty body
+          RELEASE_NOTES=$(gh release view "${{ github.event.release.tag_name }}" --json body --jq .body) || RELEASE_NOTES="See original release for details."
+
+          gh release create "$GHES_TAG" \
+            --target "$RELEASE_BRANCH" \
+            --title "v${VERSION} (GHES)" \
+            --notes "$RELEASE_NOTES"
+
+      - name: 🧹 Cleanup release branch
+        if: always() && steps.commit_and_push.outputs.pushed == 'true'
+        run: |
+          git push origin --delete release/v${{ steps.get_version.outputs.version }}-ghes || true
