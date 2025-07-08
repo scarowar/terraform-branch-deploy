@@ -67,17 +67,10 @@ runs:
     env:
       ACTION_REF: ${{ github.action_ref }}
 
-  - name: 📥 Checkout Action Repository
-    uses: actions/checkout@v4
-    with:
-      repository: scarowar/terraform-branch-deploy
-      ref: ${{ steps.set_ref.outputs.ref }}
-      path: .this-action
-      github-server-url: https://github.com
 
   - name: 🛠️ Setup Environment
     id: setup
-    uses: ./.this-action/actions/setup
+    uses: ./actions/setup
     with:
       skip: ${{ inputs.skip }}
       github-token: ${{ inputs.github-token }}
@@ -110,7 +103,7 @@ runs:
 
   - name: 🚨 Perform Rollback
     if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.continue == 'true' && steps.branch-deploy.outputs.ref == inputs.stable_branch && steps.branch-deploy.outputs.noop == 'false' }}
-    uses: ./.this-action/actions/run
+    uses: ./actions/actions/run
     with:
       command: rollback
       github-token: ${{ inputs.github-token }}
@@ -128,7 +121,7 @@ runs:
 
   - name: 📋 Perform Plan
     if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.continue == 'true' && steps.branch-deploy.outputs.ref != inputs.stable_branch && steps.branch-deploy.outputs.noop == 'true' }}
-    uses: ./.this-action/actions/run
+    uses: ./actions/actions/run
     with:
       command: plan
       github-token: ${{ inputs.github-token }}
@@ -146,7 +139,7 @@ runs:
 
   - name: 🚀 Perform Apply
     if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.continue == 'true' && steps.branch-deploy.outputs.ref != inputs.stable_branch && steps.branch-deploy.outputs.noop == 'false' }}
-    uses: ./.this-action/actions/run
+    uses: ./actions/actions/run
     with:
       command: apply
       github-token: ${{ inputs.github-token }}
