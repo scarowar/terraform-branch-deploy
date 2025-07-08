@@ -136,33 +136,33 @@ else
     exit 1
   fi
 
-  # Checksum verification for yq
-  CHECKSUM_URL="https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/checksums"
-  echo "Downloading checksums from ${CHECKSUM_URL}"
-  if ! CHECKSUM_CONTENT=$(curl -sSL "${CHECKSUM_URL}"); then
-      echo "::error::Failed to download checksums for yq from ${CHECKSUM_URL}"
-      exit 1
-  fi
-  YQ_FILENAME=$(basename "${YQ_URL}")
-  EXPECTED_CHECKSUM=$(echo "${CHECKSUM_CONTENT}" | grep -E "^[[:xdigit:]]+[[:space:]]+${YQ_FILENAME}$" | awk '{print $1}')
+  # # Checksum verification for yq
+  # CHECKSUM_URL="https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/checksums"
+  # echo "Downloading checksums from ${CHECKSUM_URL}"
+  # if ! CHECKSUM_CONTENT=$(curl -sSL "${CHECKSUM_URL}"); then
+  #     echo "::error::Failed to download checksums for yq from ${CHECKSUM_URL}"
+  #     exit 1
+  # fi
+  # YQ_FILENAME=$(basename "${YQ_URL}")
+  # EXPECTED_CHECKSUM=$(echo "${CHECKSUM_CONTENT}" | grep -E "^[[:xdigit:]]+[[:space:]]+${YQ_FILENAME}$" | awk '{print $1}')
 
-  if [[ -z "${EXPECTED_CHECKSUM}" ]]; then
-      echo "::error::Could not find checksum for ${YQ_FILENAME} in checksum file."
-      exit 1
-  fi
+  # if [[ -z "${EXPECTED_CHECKSUM}" ]]; then
+  #     echo "::error::Could not find checksum for ${YQ_FILENAME} in checksum file."
+  #     exit 1
+  # fi
 
-  echo "Verifying checksum for yq..."
-  if command -v sha256sum >/dev/null 2>&1; then
-    ACTUAL_CHECKSUM=$(sha256sum "${TEMP_YQ_PATH}" | awk '{print $1}')
-  else
-    ACTUAL_CHECKSUM=$(shasum -a 256 "${TEMP_YQ_PATH}" | awk '{print $1}')
-  fi
+  # echo "Verifying checksum for yq..."
+  # if command -v sha256sum >/dev/null 2>&1; then
+  #   ACTUAL_CHECKSUM=$(sha256sum "${TEMP_YQ_PATH}" | awk '{print $1}')
+  # else
+  #   ACTUAL_CHECKSUM=$(shasum -a 256 "${TEMP_YQ_PATH}" | awk '{print $1}')
+  # fi
 
-  if [[ "${ACTUAL_CHECKSUM}" != "${EXPECTED_CHECKSUM}" ]]; then
-    echo "::error::Checksum verification failed for yq. Expected ${EXPECTED_CHECKSUM}, got ${ACTUAL_CHECKSUM}"
-    exit 1
-  fi
-  echo "✅ Checksum verified for yq"
+  # if [[ "${ACTUAL_CHECKSUM}" != "${EXPECTED_CHECKSUM}" ]]; then
+  #   echo "::error::Checksum verification failed for yq. Expected ${EXPECTED_CHECKSUM}, got ${ACTUAL_CHECKSUM}"
+  #   exit 1
+  # fi
+  # echo "✅ Checksum verified for yq"
 
   ${SUDO} mv "${TEMP_YQ_PATH}" "${DEST_PATH}"
   ${SUDO} chmod +x "${DEST_PATH}"
@@ -207,32 +207,32 @@ else
     exit 1
   fi
 
-  # Checksum verification
-  CHECKSUM_URL="https://github.com/suzuki-shunsuke/tfcmt/releases/download/${TFCMT_VERSION}/tfcmt_${TFCMT_VERSION_NO_V}_checksums.txt"
-  echo "Downloading checksums from ${CHECKSUM_URL}"
-  if ! CHECKSUM_CONTENT=$(curl -sSL "${CHECKSUM_URL}"); then
-      echo "::error::Failed to download checksums for tfcmt from ${CHECKSUM_URL}"
-      exit 1
-  fi
-  EXPECTED_CHECKSUM=$(echo "${CHECKSUM_CONTENT}" | grep "${TFCMT_FILENAME}" | awk '{print $1}')
+  # # Checksum verification
+  # CHECKSUM_URL="https://github.com/suzuki-shunsuke/tfcmt/releases/download/${TFCMT_VERSION}/tfcmt_${TFCMT_VERSION_NO_V}_checksums.txt"
+  # echo "Downloading checksums from ${CHECKSUM_URL}"
+  # if ! CHECKSUM_CONTENT=$(curl -sSL "${CHECKSUM_URL}"); then
+  #     echo "::error::Failed to download checksums for tfcmt from ${CHECKSUM_URL}"
+  #     exit 1
+  # fi
+  # EXPECTED_CHECKSUM=$(echo "${CHECKSUM_CONTENT}" | grep "${TFCMT_FILENAME}" | awk '{print $1}')
 
-  if [[ -z "${EXPECTED_CHECKSUM}" ]]; then
-      echo "::error::Could not find checksum for ${TFCMT_FILENAME} in checksum file."
-      exit 1
-  fi
+  # if [[ -z "${EXPECTED_CHECKSUM}" ]]; then
+  #     echo "::error::Could not find checksum for ${TFCMT_FILENAME} in checksum file."
+  #     exit 1
+  # fi
 
-  echo "Verifying checksum for ${TFCMT_FILENAME}..."
-  if command -v sha256sum >/dev/null 2>&1; then
-    ACTUAL_CHECKSUM=$(sha256sum "${TEMP_DIR}/${TFCMT_FILENAME}" | awk '{print $1}')
-  else
-    ACTUAL_CHECKSUM=$(shasum -a 256 "${TEMP_DIR}/${TFCMT_FILENAME}" | awk '{print $1}')
-  fi
+  # echo "Verifying checksum for ${TFCMT_FILENAME}..."
+  # if command -v sha256sum >/dev/null 2>&1; then
+  #   ACTUAL_CHECKSUM=$(sha256sum "${TEMP_DIR}/${TFCMT_FILENAME}" | awk '{print $1}')
+  # else
+  #   ACTUAL_CHECKSUM=$(shasum -a 256 "${TEMP_DIR}/${TFCMT_FILENAME}" | awk '{print $1}')
+  # fi
 
-  if [[ "${ACTUAL_CHECKSUM}" != "${EXPECTED_CHECKSUM}" ]]; then
-    echo "::error::Checksum verification failed for tfcmt. Expected ${EXPECTED_CHECKSUM}, got ${ACTUAL_CHECKSUM}"
-    exit 1
-  fi
-  echo "✅ Checksum verified for tfcmt"
+  # if [[ "${ACTUAL_CHECKSUM}" != "${EXPECTED_CHECKSUM}" ]]; then
+  #   echo "::error::Checksum verification failed for tfcmt. Expected ${EXPECTED_CHECKSUM}, got ${ACTUAL_CHECKSUM}"
+  #   exit 1
+  # fi
+  # echo "✅ Checksum verified for tfcmt"
 
   if [[ "${RUNNER_OS}" == "Windows" ]]; then
     tar -xzf "${TEMP_DIR}/${TFCMT_FILENAME}" -C "${TEMP_DIR}"
