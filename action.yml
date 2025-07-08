@@ -73,7 +73,7 @@ runs:
       repository: scarowar/terraform-branch-deploy
       ref: ${{ steps.set_ref.outputs.ref }}
       path: .this-action
-      token: ${{ inputs.github-token }}
+      github-server-url: https://github.com
 
   - name: 🛠️ Setup Environment
     id: setup
