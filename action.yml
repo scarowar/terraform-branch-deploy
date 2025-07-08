@@ -67,11 +67,14 @@ runs:
     env:
       ACTION_REF: ${{ github.action_ref }}
 
-
+  - name: Set Composite Action Ref Output
+    id: composite_ref_output
+    run: echo "composite_action_ref=${{ steps.set_ref.outputs.ref }}" >> $GITHUB_OUTPUT
+    shell: bash
 
   - name: 🛠️ Setup Environment
     id: setup
-    uses: scarowar/terraform-branch-deploy/actions/setup@${{ steps.set_ref.outputs.ref }}
+    uses: scarowar/terraform-branch-deploy/actions/setup@${{ steps.composite_ref_output.outputs.composite_action_ref }}
     with:
       skip: ${{ inputs.skip }}
       github-token: ${{ inputs.github-token }}
@@ -105,7 +108,7 @@ runs:
 
   - name: 🚨 Perform Rollback
     if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.continue == 'true' && steps.branch-deploy.outputs.ref == inputs.stable_branch && steps.branch-deploy.outputs.noop == 'false' }}
-    uses: scarowar/terraform-branch-deploy/actions/run@${{ steps.set_ref.outputs.ref }}
+    uses: scarowar/terraform-branch-deploy/actions/run@${{ steps.composite_ref_output.outputs.composite_action_ref }}
     with:
       command: rollback
       github-token: ${{ inputs.github-token }}
@@ -124,7 +127,7 @@ runs:
 
   - name: 📋 Perform Plan
     if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.continue == 'true' && steps.branch-deploy.outputs.ref != inputs.stable_branch && steps.branch-deploy.outputs.noop == 'true' }}
-    uses: scarowar/terraform-branch-deploy/actions/run@${{ steps.set_ref.outputs.ref }}
+    uses: scarowar/terraform-branch-deploy/actions/run@${{ steps.composite_ref_output.outputs.composite_action_ref }}
     with:
       command: plan
       github-token: ${{ inputs.github-token }}
@@ -143,7 +146,7 @@ runs:
 
   - name: 🚀 Perform Apply
     if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.continue == 'true' && steps.branch-deploy.outputs.ref != inputs.stable_branch && steps.branch-deploy.outputs.noop == 'false' }}
-    uses: scarowar/terraform-branch-deploy/actions/run@${{ steps.set_ref.outputs.ref }}
+    uses: scarowar/terraform-branch-deploy/actions/run@${{ steps.composite_ref_output.outputs.composite_action_ref }}
     with:
       command: apply
       github-token: ${{ inputs.github-token }}
