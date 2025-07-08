@@ -144,7 +144,7 @@ else
       exit 1
   fi
   YQ_FILENAME=$(basename "${YQ_URL}")
-  EXPECTED_CHECKSUM=$(echo "${CHECKSUM_CONTENT}" | grep "${YQ_FILENAME}" | awk '{print $1}')
+  EXPECTED_CHECKSUM=$(echo "${CHECKSUM_CONTENT}" | grep -E "^[[:xdigit:]]+[[:space:]]+${YQ_FILENAME}$" | awk '{print $1}')
 
   if [[ -z "${EXPECTED_CHECKSUM}" ]]; then
       echo "::error::Could not find checksum for ${YQ_FILENAME} in checksum file."
