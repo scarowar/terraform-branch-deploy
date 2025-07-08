@@ -55,7 +55,7 @@ run_tfcmt() {
 		--sha="${SHA}"
 		--pr="${TFCMT_ISSUE_NUMBER}"
 		--
-		terraform "${tf_args[@]}"
+		terraform "${tf_command}" "${tf_args[@]}"
 	)
 
 	echo "🚀 Executing: ${tfcmt_command[*]}"
