@@ -48,15 +48,21 @@ run_tfcmt() {
 
 	echo "🔧 Preparing tfcmt command for terraform ${tf_command}..."
 
+	local terraform_command_and_args=(
+    terraform
+    "${tf_command}"
+    "${tf_args[@]}"
+  )
+
 	local tfcmt_command=(
-		tfcmt "${tf_command}"
-		--owner="${GITHUB_REPOSITORY_OWNER}"
-		--repo="${GITHUB_REPOSITORY_NAME}"
-		--sha="${SHA}"
-		--pr="${TFCMT_ISSUE_NUMBER}"
-		--
-		terraform "${tf_command}" "${tf_args[@]}"
-	)
+    tfcmt "${tf_command}"
+    --owner="${GITHUB_REPOSITORY_OWNER}"
+    --repo="${GITHUB_REPOSITORY_NAME}"
+    --sha="${SHA}"
+    --pr="${TFCMT_ISSUE_NUMBER}"
+    --
+    "${terraform_command_and_args[@]}"
+  )
 
 	echo "🚀 Executing: ${tfcmt_command[*]}"
 	"${tfcmt_command[@]}"
