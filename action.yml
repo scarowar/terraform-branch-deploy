@@ -67,14 +67,23 @@ runs:
     env:
       ACTION_REF: ${{ github.action_ref }}
 
-  - name: 📥 Checkout Action Repository
-    uses: actions/checkout@v4
-    with:
-      repository: scarowar/terraform-branch-deploy
-      ref: ${{ steps.set_ref.outputs.ref }}
-      path: .this-action
-      token: ''
-      github-server-url: 'https://github.com'
+  # - name: 📥 Checkout Action Repository
+  #   uses: actions/checkout@v4
+  #   with:
+  #     repository: scarowar/terraform-branch-deploy
+  #     ref: ${{ steps.set_ref.outputs.ref }}
+  #     path: .this-action
+  #     token: ''
+  #     github-server-url: 'https://github.com'
+
+  - name: 📥 Clone Action Repository (Direct Git Clone for Public Repo)
+    run: |
+      mkdir -p .this-action
+      git clone https://github.com/scarowar/terraform-branch-deploy.git .this-action
+      cd .this-action
+      git checkout "${{ steps.set_ref.outputs.ref }}"
+      cd - # Go back to the original directory
+    shell: bash
 
   - name: 🛠️ Setup Environment
     id: setup
