@@ -91,7 +91,7 @@ runs:
     with:
       skip: ${{ inputs.skip }}
       github-token: ${{ inputs.github-token }}
-      main-action-path: ${{ github.action_path }}
+      main-action-path: ./.this-action
 
   - name: 🛸 IssueOps Command Dispatcher
     id: branch-deploy
@@ -134,7 +134,7 @@ runs:
       github_event_issue_number: ${{ github.event.issue.number || github.event.pull_request.number }}
       github_repository_owner: ${{ github.repository_owner }}
       github_repository_name: ${{ github.event.repository.name }}
-      main-action-path: ${{ github.action_path }}
+      main-action-path: ./.this-action
 
   - name: 📋 Perform Plan
     if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.continue == 'true' && steps.branch-deploy.outputs.ref != inputs.stable_branch && steps.branch-deploy.outputs.noop == 'true' }}
@@ -152,7 +152,7 @@ runs:
       github_event_issue_number: ${{ github.event.issue.number || github.event.pull_request.number }}
       github_repository_owner: ${{ github.repository_owner }}
       github_repository_name: ${{ github.event.repository.name }}
-      main-action-path: ${{ github.action_path }}
+      main-action-path: ./.this-action
 
   - name: 🚀 Perform Apply
     if: ${{ inputs.skip != 'true' && steps.branch-deploy.outputs.continue == 'true' && steps.branch-deploy.outputs.ref != inputs.stable_branch && steps.branch-deploy.outputs.noop == 'false' }}
@@ -170,4 +170,4 @@ runs:
       github_event_issue_number: ${{ github.event.issue.number || github.event.pull_request.number }}
       github_repository_owner: ${{ github.repository_owner }}
       github_repository_name: ${{ github.event.repository.name }}
-      main-action-path: ${{ github.action_path }}
+      main-action-path: ./.this-action
