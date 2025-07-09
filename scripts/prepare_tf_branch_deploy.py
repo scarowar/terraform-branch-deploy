@@ -4,7 +4,6 @@
 import sys
 import os
 import yaml
-import shlex
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -466,10 +465,14 @@ def parse_dynamic_flags(dynamic_params_str: str) -> list[str]:
     ]
     dynamic_flags: List[str] = []
 
-    parsed_params = shlex.split(dynamic_params_str)
-    log_debug(f"Parsed dynamic params from comment: {parsed_params}")
+    # Split on newlines or pipe (|) separator, but do not use shlex.split to preserve quotes
+    # Accept both | and newlines as separators for compatibility
+    raw_params = [
+        p.strip() for p in dynamic_params_str.replace("\n", "|").split("|") if p.strip()
+    ]
+    log_debug(f"Parsed dynamic params from comment (quote-preserving): {raw_params}")
 
-    for param in parsed_params:
+    for param in raw_params:
         is_allowed = False
         for allowed_prefix in allowed_dynamic_flags_prefixes:
             if param.startswith(allowed_prefix):
