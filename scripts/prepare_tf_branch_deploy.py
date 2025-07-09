@@ -502,11 +502,19 @@ def write_outputs(
         final_apply_args_str (str): The apply args string.
     """
     try:
+        import base64
+
         with open(output_path, "a") as f:
             f.write(f"working_dir={effective_working_dir_for_output}\n")
-            f.write(f"init_args={final_init_args_str}\n")
-            f.write(f"plan_args={final_plan_args_str}\n")
-            f.write(f"apply_args={final_apply_args_str}\n")
+            f.write(
+                f"init_args_b64={base64.b64encode(final_init_args_str.encode()).decode()}\n"
+            )
+            f.write(
+                f"plan_args_b64={base64.b64encode(final_plan_args_str.encode()).decode()}\n"
+            )
+            f.write(
+                f"apply_args_b64={base64.b64encode(final_apply_args_str.encode()).decode()}\n"
+            )
         log_debug(f"Successfully wrote outputs to GITHUB_OUTPUT: {output_path}")
     except Exception as e:
         error_exit(f"Failed to write to GITHUB_OUTPUT file '{output_path}': {e}")
@@ -568,9 +576,10 @@ def main() -> None:
     dynamic_flags = parse_dynamic_flags(dynamic_params_str)
     plan_args_list.extend(dynamic_flags)
 
-    final_init_args_str: str = shlex.join(init_args_list)
-    final_plan_args_str: str = shlex.join(plan_args_list)
-    final_apply_args_str: str = shlex.join(apply_args_list)
+    # Output as newline-separated for safe array handling in shell
+    final_init_args_str: str = "\n".join(init_args_list)
+    final_plan_args_str: str = "\n".join(plan_args_list)
+    final_apply_args_str: str = "\n".join(apply_args_list)
 
     write_outputs(
         output_path,
@@ -581,9 +590,9 @@ def main() -> None:
     )
     print_summary(
         effective_working_dir_for_output,
-        final_init_args_str,
-        final_plan_args_str,
-        final_apply_args_str,
+        final_init_args_str.replace("\n", " | "),
+        final_plan_args_str.replace("\n", " | "),
+        final_apply_args_str.replace("\n", " | "),
     )
 
 

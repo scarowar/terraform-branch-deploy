@@ -167,16 +167,29 @@ runs:
     run: |
       set -euo pipefail
       echo "🔧 Preparing terraform ${{ inputs.command }} execution..."
-      ARGS=""
+
+      # Helper to decode base64 and split into array
+      decode_and_split() {
+        local var_b64="$1"
+        local arr_name="$2"
+        local decoded
+        decoded=$(echo "$var_b64" | base64 -d)
+        # shellcheck disable=SC2034
+        IFS=$'\n' read -r -d '' -a "$arr_name" < <(printf '%s\0' "$decoded")
+      }
+
       if [ "${{ inputs.command }}" == "plan" ] || [ "${{ inputs.command }}" == "rollback" ]; then
-        ARGS="${{ steps.prepare_cmds.outputs.plan_args }}"
-        echo "📋 Using plan arguments for ${{ inputs.command }} operation"
+        decode_and_split "${{ steps.prepare_cmds.outputs.plan_args_b64 }}" PLAN_ARGS
+        echo "📋 Using plan arguments for ${{ inputs.command }} operation: ${PLAN_ARGS[*]}"
+        ARGS=("${PLAN_ARGS[@]}")
       else
-        ARGS="${{ steps.prepare_cmds.outputs.apply_args }}"
-        echo "🚀 Using apply arguments for ${{ inputs.command }} operation"
+        decode_and_split "${{ steps.prepare_cmds.outputs.apply_args_b64 }}" APPLY_ARGS
+        echo "🚀 Using apply arguments for ${{ inputs.command }} operation: ${APPLY_ARGS[*]}"
+        ARGS=("${APPLY_ARGS[@]}")
       fi
+
       echo "🎯 Executing terraform ${{ inputs.command }} with tfcmt integration..."
-      ${GITHUB_WORKSPACE}/${{ inputs.main-action-path }}/scripts/run-terraform.sh ${{ inputs.command }} $ARGS
+      ${GITHUB_WORKSPACE}/${{ inputs.main-action-path }}/scripts/run-terraform.sh ${{ inputs.command }} "${ARGS[@]}"
     env:
       GITHUB_TOKEN: ${{ inputs.github-token }}
       GITHUB_EVENT_ISSUE_NUMBER: ${{ inputs.github_event_issue_number }}
