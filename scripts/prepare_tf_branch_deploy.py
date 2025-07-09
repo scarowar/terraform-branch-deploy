@@ -568,9 +568,9 @@ def main() -> None:
     dynamic_flags = parse_dynamic_flags(dynamic_params_str)
     plan_args_list.extend(dynamic_flags)
 
-    final_init_args_str: str = " ".join(shlex.quote(arg) for arg in init_args_list)
-    final_plan_args_str: str = " ".join(shlex.quote(arg) for arg in plan_args_list)
-    final_apply_args_str: str = " ".join(shlex.quote(arg) for arg in apply_args_list)
+    final_init_args_str: str = shlex.join(init_args_list)
+    final_plan_args_str: str = shlex.join(plan_args_list)
+    final_apply_args_str: str = shlex.join(apply_args_list)
 
     write_outputs(
         output_path,
