@@ -96,7 +96,18 @@ runs:
     run: |
       set -euo pipefail
       echo "Initializing Terraform backend and modules..."
-      terraform init ${{ steps.prepare_cmds.outputs.init_args }}
+      # Helper to decode base64 and split into array
+      decode_and_split() {
+        local var_b64="$1"
+        local arr_name="$2"
+        local decoded
+        decoded=$(echo "$var_b64" | base64 -d)
+        # shellcheck disable=SC2034
+        IFS=$'\n' read -r -d '' -a "$arr_name" < <(printf '%s\0' "$decoded")
+      }
+
+      decode_and_split "${{ steps.prepare_cmds.outputs.init_args_b64 }}" INIT_ARGS
+      terraform init -input=false "${INIT_ARGS[@]}"
       echo "✅ Terraform Init completed."
     shell: bash
     working-directory: user-repo/${{ steps.prepare_cmds.outputs.working_dir }}
