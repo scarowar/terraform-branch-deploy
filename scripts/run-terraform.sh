@@ -134,7 +134,7 @@ rollback)
 	echo "::group::📋 Generating Rollback Plan"
 	echo "🔍 Planning rollback deployment to validate stable branch state..."
 	echo "📁 Rollback plan will be saved as: ${PLAN_BINARY_FILE}"
-	run_tfcmt_with_exit plan "$@" -out="${PLAN_BINARY_FILE}"
+	run_tfcmt plan "$@" -out="${PLAN_BINARY_FILE}"
 	plan_exit_code=$?
 	echo "::endgroup::"
 
