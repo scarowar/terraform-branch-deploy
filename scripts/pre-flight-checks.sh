@@ -4,11 +4,16 @@ set -euo pipefail
 echo "--- Starting Pre-flight Checks ---"
 
 echo "::group::Validate Configuration File"
+echo "USER_REPO_PATH=${USER_REPO_PATH:-unset}"
+CONFIG_FILE="${USER_REPO_PATH}/.tf-branch-deploy.yml"
+echo "CONFIG_FILE=${CONFIG_FILE}"
+ls -l "${CONFIG_FILE}" || echo "Config file not found!"
+cat "${CONFIG_FILE}" || echo "Cannot read config file!"
+yq --version || echo "yq not found!"
 if [[ -z "${USER_REPO_PATH:-}" ]]; then
   echo "::error::USER_REPO_PATH environment variable is required but not set"
   exit 1
 fi
-CONFIG_FILE="${USER_REPO_PATH}/.tf-branch-deploy.yml"
 
 # Check if configuration file exists and validate its contents
 if [[ -f "${CONFIG_FILE}" ]]; then
