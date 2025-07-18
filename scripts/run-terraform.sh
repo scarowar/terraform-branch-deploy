@@ -49,10 +49,10 @@ run_tfcmt() {
 	echo "🔧 Preparing tfcmt command for terraform ${tf_command}..."
 
 	local terraform_command_and_args=(
-    terraform
-    "${tf_command}"
-    "${tf_args[@]}"
-  )
+  	terraform
+  	"${tf_command}"
+  	"${tf_args[@]}"
+	)
 
 	local tfcmt_command=(
     tfcmt "${tf_command}"
@@ -134,7 +134,7 @@ rollback)
 	echo "::group::📋 Generating Rollback Plan"
 	echo "🔍 Planning rollback deployment to validate stable branch state..."
 	echo "📁 Rollback plan will be saved as: ${PLAN_BINARY_FILE}"
-	run_tfcmt plan "$@" -out="${PLAN_BINARY_FILE}"
+	run_tfcmt_with_exit plan "$@" -out="${PLAN_BINARY_FILE}"
 	plan_exit_code=$?
 	echo "::endgroup::"
 

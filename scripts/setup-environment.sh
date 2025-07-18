@@ -143,7 +143,6 @@ fi
 if [[ "${SKIP_MODE:-false}" != "true" ]]; then
   echo "::group::Install CLI tool (tfcmt)"
   TFCMT_VERSION="${TFCMT_VERSION:-v4.14.7}"
-  TFCMT_VERSION_NO_V="${TFCMT_VERSION#v}"
   if command -v tfcmt >/dev/null 2>&1; then
     echo "✅ tfcmt is already installed. Version:"
     tfcmt --version

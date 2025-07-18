@@ -60,7 +60,7 @@ runs:
       run: |
         set -euo pipefail
         chmod +x ${{ inputs.main-action-path }}/scripts/setup-environment.sh
-        SKIP_MODE=${{ inputs.skip }} ${{ inputs.main-action-path }}/scripts/setup-environment.sh
+        SKIP_MODE="${{ inputs.skip }}" ${{ inputs.main-action-path }}/scripts/setup-environment.sh
       env:
         GH_TOKEN: ${{ inputs.github-token }}
         RUNNER_OS: ${{ runner.os }}
