@@ -211,7 +211,7 @@ runs:
 
   - name: 📦 Upload Plan Binary Artifact
     if: ${{ inputs.command == 'plan' }}
-    uses: actions/upload-artifact@v3
+    uses: actions/upload-artifact@v4
     with:
       name: terraform-plan-bin-${{ inputs.sha }}
       path: user-repo/${{ steps.prepare_cmds.outputs.working_dir }}/tfplan-${{ inputs.sha }}.binary
