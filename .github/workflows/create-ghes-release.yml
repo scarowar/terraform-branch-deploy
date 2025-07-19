@@ -39,14 +39,14 @@ jobs:
           echo "Downgrading actions in action.yml files for GHES compatibility..."
 
 
-          found_files=$(find . -type f -name "action.yml" | wc -l)
-          if [ "$found_files" -eq 0 ]; then
+
+          if ! find . -type f -name 'action.yml' -print -quit | grep -q .; then
             echo "::warning::No action.yml files found to process. Skipping downgrade step."
             exit 0
           fi
 
           find . -type f -name "action.yml" -print0 | \
-            xargs -0 sed -i -E 's|actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02([[:space:]]*#.*)?$|actions/upload-artifact@v3|g'
+            xargs -0 sed -i -E 's|actions/upload-artifact@[0-9a-fA-F]{7,40}([[:space:]]*#.*)?$|actions/upload-artifact@v3|g'
 
           echo "✅ Actions downgraded successfully."
 
