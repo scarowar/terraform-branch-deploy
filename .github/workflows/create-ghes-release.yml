@@ -38,15 +38,15 @@ jobs:
           set -euo pipefail
           echo "Downgrading actions in action.yml files for GHES compatibility..."
 
-          files_to_change=$(find . -type f -name "action.yml" -print0)
 
-          if [ -z "$files_to_change" ]; then
-            echo "::error::No action.yml files found to process."
-            exit 1
+          found_files=$(find . -type f -name "action.yml" | wc -l)
+          if [ "$found_files" -eq 0 ]; then
+            echo "::warning::No action.yml files found to process. Skipping downgrade step."
+            exit 0
           fi
 
-          printf '%s' "$files_to_change" | \
-            xargs -0 sed -i 's|actions/upload-artifact@v4|actions/upload-artifact@v3|g'
+          find . -type f -name "action.yml" -print0 | \
+            xargs -0 sed -i -E 's|actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02([[:space:]]*#.*)?$|actions/upload-artifact@v3|g'
 
           echo "✅ Actions downgraded successfully."
 
@@ -58,7 +58,7 @@ jobs:
             echo "No changes to commit. Skipping commit and push."
             echo "pushed=false" >> $GITHUB_OUTPUT
           else
-            git commit -am "chore: downgrade actions for GHES compatibility"
+            git commit -am "chore: downgrade upload-artifact for ghes compatibility"
             git push -u origin release/v${{ steps.get_version.outputs.version }}-ghes
             echo "pushed=true" >> $GITHUB_OUTPUT
           fi
@@ -77,7 +77,8 @@ jobs:
           gh release create "$GHES_TAG" \
             --target "$RELEASE_BRANCH" \
             --title "v${VERSION} (GHES)" \
-            --notes "$RELEASE_NOTES"
+            --notes "$RELEASE_NOTES" \
+            --latest=false
 
       - name: 🧹 Cleanup release branch
         if: always() && steps.commit_and_push.outputs.pushed == 'true'
