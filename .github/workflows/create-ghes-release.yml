@@ -38,15 +38,13 @@ jobs:
           set -euo pipefail
           echo "Downgrading actions in action.yml files for GHES compatibility..."
 
-          files_to_change=$(find . -type f -name "action.yml" -print0)
-
-          if [ -z "$files_to_change" ]; then
-            echo "::error::No action.yml files found to process."
-            exit 1
+          if ! find . -type f -name 'action.yml' -print -quit | grep -q .; then
+            echo "::warning::No action.yml files found to process. Skipping downgrade step."
+            exit 0
           fi
 
-          printf '%s' "$files_to_change" | \
-            xargs -0 sed -i 's|actions/upload-artifact@v4|actions/upload-artifact@v3|g'
+          find . -type f -name "action.yml" -exec \
+            sed -i -E 's|actions/upload-artifact@[0-9a-fA-F]{7,40}([[:space:]]*#.*)?$|actions/upload-artifact@v3|g' {} +
 
           echo "✅ Actions downgraded successfully."
 
@@ -58,7 +56,7 @@ jobs:
             echo "No changes to commit. Skipping commit and push."
             echo "pushed=false" >> $GITHUB_OUTPUT
           else
-            git commit -am "chore: downgrade actions for GHES compatibility"
+            git commit -am "chore: downgrade upload-artifact for ghes compatibility"
             git push -u origin release/v${{ steps.get_version.outputs.version }}-ghes
             echo "pushed=true" >> $GITHUB_OUTPUT
           fi
@@ -73,11 +71,14 @@ jobs:
 
           # Get release notes from the original release, with a fallback for an empty body
           RELEASE_NOTES=$(gh release view "${{ github.event.release.tag_name }}" --json body --jq .body) || RELEASE_NOTES="See original release for details."
+          RELEASE_NOTES_FILE=$(mktemp)
+          printf '%s' "$RELEASE_NOTES" >"$RELEASE_NOTES_FILE"
 
           gh release create "$GHES_TAG" \
             --target "$RELEASE_BRANCH" \
             --title "v${VERSION} (GHES)" \
-            --notes "$RELEASE_NOTES"
+            --notes-file "$RELEASE_NOTES_FILE" \
+            --latest=false
 
       - name: 🧹 Cleanup release branch
         if: always() && steps.commit_and_push.outputs.pushed == 'true'
