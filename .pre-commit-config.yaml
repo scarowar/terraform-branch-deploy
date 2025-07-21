@@ -52,5 +52,5 @@ repos:
     hooks:
       - id: pip-compile
         name: pip-compile requirements.in
-        args: [requirements.in]
+        args: [--generate-hashes, requirements.in]
         files: ^requirements\.(in|txt)$
