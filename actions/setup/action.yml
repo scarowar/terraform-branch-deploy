@@ -44,13 +44,34 @@ runs:
         mode: fail
         comment: "true"
 
+    - name: 🔍 Check for Node.js
+      id: check_node
+      shell: bash
+      run: |
+        if command -v node >/dev/null 2>&1; then
+          echo "found=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "found=false" >> "$GITHUB_OUTPUT"
+        fi
+
     - name: 🌐 Setup Node.js Environment
+      if: ${{ steps.check_node.outputs.found == 'false' }}
       uses: actions/setup-node@v4
       with:
         node-version: "20"
 
+    - name: 🔍 Check for Python 3
+      id: check_python
+      shell: bash
+      run: |
+        if command -v python3 >/dev/null 2>&1; then
+          echo "found=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "found=false" >> "$GITHUB_OUTPUT"
+        fi
+
     - name: 🐍 Setup Python Environment
-      if: ${{ inputs.skip != 'true' }}
+      if: ${{ inputs.skip != 'true' && steps.check_python.outputs.found == 'false' }}
       uses: actions/setup-python@v5
       with:
         python-version: "3.12"
