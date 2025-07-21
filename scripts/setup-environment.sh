@@ -237,13 +237,13 @@ if [[ "${SKIP_MODE:-false}" != "true" ]]; then
   fi
   echo "Python virtual environment activated."
   echo "Upgrading pip..."
-  if ! pip install --upgrade pip; then
+  if ! pip install --upgrade pip==25.1.1; then
     echo "::error::Failed to upgrade pip"
     exit 1
   fi
   echo "pip upgraded."
   echo "Installing Python dependencies from requirements.txt..."
-  if ! pip install -r "${SELF_ACTION_PATH}/scripts/requirements.txt"; then
+  if ! pip install --require-hashes -r "${SELF_ACTION_PATH}/scripts/requirements.txt"; then
     echo "::error::Failed to install Python dependencies"
     exit 1
   fi
