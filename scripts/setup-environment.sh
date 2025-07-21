@@ -236,14 +236,20 @@ if [[ "${SKIP_MODE:-false}" != "true" ]]; then
     exit 1
   fi
   echo "Python virtual environment activated."
-  echo "Upgrading pip..."
-  if ! pip install --upgrade pip; then
-    echo "::error::Failed to upgrade pip"
+  PIP_VERSION="${PIP_VERSION:-25.1.1}"
+  echo "Upgrading pip to $PIP_VERSION..."
+  if ! pip install --upgrade pip=="$PIP_VERSION"; then
+    echo "::error::Failed to upgrade pip to $PIP_VERSION"
     exit 1
   fi
-  echo "pip upgraded."
+  echo "pip upgrade complete."
   echo "Installing Python dependencies from requirements.txt..."
-  if ! pip install -r "${SELF_ACTION_PATH}/scripts/requirements.txt"; then
+  REQ_FILE="${SELF_ACTION_PATH:-$(dirname "${BASH_SOURCE[0]}")/..}/scripts/requirements.txt"
+  if ! [[ -f "$REQ_FILE" ]]; then
+    echo "::error::requirements.txt not found at $REQ_FILE"
+    exit 1
+  fi
+  if ! pip install --require-hashes -r "$REQ_FILE"; then
     echo "::error::Failed to install Python dependencies"
     exit 1
   fi
