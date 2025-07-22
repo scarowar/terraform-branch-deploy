@@ -8,7 +8,7 @@
 ![Dependabot](https://img.shields.io/badge/dependabot-enabled-brightgreen?logo=dependabot)
 [![pre-commit.ci status](https://results.pre-commit.ci/badge/github/scarowar/terraform-branch-deploy/main.svg)](https://results.pre-commit.ci/latest/github/scarowar/terraform-branch-deploy/main)
 
-**terraform-branch-deploy** brings the power of [IssueOps](https://issue-ops.github.io/docs/) to your infrastructure. Comment `.plan` or `.apply` on any pull request to deploy Terraform changes **before** merging—making your main branch always stable and deployable.
+**terraform-branch-deploy** brings the power of [IssueOps](https://issue-ops.github.io/docs/) to your infrastructure. Simply comment `.plan to <env>` and `.apply to <env>` on any pull request to preview and deploy Terraform changes to a specific environment—keeping your main branch stable and always deployable.
 
 ## ✨ Why You'll Love It
 
@@ -23,8 +23,8 @@
 
 | Command | What it does |
 |---------|-------------|
-| `.plan` | Preview changes for the default environment |
-| `.apply` | Deploy changes for the default environment |
+| `.plan to <env>` | Preview changes for a specific environment (e.g., dev, staging, prod) |
+| `.apply to <env>` | Deploy changes to a specific environment |
 | `.plan to staging` | Preview changes for staging environment |
 | `.apply to staging` | Deploy changes to staging environment |
 | `.apply main to prod` | Rollback prod to main branch (emergency) |
@@ -33,6 +33,7 @@
 | `.wcid` | "Where Can I Deploy?" - show lock status |
 
 > **Pro tip**: Add extra Terraform arguments with a pipe: `.plan | -var=debug=true`
+> **Note:** By default, naked commands like `.plan` and `.apply` without an environment are blocked for safety. Use `.plan to dev` or `.apply to prod` instead. You can allow naked commands by setting `disable_naked_commands: false` in your workflow.
 
 ## 📸 See It In Action
 
@@ -121,11 +122,12 @@ environments:
 
 ### Step 3: Deploy
 
-Comment on any pull request to deploy your changes:
 
-- **`.plan`** → Preview what changes will be made
-- **`.apply`** → Deploy the changes
-- **`.apply main to prod`** → Emergency rollback to main branch
+Comment on any pull request to deploy your changes (environment targeting required by default):
+
+- **`.plan to dev`** → Preview what changes will be made in the dev environment
+- **`.apply to dev`** → Deploy the changes to the dev environment
+- **`.apply main to prod`** → Emergency rollback to main branch in prod
 
 
 ## 🧠 How It Works
@@ -141,10 +143,10 @@ terraform-branch-deploy follows the **[branch deployment](https://github.com/mar
 
 ### Under the Hood
 
-1. **Comment**: You comment `.plan` on a PR
+1. **Comment**: You comment `.plan to dev` on a PR
 2. **Validate**: Action validates Terraform syntax and formatting
 3. **Plan**: Terraform plan runs and posts results as PR comment
-4. **Apply**: Comment `.apply` to deploy the planned changes
+4. **Apply**: Comment `.apply to dev` to deploy the planned changes
 5. **Track**: GitHub deployment status tracks your infrastructure state
 
 This approach eliminates the dreaded "merge → deploy → break → scramble" cycle that plagues traditional workflows.
@@ -164,6 +166,7 @@ This approach eliminates the dreaded "merge → deploy → break → scramble" c
 | `skip` | Extract environment info and exit early | `false` | `true` |
 | `admins` | Comma-separated list of admin users/teams | `false` | `monalisa,octocat,my-org/my-team` |
 | `admins_pat` | Personal access token for org team access | `false` | `${{ secrets.ADMIN_PAT }}` |
+| `disable_naked_commands` | Require users to specify an environment when using IssueOps commands (e.g., `.plan to dev` instead of just `.plan`). When set to `true` (default), commands without an environment are blocked for safety. | `true` | `false` |
 
 ### Enterprise Support
 
@@ -190,8 +193,8 @@ environments:
 Pass extra Terraform arguments via comments:
 
 ```bash
-.plan | -var=debug=true -target=module.api
-.apply | -auto-approve=false
+.plan to dev | -var=debug=true -target=module.api
+.apply to dev | -auto-approve=false
 ```
 
 ### Smart Locking
@@ -200,7 +203,7 @@ Prevent deployment conflicts:
 ```bash
 .lock prod --reason "Maintenance window"
 .unlock prod
-.wcid  # "Where Can I Deploy?" - shows all locks
+.wcid prod  # "Where Can I Deploy?"
 ```
 
 

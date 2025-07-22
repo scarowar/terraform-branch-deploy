@@ -57,6 +57,12 @@ inputs:
     required: false
     default: "false"
 
+  # --- Disable Naked Commands ---
+  disable_naked_commands:
+    description: "Require users to specify an environment when using IssueOps commands (e.g., `.plan to dev` instead of just `.plan`). When set to `true` (default), commands without an environment are blocked for safety."
+    required: false
+    default: "true"
+
 outputs:
   env:
     description: "Extracted environment"
@@ -122,6 +128,7 @@ runs:
       stable_branch: ${{ inputs.stable_branch }}
       admins: ${{ inputs.admins }}
       admins_pat: ${{ inputs.admins_pat }}
+      disable_naked_commands: ${{ inputs.disable_naked_commands }}
       skip_completing: true
 
   - name: Delete Issue/PR Comment
@@ -155,6 +162,7 @@ runs:
       stable_branch: ${{ inputs.stable_branch }}
       admins: ${{ inputs.admins }}
       admins_pat: ${{ inputs.admins_pat }}
+      disable_naked_commands: ${{ inputs.disable_naked_commands }}
 
   - name: 🔎 Early Exit for Skip Mode
     if: ${{ inputs.skip == 'true' }}
