@@ -12,7 +12,7 @@
 
 ## ✨ Why You'll Love It
 
-- **🗨️ ChatOps Magic**: Deploy infrastructure with simple PR comments like `.plan` and `.apply`
+- **🗨️ ChatOps Magic**: Deploy infrastructure with simple PR comments like `.plan to <env>` and `.apply to <env>`
 - **🛡️ Safety First**: Test changes in real environments before they hit your main branch
 - **🌍 Multi-Environment**: Deploy to dev, staging, prod with environment-specific configurations
 - **🔒 Smart Locking**: Prevent conflicting deployments with automatic environment locks
