@@ -183,9 +183,9 @@ runs:
         echo "env=${{ steps.branch-deploy-skip.outputs.environment }}" >> $GITHUB_OUTPUT
         echo "continue=${{ steps.branch-deploy-skip.outputs.continue }}" >> $GITHUB_OUTPUT
         echo "sha=${{ steps.branch-deploy-skip.outputs.sha }}" >> $GITHUB_OUTPUT
-        echo "rollback=${{ && steps.branch-deploy-skip.outputs.continue == 'true' && steps.branch-deploy-skip.outputs.ref == inputs.stable_branch && steps.branch-deploy-skip.outputs.noop == 'false' }}" >> $GITHUB_OUTPUT
-        echo "plan=${{ && steps.branch-deploy-skip.outputs.continue == 'true' && steps.branch-deploy-skip.outputs.ref != inputs.stable_branch && steps.branch-deploy-skip.outputs.noop == 'true' }}" >> $GITHUB_OUTPUT
-        echo "apply=${{ && steps.branch-deploy-skip.outputs.continue == 'true' && steps.branch-deploy-skip.outputs.ref != inputs.stable_branch && steps.branch-deploy-skip.outputs.noop == 'false' }}" >> $GITHUB_OUTPUT
+        echo "rollback=${{ steps.branch-deploy-skip.outputs.continue == 'true' && steps.branch-deploy-skip.outputs.ref == inputs.stable_branch && steps.branch-deploy-skip.outputs.noop == 'false' }}" >> $GITHUB_OUTPUT
+        echo "plan=${{ steps.branch-deploy-skip.outputs.continue == 'true' && steps.branch-deploy-skip.outputs.ref != inputs.stable_branch && steps.branch-deploy-skip.outputs.noop == 'true' }}" >> $GITHUB_OUTPUT
+        echo "apply=${{ steps.branch-deploy-skip.outputs.continue == 'true' && steps.branch-deploy-skip.outputs.ref != inputs.stable_branch && steps.branch-deploy-skip.outputs.noop == 'false' }}" >> $GITHUB_OUTPUT
         echo "parsed_params"=${{ steps.branch-deploy-skip.outputs.parsed_params}}" >> $GITHUB_OUTPUT"
         echo "params"=${{ steps.branch-deploy-skip.outputs.params}}" >> $GITHUB_OUTPUT"
       else
