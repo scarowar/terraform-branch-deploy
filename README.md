@@ -173,7 +173,7 @@ This approach eliminates the dreaded "merge → deploy → break → scramble" c
 | Output    | Description |
 |-----------|-------------|
 | `env`     | The environment that has been selected for deployment |
-| `continue`| The string "true" if the deployment should continue, otherwise empty - Use this to conditionally control if your deployment should proceed or not |
+| `continue`| The string "true" if the deployment should continue, otherwise empty – use this to conditionally control whether your deployment should proceed |
 | `sha`     | The sha of the branch to be deployed |
 | `rollback`| The string "true" if the deployment is a rollback operation, otherwise "false" |
 | `plan`    | The string "true" if the deployment is a plan operation, otherwise "false" |

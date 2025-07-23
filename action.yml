@@ -68,7 +68,7 @@ outputs:
     description: "The environment that has been selected for deployment"
     value: ${{ steps.set-outputs.outputs.env }}
   continue:
-    description: "The string 'true' if the deployment should continue, otherwise empty - Use this to conditionally control if your deployment should proceed or not"
+    description: "The string 'true' if the deployment should continue, otherwise empty - use this to conditionally control whether your deployment should proceed"
     value: ${{ steps.set-outputs.outputs.continue }}
   sha:
     description: "The sha of the branch to be deployed"
@@ -84,10 +84,10 @@ outputs:
     value: ${{ steps.set-outputs.outputs.apply }}
   params:
     description: "The raw parameters that were passed into the deployment command"
-    value: ${{ steps.set-outputs.outputs.params}}
+    value: ${{ steps.set-outputs.outputs.params }}
   parsed_params:
     description: "A stringified JSON object of the parsed parameters that were passed into the deployment command"
-    value: ${{ steps.set-outputs.outputs.parsed_params}}
+    value: ${{ steps.set-outputs.outputs.parsed_params }}
 
 runs:
   using: composite
