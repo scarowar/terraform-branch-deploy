@@ -65,17 +65,29 @@ inputs:
 
 outputs:
   env:
-    description: "Extracted environment"
-    value: ${{ steps.skip.outputs.env }}
+    description: "The environment that has been selected for deployment"
+    value: ${{ steps.set-outputs.outputs.env }}
   continue:
-    description: "Continue flag"
-    value: ${{ steps.skip.outputs.continue }}
-  noop:
-    description: "Noop flag"
-    value: ${{ steps.skip.outputs.noop }}
+    description: "The string 'true' if the deployment should continue, otherwise empty - Use this to conditionally control if your deployment should proceed or not"
+    value: ${{ steps.set-outputs.outputs.continue }}
   sha:
-    description: "Commit SHA"
-    value: ${{ steps.skip.outputs.sha }}
+    description: "The sha of the branch to be deployed"
+    value: ${{ steps.set-outputs.outputs.sha }}
+  rollback:
+    description: "The string 'true' if the deployment is a rollback operation, otherwise 'false'"
+    value: ${{ steps.set-outputs.outputs.rollback }}
+  plan:
+    description: "The string 'true' if the deployment is a plan operation, otherwise 'false'"
+    value: ${{ steps.set-outputs.outputs.plan }}
+  apply:
+    description: "The string 'true' if the deployment is an apply operation, otherwise 'false'"
+    value: ${{ steps.set-outputs.outputs.apply }}
+  params:
+    description: "The raw parameters that were passed into the deployment command"
+    value: ${{ steps.set-outputs.outputs.params}}
+  parsed_params:
+    description: "A stringified JSON object of the parsed parameters that were passed into the deployment command"
+    value: ${{ steps.set-outputs.outputs.parsed_params}}
 
 runs:
   using: composite
@@ -164,15 +176,28 @@ runs:
       admins_pat: ${{ inputs.admins_pat }}
       disable_naked_commands: ${{ inputs.disable_naked_commands }}
 
-  - name: 🔎 Early Exit for Skip Mode
-    if: ${{ inputs.skip == 'true' }}
-    id: skip
+  - name: 🔎 Set Action Outputs
+    id: set-outputs
     run: |
-      echo "env=${{ steps.branch-deploy-skip.outputs.environment }}" >> $GITHUB_OUTPUT
-      echo "continue=${{ steps.branch-deploy-skip.outputs.continue }}" >> $GITHUB_OUTPUT
-      echo "noop=${{ steps.branch-deploy-skip.outputs.noop }}" >> $GITHUB_OUTPUT
-      echo "sha=${{ steps.branch-deploy-skip.outputs.sha }}" >> $GITHUB_OUTPUT
-      exit 0
+      if [ "${{ inputs.skip }}" = "true" ]; then
+        echo "env=${{ steps.branch-deploy-skip.outputs.environment }}" >> $GITHUB_OUTPUT
+        echo "continue=${{ steps.branch-deploy-skip.outputs.continue }}" >> $GITHUB_OUTPUT
+        echo "sha=${{ steps.branch-deploy-skip.outputs.sha }}" >> $GITHUB_OUTPUT
+        echo "rollback=${{ && steps.branch-deploy-skip.outputs.continue == 'true' && steps.branch-deploy-skip.outputs.ref == inputs.stable_branch && steps.branch-deploy-skip.outputs.noop == 'false' }}" >> $GITHUB_OUTPUT
+        echo "plan=${{ && steps.branch-deploy-skip.outputs.continue == 'true' && steps.branch-deploy-skip.outputs.ref != inputs.stable_branch && steps.branch-deploy-skip.outputs.noop == 'true' }}" >> $GITHUB_OUTPUT
+        echo "apply=${{ && steps.branch-deploy-skip.outputs.continue == 'true' && steps.branch-deploy-skip.outputs.ref != inputs.stable_branch && steps.branch-deploy-skip.outputs.noop == 'false' }}" >> $GITHUB_OUTPUT
+        echo "parsed_params"=${{ steps.branch-deploy-skip.outputs.parsed_params}}" >> $GITHUB_OUTPUT"
+        echo "params"=${{ steps.branch-deploy-skip.outputs.params}}" >> $GITHUB_OUTPUT"
+      else
+        echo "env=${{ steps.branch-deploy.outputs.environment }}" >> $GITHUB_OUTPUT
+        echo "continue=${{ steps.branch-deploy.outputs.continue }}" >> $GITHUB_OUTPUT
+        echo "sha=${{ steps.branch-deploy.outputs.sha }}" >> $GITHUB_OUTPUT
+        echo "rollback=${{ steps.branch-deploy.outputs.continue == 'true' && steps.branch-deploy.outputs.ref == inputs.stable_branch && steps.branch-deploy.outputs.noop == 'false' }}" >> $GITHUB_OUTPUT
+        echo "plan=${{ steps.branch-deploy.outputs.continue == 'true' && steps.branch-deploy.outputs.ref != inputs.stable_branch && steps.branch-deploy.outputs.noop == 'true' }}" >> $GITHUB_OUTPUT
+        echo "apply=${{ steps.branch-deploy.outputs.continue == 'true' && steps.branch-deploy.outputs.ref != inputs.stable_branch && steps.branch-deploy.outputs.noop == 'false' }}" >> $GITHUB_OUTPUT
+        echo "parsed_params"=${{ steps.branch-deploy.outputs.parsed_params}}" >> $GITHUB_OUTPUT"
+        echo "params"=${{ steps.branch-deploy.outputs.params}}" >> $GITHUB_OUTPUT"
+      fi
     shell: bash
 
   - name: 🚨 Perform Rollback
