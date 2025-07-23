@@ -168,6 +168,19 @@ This approach eliminates the dreaded "merge → deploy → break → scramble" c
 | `admins_pat` | Personal access token for org team access | `false` | `${{ secrets.ADMIN_PAT }}` |
 | `disable_naked_commands` | Require users to specify an environment when using IssueOps commands (e.g., `.plan to dev` instead of just `.plan`). When set to `true` (default), commands without an environment are blocked for safety. | `true` | `false` |
 
+### Action Outputs
+
+| Output    | Description |
+|-----------|-------------|
+| `env`     | The environment that has been selected for deployment |
+| `continue`| The string "true" if the deployment should continue, otherwise empty – use this to conditionally control whether your deployment should proceed |
+| `sha`     | The sha of the branch to be deployed |
+| `rollback`| The string "true" if the deployment is a rollback operation, otherwise "false" |
+| `plan`    | The string "true" if the deployment is a plan operation, otherwise "false" |
+| `apply`   | The string "true" if the deployment is an apply operation, otherwise "false" |
+| `params`  | The raw parameters that were passed into the deployment command |
+| `parsed_params` | A stringified JSON object of the parsed parameters that were passed into the deployment command |
+
 ### Enterprise Support
 
 🏢 **GitHub Enterprise Server (GHES) Users**: We automatically create GHES-compatible releases with every new version. Look for releases tagged with `-ghes` suffix (e.g., `v0.1.0-ghes`) which use compatible action versions.
