@@ -143,6 +143,7 @@ runs:
       disable_naked_commands: ${{ inputs.disable_naked_commands }}
       skip_completing: "true"
       allow_non_default_target_branch_deployments: "true"
+      outdated_mode: "pr_base"
 
   - name: Delete Issue/PR Comment (Skip Mode)
     if: ${{ steps.branch-deploy-skip.outputs.initial_comment_id }}
@@ -219,6 +220,7 @@ runs:
       admins_pat: ${{ inputs.admins_pat }}
       disable_naked_commands: ${{ inputs.disable_naked_commands }}
       allow_non_default_target_branch_deployments: "true"
+      outdated_mode: "pr_base"
 
   - name: 🔎 Set Action Outputs
     id: set-outputs
