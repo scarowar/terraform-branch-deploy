@@ -152,11 +152,15 @@ runs:
         const owner = context.repo.owner;
         const repo = context.repo.repo;
         const comment_id = process.env.COMMENT_ID;
-        await github.rest.issues.deleteComment({
-          owner,
-          repo,
-          comment_id: Number(comment_id)
-        });
+        try {
+          await github.rest.issues.deleteComment({
+            owner,
+            repo,
+            comment_id: Number(comment_id)
+          });
+        } catch (err) {
+          if (err.status !== 404) throw err;
+        }
     env:
       COMMENT_ID: ${{ steps.branch-deploy-skip.outputs.initial_comment_id }}
 
@@ -169,11 +173,32 @@ runs:
         const owner = context.repo.owner;
         const repo = context.repo.repo;
         const deployment_id = process.env.DEPLOYMENT_ID;
-        await github.rest.repos.deleteDeployment({
-          owner,
-          repo,
-          deployment_id: Number(deployment_id)
-        });
+        try {
+          await github.rest.repos.deleteDeployment({
+            owner,
+            repo,
+            deployment_id: Number(deployment_id)
+          });
+        } catch (err) {
+          if (err.status === 409 || err.status === 422) {
+            const statuses = await github.paginate(
+              github.rest.repos.listDeploymentStatuses,
+              { owner, repo, deployment_id: Number(deployment_id) }
+            );
+            await Promise.all(statuses.map(s =>
+              github.rest.repos.deleteDeploymentStatus({
+                owner, repo, deployment_id: Number(deployment_id), status_id: s.id
+              })
+            ));
+            await github.rest.repos.deleteDeployment({
+              owner,
+              repo,
+              deployment_id: Number(deployment_id)
+            });
+          } else {
+            throw err;
+          }
+        }
     env:
       DEPLOYMENT_ID: ${{ steps.branch-deploy-skip.outputs.deployment_id }}
 
