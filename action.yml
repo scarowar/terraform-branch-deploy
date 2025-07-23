@@ -186,8 +186,8 @@ runs:
         echo "rollback=${{ steps.branch-deploy-skip.outputs.continue == 'true' && steps.branch-deploy-skip.outputs.ref == inputs.stable_branch && steps.branch-deploy-skip.outputs.noop == 'false' }}" >> $GITHUB_OUTPUT
         echo "plan=${{ steps.branch-deploy-skip.outputs.continue == 'true' && steps.branch-deploy-skip.outputs.ref != inputs.stable_branch && steps.branch-deploy-skip.outputs.noop == 'true' }}" >> $GITHUB_OUTPUT
         echo "apply=${{ steps.branch-deploy-skip.outputs.continue == 'true' && steps.branch-deploy-skip.outputs.ref != inputs.stable_branch && steps.branch-deploy-skip.outputs.noop == 'false' }}" >> $GITHUB_OUTPUT
-        echo "parsed_params"=${{ steps.branch-deploy-skip.outputs.parsed_params}}" >> $GITHUB_OUTPUT"
-        echo "params"=${{ steps.branch-deploy-skip.outputs.params}}" >> $GITHUB_OUTPUT"
+        echo "parsed_params=${{ steps.branch-deploy-skip.outputs.parsed_params}}" >> $GITHUB_OUTPUT
+        echo "params=${{ steps.branch-deploy-skip.outputs.params}}" >> $GITHUB_OUTPUT
       else
         echo "env=${{ steps.branch-deploy.outputs.environment }}" >> $GITHUB_OUTPUT
         echo "continue=${{ steps.branch-deploy.outputs.continue }}" >> $GITHUB_OUTPUT
@@ -195,8 +195,8 @@ runs:
         echo "rollback=${{ steps.branch-deploy.outputs.continue == 'true' && steps.branch-deploy.outputs.ref == inputs.stable_branch && steps.branch-deploy.outputs.noop == 'false' }}" >> $GITHUB_OUTPUT
         echo "plan=${{ steps.branch-deploy.outputs.continue == 'true' && steps.branch-deploy.outputs.ref != inputs.stable_branch && steps.branch-deploy.outputs.noop == 'true' }}" >> $GITHUB_OUTPUT
         echo "apply=${{ steps.branch-deploy.outputs.continue == 'true' && steps.branch-deploy.outputs.ref != inputs.stable_branch && steps.branch-deploy.outputs.noop == 'false' }}" >> $GITHUB_OUTPUT
-        echo "parsed_params"=${{ steps.branch-deploy.outputs.parsed_params}}" >> $GITHUB_OUTPUT"
-        echo "params"=${{ steps.branch-deploy.outputs.params}}" >> $GITHUB_OUTPUT"
+        echo "parsed_params=${{ steps.branch-deploy.outputs.parsed_params}}" >> $GITHUB_OUTPUT
+        echo "params=${{ steps.branch-deploy.outputs.params}}" >> $GITHUB_OUTPUT
       fi
     shell: bash
 
