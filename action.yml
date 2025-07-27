@@ -4,7 +4,7 @@ description: Deploy Terraform infrastructure changes through pull request commen
 author: Sourab Kanthavar <@scarowar>
 
 branding:
-  icon: git-branch
+  icon: git-pull-request
   color: purple
 
 inputs:

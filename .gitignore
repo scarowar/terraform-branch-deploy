@@ -50,3 +50,9 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# mkdocs documentation
+/site
+vatvalidation-docs/site/
+vatvalidation-docs/.cache/
+vatvalidation-docs/.temp/
