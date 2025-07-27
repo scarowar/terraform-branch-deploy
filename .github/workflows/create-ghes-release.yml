@@ -1,10 +1,7 @@
 name: Create GHES Compatible Release
 
 on:
-  workflow_run:
-    workflows: ["Release Please"]
-    types:
-      - completed
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,15 +14,29 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: 📥 Checkout code
+      - name: 📥 Checkout default branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: 📥 Determine tag to use
+        id: get_tag
+        run: |
+          set -euo pipefail
+          TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
+          if [ -z "$TAG" ]; then
+            echo "::error::No releases found. Please create a release first."
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: 📥 Checkout release tag
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ steps.get_tag.outputs.tag }}
 
       - name: 🔧 Get version from tag
         id: get_version
         run: |
-          raw_tag="${{ github.event.release.tag_name }}"
+          raw_tag="${{ steps.get_tag.outputs.tag }}"
           echo "version=${raw_tag#v}" >> "$GITHUB_OUTPUT"
 
       - name: 🌳 Create GHES release branch
@@ -40,12 +51,12 @@ jobs:
           set -euo pipefail
           echo "Downgrading actions in action.yml files for GHES compatibility..."
 
-          if ! find . -type f -name 'action.yml' -print -quit | grep -q .; then
-            echo "::warning::No action.yml files found to process. Skipping downgrade step."
+          if ! find ./actions -type f -name 'action.yml' -print -quit | grep -q .; then
+            echo "::warning::No action.yml files found in ./actions. Skipping downgrade step."
             exit 0
           fi
 
-          find . -type f -name "action.yml" -exec \
+          find ./actions -type f -name "action.yml" -exec \
             sed -i -E 's|actions/upload-artifact@[0-9a-fA-F]{7,40}([[:space:]]*#.*)?$|actions/upload-artifact@v3|g' {} +
 
           echo "✅ Actions downgraded successfully."
@@ -72,7 +83,7 @@ jobs:
           RELEASE_BRANCH="release/${GHES_TAG}"
 
           # Get release notes from the original release, with a fallback for an empty body
-          RELEASE_NOTES=$(gh release view "${{ github.event.release.tag_name }}" --json body --jq .body) || RELEASE_NOTES="See original release for details."
+          RELEASE_NOTES=$(gh release view "${{ steps.get_tag.outputs.tag }}" --json body --jq .body) || RELEASE_NOTES="See original release for details."
           RELEASE_NOTES_FILE=$(mktemp)
           printf '%s' "$RELEASE_NOTES" >"$RELEASE_NOTES_FILE"
 
