@@ -33,6 +33,12 @@ Terraform Branch Deploy extends [branch-deploy](https://github.com/github/branch
 - **Enterprise ready**: Works with GitHub Enterprise Server (GHES) and public GitHub, with automated GHES release tagging.
 - **Workflow integration**: Use the `skip` input to extract environment context for advanced, multi-step workflows without running Terraform operations.
 
+## 📸 See It In Action
+
+Watch Terraform Branch Deploy in action - from comment to Terraform infrastructure deployment:
+
+[Terraform Branch Deploy Demo](https://github.com/user-attachments/assets/15b1c060-9be5-4203-9c5d-caa088c2535d)
+
 ---
 
 ## 📃 License

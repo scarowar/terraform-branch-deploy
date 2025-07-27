@@ -1,3 +1,5 @@
+# yamllint disable
+
 # Project information
 site_name: Terraform Branch Deploy
 site_url: https://scarowar.github.io/terraform-branch-deploy/

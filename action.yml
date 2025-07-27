@@ -59,7 +59,7 @@ inputs:
 
   # --- Disable Naked Commands ---
   disable_naked_commands:
-    description: "Require users to specify an environment when using IssueOps commands (e.g., `.plan to dev` instead of just `.plan`). When set to `true` (default), commands without an environment are blocked for safety."
+    description: "Require users to specify an environment when using IssueOps commands (e.g., `.plan to dev` instead of just `.plan`). When set to `"true"` (default), commands without an environment are blocked for safety."
     required: false
     default: "true"
 

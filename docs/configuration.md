@@ -17,7 +17,7 @@ The action accepts several inputs to customize its behavior. Add these under the
 | `skip`               | Extract environment info and exit early (Skip Mode). See [Skip Mode](#skip-mode) below.                      | `false`   | `true`                          |
 | `admins`             | Comma-separated list of admin users/teams                                                                     | —         | `monalisa,octocat,my-org/my-team`|
 | `admins_pat`         | Personal access token for org team access                                                                     | —         | `${{ secrets.ADMIN_PAT }}`       |
-| `disable_naked_commands` | Require environment for commands (e.g., `.plan to dev`). Block naked commands for safety.                | `true`    | `false`                         |
+| `disable_naked_commands` | Require environment for commands (e.g., `.plan to dev`). Block naked commands for safety.                | `"true"`    | `"false"`                         |
 
 !!! tip
     Most users only need to set `github-token`. Other inputs are optional and for advanced scenarios.
