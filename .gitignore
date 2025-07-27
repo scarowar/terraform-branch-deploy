@@ -50,3 +50,9 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# mkdocs documentation
+/site
+docs/site/
+docs/.cache/
+docs/.temp/

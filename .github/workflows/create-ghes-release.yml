@@ -1,8 +1,10 @@
 name: Create GHES Compatible Release
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Release Please"]
+    types:
+      - completed
 
 permissions:
   contents: read
@@ -54,11 +56,11 @@ jobs:
           # Check if there are changes to commit
           if git diff --quiet; then
             echo "No changes to commit. Skipping commit and push."
-            echo "pushed=false" >> $GITHUB_OUTPUT
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
           else
             git commit -am "chore: downgrade upload-artifact for ghes compatibility"
             git push -u origin release/v${{ steps.get_version.outputs.version }}-ghes
-            echo "pushed=true" >> $GITHUB_OUTPUT
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: 🎉 Create GHES Release

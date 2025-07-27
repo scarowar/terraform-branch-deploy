@@ -1,0 +1,75 @@
+# Project information
+site_name: Terraform Branch Deploy
+site_url: https://scarowar.github.io/terraform-branch-deploy/
+repo_name: terraform-branch-deploy
+repo_url: https://github.com/scarowar/terraform-branch-deploy
+
+# Navigation
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Configuration: configuration.md
+  - Commands: commands.md
+  - Advanced: advanced.md
+
+# Theme configuration
+theme:
+  name: material
+  logo: assets/git-pull-request.png
+  favicon: assets/git-pull-request.png
+  palette:
+    scheme: dracula
+    primary: deep purple
+    accent: deep purple
+  features:
+    - content.code.annotate
+    - content.code.copy
+    - content.tooltips
+    - navigation.footer
+    - navigation.indexes
+    - navigation.sections
+    - navigation.tabs
+    - navigation.top
+    - navigation.tracking
+    - navigation.instant
+    - navigation.instant.progress
+    - search.highlight
+    - search.share
+    - search.suggest
+    - toc.follow
+
+# Markdown extensions
+markdown_extensions:
+  - admonition
+  - attr_list
+  - footnotes
+  - md_in_html
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.blocks.caption
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.mark
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+      - name: mermaid
+        class: mermaid
+  - pymdownx.tabbed
+
+# Plugins
+plugins:
+  - mkdocs_pymdownx_material_extras
+  - search:
+      lang: en
+
+extra_css:
+  - assets/stylesheets/extra.css
