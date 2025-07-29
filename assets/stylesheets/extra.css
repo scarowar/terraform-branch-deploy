@@ -1,0 +1,24 @@
+[data-md-color-scheme="dracula"] img[src$="#only-light"] {
+  display: none;
+}
+[data-md-color-scheme="dracula"] img[src$="#only-dark"] {
+  display: inline;
+}
+[data-md-color-scheme="default"] img[src$="#only-dark"] {
+  display: none;
+}
+[data-md-color-scheme="default"] img[src$="#only-light"] {
+  display: inline;
+}
+
+@keyframes heart {
+  0%, 40%, 80%, 100% {
+    transform: scale(1);
+  }
+  20%, 60% {
+    transform: scale(1.15);
+  }
+}
+.heart {
+  animation: heart 1500ms infinite;
+}
