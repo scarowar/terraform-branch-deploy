@@ -1,0 +1,28 @@
+{
+    "action": "created",
+    "issue": {
+        "number": 456,
+        "pull_request": {
+            "url": "https://api.github.com/repos/test-org/test-repo/pulls/456"
+        },
+        "title": "Production deployment",
+        "user": {
+            "login": "developer"
+        }
+    },
+    "comment": {
+        "id": 789,
+        "body": ".apply to prod",
+        "user": {
+            "login": "developer"
+        }
+    },
+    "repository": {
+        "name": "test-repo",
+        "full_name": "test-org/test-repo",
+        "default_branch": "main"
+    },
+    "sender": {
+        "login": "developer"
+    }
+}

@@ -1,0 +1,4 @@
+# file: /home/scarowar/dev/scarowar/terraform-branch-deploy/src/tf_branch_deploy/cli.py
+# hypothesis_version: 6.148.11
+
+[',', ', ', '--config', '--environment', '--operation', '--sha', '--working-dir', '-c', '-e', '-o', '-s', '-w', 'Default', 'Environment', 'Environments', 'GITHUB_OUTPUT', 'Git commit SHA', 'Is Production', 'Operation', 'Production', 'Property', 'SHA', 'Setting', 'Stable Branch', 'Target environment', 'Value', 'Working Dir', '__main__', 'a', 'apply_args', 'backend_configs', 'cyan', 'green', 'init_args', 'is_production', 'plan or apply', 'plan_args', 'tf-branch-deploy', 'var_files', 'working_directory']

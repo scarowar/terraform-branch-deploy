@@ -1,0 +1,23 @@
+# terraform-branch-deploy configuration for E2E testing
+
+default-environment: dev
+
+production-environments:
+  - prod
+
+stable-branch: main
+
+environments:
+  dev:
+    working-directory: ./terraform/dev
+    var-files:
+      paths:
+        - ../common.tfvars
+        - dev.tfvars
+
+  prod:
+    working-directory: ./terraform/prod
+    var-files:
+      paths:
+        - ../common.tfvars
+        - prod.tfvars

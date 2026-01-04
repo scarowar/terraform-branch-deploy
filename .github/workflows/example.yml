@@ -1,0 +1,66 @@
+# Terraform Branch Deploy - Example Workflow
+#
+# This shows the minimal setup required to use terraform-branch-deploy.
+# All you need is this workflow file and a .tf-branch-deploy.yml config.
+
+name: Terraform Deploy
+
+on:
+  issue_comment:
+    types: [created]
+
+# Minimum required permissions
+permissions:
+  pull-requests: write
+  deployments: write
+  contents: write
+  checks: read
+  statuses: read
+
+# Only one deployment at a time per environment
+concurrency:
+  group: terraform-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Only run on PR comments
+    if: github.event.issue.pull_request
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Terraform Branch Deploy
+        id: deploy
+        uses: scarowar/terraform-branch-deploy@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Optional: customize triggers
+          # trigger: ".deploy"
+          # noop-trigger: ".preview"
+
+      # After deploy, you have full control over Terraform execution
+      - name: Terraform Init
+        if: steps.deploy.outputs.continue == 'true'
+        working-directory: ${{ steps.deploy.outputs.working-directory }}
+        run: |
+          terraform init \
+            $(echo '${{ steps.deploy.outputs.backend-configs }}' | jq -r '.[] | "-backend-config=\(.)"') \
+            $(echo '${{ steps.deploy.outputs.init-args }}' | jq -r '.[]')
+
+      - name: Terraform Plan
+        if: steps.deploy.outputs.continue == 'true' && steps.deploy.outputs.noop == 'true'
+        working-directory: ${{ steps.deploy.outputs.working-directory }}
+        run: |
+          terraform plan \
+            $(echo '${{ steps.deploy.outputs.var-files }}' | jq -r '.[] | "-var-file=\(.)"') \
+            $(echo '${{ steps.deploy.outputs.plan-args }}' | jq -r '.[]')
+
+      - name: Terraform Apply
+        if: steps.deploy.outputs.continue == 'true' && steps.deploy.outputs.noop == 'false'
+        working-directory: ${{ steps.deploy.outputs.working-directory }}
+        run: |
+          terraform apply -auto-approve \
+            $(echo '${{ steps.deploy.outputs.var-files }}' | jq -r '.[] | "-var-file=\(.)"') \
+            $(echo '${{ steps.deploy.outputs.apply-args }}' | jq -r '.[]')

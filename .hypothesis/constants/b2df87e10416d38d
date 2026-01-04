@@ -1,0 +1,4 @@
+# file: /home/scarowar/dev/scarowar/terraform-branch-deploy/.venv/bin/pytest
+# hypothesis_version: 6.148.11
+
+['-script.pyw', '.exe', '__main__']

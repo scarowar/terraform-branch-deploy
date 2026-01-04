@@ -1,0 +1,4 @@
+# file: /home/scarowar/dev/scarowar/terraform-branch-deploy/src/tf_branch_deploy/config.py
+# hypothesis_version: 6.148.11
+
+['.', '.confirm-hotfix', 'after', 'apply-args', 'args', 'backend-configs', 'before', 'branch-pattern', 'default-environment', 'forbid', 'hotfix/*', 'init-args', 'main', 'paths', 'plan-args', 'stable-branch', 'var-files', 'working-directory']

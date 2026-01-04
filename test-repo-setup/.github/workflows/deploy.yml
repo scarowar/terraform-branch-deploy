@@ -1,0 +1,49 @@
+# Terraform Branch Deploy E2E Test
+#
+# This workflow runs terraform-branch-deploy from the main repository
+
+name: Terraform Deploy
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  pull-requests: write
+  deployments: write
+  contents: write
+  checks: read
+  statuses: read
+
+concurrency:
+  group: terraform-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event.issue.pull_request
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Use the action from the main repo
+      # Change 'main' to your branch name when testing
+      - name: Terraform Branch Deploy
+        id: deploy
+        uses: scarowar/terraform-branch-deploy@main
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Start with skip mode to verify it works
+          mode: skip
+
+      - name: Debug Outputs
+        if: steps.deploy.outputs.continue == 'true'
+        run: |
+          echo "=== Deployment Triggered ==="
+          echo "Environment: ${{ steps.deploy.outputs.environment }}"
+          echo "Operation: ${{ steps.deploy.outputs.noop == 'true' && 'plan' || 'apply' }}"
+          echo "SHA: ${{ steps.deploy.outputs.sha }}"
+          echo "Working Dir: ${{ steps.deploy.outputs.working-directory }}"
+          echo "Var Files: ${{ steps.deploy.outputs.var-files }}"
+          echo "Is Production: ${{ steps.deploy.outputs.is-production }}"
