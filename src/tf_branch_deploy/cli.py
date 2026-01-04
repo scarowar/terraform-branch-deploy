@@ -2,9 +2,11 @@
 Terraform Branch Deploy CLI.
 
 Typer-based CLI for Terraform infrastructure deployments via GitHub PRs.
-Supports two modes:
-- skip: Just output config, don't run terraform
-- run: Execute terraform (default)
+
+Three modes:
+- parse: Just read config, no branch-deploy, no terraform
+- dispatch: [For action.yml] Full flow with branch-deploy
+- execute: Just run terraform, no branch-deploy
 """
 
 from __future__ import annotations
@@ -33,8 +35,9 @@ console = Console()
 class Mode(str, Enum):
     """Execution mode."""
 
-    SKIP = "skip"
-    RUN = "run"
+    PARSE = "parse"      # Just read config, output settings
+    DISPATCH = "dispatch"  # Full flow (called by action.yml internally)
+    EXECUTE = "execute"  # Just run terraform
 
 
 def set_github_output(name: str, value: str) -> None:
@@ -48,38 +51,26 @@ def set_github_output(name: str, value: str) -> None:
                 f.write(f"{name}<<{delimiter}\n{value}\n{delimiter}\n")
             else:
                 f.write(f"{name}={value}\n")
-    # Also print for debugging
     console.print(f"[dim]Output: {name}={value[:50]}{'...' if len(value) > 50 else ''}[/dim]")
 
 
 @app.command()
-def run(
+def parse(
     environment: Annotated[str, typer.Option("--environment", "-e", help="Target environment")],
-    operation: Annotated[str, typer.Option("--operation", "-o", help="plan or apply")],
-    sha: Annotated[str, typer.Option("--sha", "-s", help="Git commit SHA")],
     config_path: Annotated[
         Path, typer.Option("--config", "-c", help="Path to .tf-branch-deploy.yml")
     ] = Path(".tf-branch-deploy.yml"),
-    mode: Annotated[
-        Mode, typer.Option("--mode", "-m", help="skip = outputs only, run = execute terraform")
-    ] = Mode.RUN,
-    working_dir: Annotated[
-        Path | None, typer.Option("--working-dir", "-w", help="Override working directory")
-    ] = None,
 ) -> None:
     """
-    Execute Terraform operation for the specified environment.
+    Parse config and output settings for an environment.
 
-    With mode=run (default): Actually executes terraform init/plan/apply
-    With mode=skip: Just outputs config for use in subsequent steps
+    This mode does NOT call branch-deploy or run terraform.
+    Use this when you need config info before calling branch-deploy yourself.
     """
     console.print(Panel.fit(
         "[bold blue]Terraform Branch Deploy[/bold blue] v0.2.0",
-        subtitle="ChatOps for Terraform"
+        subtitle="Parse Mode"
     ))
-
-    # Load configuration
-    console.print(f"\n📋 Loading config from [cyan]{config_path}[/cyan]")
 
     try:
         config = load_config(config_path)
@@ -90,38 +81,21 @@ def run(
         console.print(f"[red]Error:[/red] Invalid config: {e}")
         raise typer.Exit(1) from None
 
-    # Validate environment exists
     if environment not in config.environments:
         console.print(f"[red]Error:[/red] Environment '{environment}' not found")
-        console.print(f"Available: {list(config.environments.keys())}")
         raise typer.Exit(1)
 
     env_config = config.get_environment(environment)
-    resolved_working_dir = Path(working_dir or env_config.working_directory)
 
-    # Display environment info
-    table = Table(title="Environment Configuration")
-    table.add_column("Setting", style="cyan")
-    table.add_column("Value", style="green")
-
-    table.add_row("Environment", environment)
-    table.add_row("Operation", operation)
-    table.add_row("Mode", mode.value)
-    table.add_row("SHA", sha[:8])
-    table.add_row("Working Dir", str(resolved_working_dir))
-    table.add_row("Is Production", str(config.is_production(environment)))
-
-    console.print(table)
-
-    # Resolve Terraform arguments
+    # Resolve all settings
     var_files = config.resolve_var_files(environment)
     backend_configs = config.resolve_backend_configs(environment)
     init_args = config.resolve_args(environment, "init_args")
     plan_args = config.resolve_args(environment, "plan_args")
     apply_args = config.resolve_args(environment, "apply_args")
 
-    # Set outputs for subsequent workflow steps
-    set_github_output("working_directory", str(resolved_working_dir))
+    # Set outputs
+    set_github_output("working_directory", env_config.working_directory)
     set_github_output("var_files", json.dumps(var_files))
     set_github_output("backend_configs", json.dumps(backend_configs))
     set_github_output("init_args", json.dumps(init_args))
@@ -129,14 +103,85 @@ def run(
     set_github_output("apply_args", json.dumps(apply_args))
     set_github_output("is_production", str(config.is_production(environment)).lower())
 
-    # If skip mode, we're done
-    if mode == Mode.SKIP:
-        console.print("\n[yellow]⏭️  Skip mode - outputs set, terraform not executed[/yellow]")
+    console.print(f"[green]✅ Parsed config for environment: {environment}[/green]")
+
+
+@app.command()
+def execute(
+    environment: Annotated[str, typer.Option("--environment", "-e", help="Target environment")],
+    operation: Annotated[str, typer.Option("--operation", "-o", help="plan or apply")],
+    sha: Annotated[str, typer.Option("--sha", "-s", help="Git commit SHA")],
+    config_path: Annotated[
+        Path, typer.Option("--config", "-c", help="Path to .tf-branch-deploy.yml")
+    ] = Path(".tf-branch-deploy.yml"),
+    working_dir: Annotated[
+        Path | None, typer.Option("--working-dir", "-w", help="Override working directory")
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Print commands without executing")
+    ] = False,
+) -> None:
+    """
+    Execute terraform for the specified environment.
+
+    This mode does NOT call branch-deploy - it assumes you've already
+    done that and are passing the environment/sha from those outputs.
+    """
+    console.print(Panel.fit(
+        "[bold blue]Terraform Branch Deploy[/bold blue] v0.2.0",
+        subtitle="Execute Mode"
+    ))
+
+    try:
+        config = load_config(config_path)
+    except FileNotFoundError:
+        console.print(f"[red]Error:[/red] Config file not found: {config_path}")
+        raise typer.Exit(1) from None
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Invalid config: {e}")
+        raise typer.Exit(1) from None
+
+    if environment not in config.environments:
+        console.print(f"[red]Error:[/red] Environment '{environment}' not found")
+        raise typer.Exit(1)
+
+    env_config = config.get_environment(environment)
+    resolved_working_dir = Path(working_dir or env_config.working_directory)
+
+    # Display info
+    table = Table(title="Terraform Execution")
+    table.add_column("Setting", style="cyan")
+    table.add_column("Value", style="green")
+    table.add_row("Environment", environment)
+    table.add_row("Operation", operation)
+    table.add_row("SHA", sha[:8])
+    table.add_row("Working Dir", str(resolved_working_dir))
+    table.add_row("Dry Run", str(dry_run))
+    console.print(table)
+
+    # Resolve args
+    var_files = config.resolve_var_files(environment)
+    backend_configs = config.resolve_backend_configs(environment)
+    init_args = config.resolve_args(environment, "init_args")
+    plan_args = config.resolve_args(environment, "plan_args")
+    apply_args = config.resolve_args(environment, "apply_args")
+
+    # Set outputs for any downstream steps
+    set_github_output("working_directory", str(resolved_working_dir))
+    set_github_output("var_files", json.dumps(var_files))
+    set_github_output("is_production", str(config.is_production(environment)).lower())
+
+    if dry_run:
+        console.print("\n[yellow]🧪 Dry run - commands would be:[/yellow]")
+        console.print(f"  cd {resolved_working_dir}")
+        console.print(f"  terraform init {' '.join(init_args)}")
+        if operation == "plan":
+            console.print(f"  terraform plan {' '.join(plan_args)}")
+        else:
+            console.print(f"  terraform apply {' '.join(apply_args)}")
         return
 
-    # === RUN MODE: Actually execute terraform ===
-    console.print("\n[bold]🚀 Executing Terraform[/bold]")
-
+    # Actually execute terraform
     from .executor import TerraformExecutor
 
     executor = TerraformExecutor(
@@ -151,30 +196,26 @@ def run(
         pr_number=int(os.environ.get("TF_BD_PR_NUMBER", "0")) or None,
     )
 
-    # Run init
+    # Init
     init_result = executor.init()
     if not init_result.success:
         console.print("[red]Terraform init failed[/red]")
         raise typer.Exit(1)
 
-    # Run plan or apply
+    # Plan or Apply
     if operation == "plan":
         plan_file = resolved_working_dir / f"tfplan-{environment}-{sha[:8]}.tfplan"
         result = executor.plan(out_file=plan_file)
-
         if result.plan_file and result.checksum:
             set_github_output("plan_file", str(result.plan_file))
             set_github_output("plan_checksum", result.checksum)
             set_github_output("has_changes", str(result.has_changes).lower())
-
         if not result.success:
             raise typer.Exit(1)
-
     elif operation == "apply":
         result = executor.apply()
         if not result.success:
             raise typer.Exit(1)
-
     else:
         console.print(f"[red]Unknown operation: {operation}[/red]")
         raise typer.Exit(1)
@@ -198,12 +239,10 @@ def validate(
         table = Table(title="Configuration Summary")
         table.add_column("Property", style="cyan")
         table.add_column("Value", style="green")
-
         table.add_row("Environments", ", ".join(config.environments.keys()))
         table.add_row("Default", config.default_environment)
         table.add_row("Production", ", ".join(config.production_environments))
         table.add_row("Stable Branch", config.stable_branch)
-
         console.print(table)
 
     except FileNotFoundError:
@@ -235,6 +274,33 @@ def environments(
         console.print(env_list)
     except Exception:
         raise typer.Exit(1) from None
+
+
+# Keep backward compatibility with old 'run' command
+@app.command(hidden=True)
+def run(
+    environment: Annotated[str, typer.Option("--environment", "-e")],
+    operation: Annotated[str, typer.Option("--operation", "-o")],
+    sha: Annotated[str, typer.Option("--sha", "-s")],
+    config_path: Annotated[Path, typer.Option("--config", "-c")] = Path(".tf-branch-deploy.yml"),
+    mode: Annotated[str, typer.Option("--mode", "-m")] = "execute",
+    working_dir: Annotated[Path | None, typer.Option("--working-dir", "-w")] = None,
+) -> None:
+    """[DEPRECATED] Use 'parse' or 'execute' instead."""
+    console.print("[yellow]⚠️ 'run' command is deprecated. Use 'parse' or 'execute'.[/yellow]")
+
+    if mode == "skip":
+        # Old skip mode = new parse mode
+        parse(environment=environment, config_path=config_path)
+    else:
+        # Old run mode = new execute mode
+        execute(
+            environment=environment,
+            operation=operation,
+            sha=sha,
+            config_path=config_path,
+            working_dir=working_dir,
+        )
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ import yaml
 INTERNAL_INPUTS = {
     "status",  # Provided by GitHub Actions
     "github_token",  # We rename to github-token
+    "skip_completing",  # We always set this to true internally
 }
 
 # Mapping of our input names to branch-deploy input names (where different)

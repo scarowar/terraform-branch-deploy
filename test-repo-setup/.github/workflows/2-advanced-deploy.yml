@@ -1,0 +1,66 @@
+# Advanced Deployment with Pre-Terraform Hook
+#
+# This workflow shows how to do prep work (build lambdas, fetch secrets)
+# WITHIN the action, so branch-deploy handles cleanup automatically.
+#
+# No manual cleanup required! ✨
+
+name: "2️⃣ Advanced Deploy (With Hook)"
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  pull-requests: write
+  deployments: write
+  contents: write
+  checks: read
+  statuses: read
+
+concurrency:
+  group: terraform-advanced-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event.issue.pull_request
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Single action call with pre-terraform hook!
+      # - Hook runs AFTER branch-deploy parses command
+      # - Hook runs BEFORE terraform execution
+      # - branch-deploy handles ALL cleanup automatically
+      - name: Terraform Branch Deploy
+        uses: scarowar/terraform-branch-deploy@refactor/core
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          dry-run: "true"
+
+          # Pre-terraform hook for prep work
+          # Environment variables available:
+          # - TF_BD_ENVIRONMENT (dev, prod, etc.)
+          # - TF_BD_SHA (commit being deployed)
+          # - TF_BD_OPERATION (plan or apply)
+          # - TF_BD_IS_NOOP (true for plan, false for apply)
+          pre-terraform-hook: |
+            echo "=== Pre-Terraform Hook ==="
+            echo "Environment: $TF_BD_ENVIRONMENT"
+            echo "SHA: $TF_BD_SHA"
+            echo "Operation: $TF_BD_OPERATION"
+
+            # Example: Build lambdas for this environment
+            # ./scripts/build-lambdas.sh --env $TF_BD_ENVIRONMENT
+
+            # Example: Fetch secrets for this environment
+            # aws secretsmanager get-secret-value --secret-id "myapp/$TF_BD_ENVIRONMENT/config"
+
+            # Example: Run database migrations (only on apply)
+            # if [ "$TF_BD_OPERATION" == "apply" ]; then
+            #   ./scripts/run-migrations.sh --env $TF_BD_ENVIRONMENT
+            # fi
+
+            echo "=== Hook Complete ==="

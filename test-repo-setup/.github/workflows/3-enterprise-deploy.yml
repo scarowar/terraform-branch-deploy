@@ -1,0 +1,64 @@
+# Enterprise Deploy - Multi-Job with Custom Logic
+#
+# This is an OPTIONAL advanced pattern for cases where you need:
+# - Separate jobs for deployment (e.g., matrix builds)
+# - Custom branch-deploy settings not exposed by terraform-branch-deploy
+# - Full control over the deployment lifecycle
+#
+# For MOST use cases, use 2-advanced-deploy.yml with pre-terraform-hook instead!
+
+name: "3️⃣ Enterprise Deploy (Multi-Job)"
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  pull-requests: write
+  deployments: write
+  contents: write
+  checks: read
+  statuses: read
+
+concurrency:
+  group: terraform-enterprise-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  # For 99% of use cases, just use our action with pre-terraform-hook:
+  deploy:
+    if: github.event.issue.pull_request
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Terraform Branch Deploy
+        uses: scarowar/terraform-branch-deploy@refactor/core
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          dry-run: "true"
+
+          # Example: Environment-specific logic in hook
+          pre-terraform-hook: |
+            echo "Enterprise deployment for: $TF_BD_ENVIRONMENT"
+
+            # Example: Different build for each environment
+            case "$TF_BD_ENVIRONMENT" in
+              dev)
+                echo "Dev: Fast build, no security scan"
+                ;;
+              staging)
+                echo "Staging: Full build with integration tests"
+                # ./scripts/run-integration-tests.sh
+                ;;
+              prod)
+                echo "Production: Full build + security scan + approval check"
+                # trivy image scan
+                # ./scripts/verify-approval.sh
+                ;;
+            esac
+
+          # Enterprise-specific settings
+          enforced-deployment-order: "dev,staging,prod"
+          sticky-locks: "true"

@@ -56,3 +56,5 @@ __pycache__/
 docs/site/
 docs/.cache/
 docs/.temp/
+
+.hypothesis
