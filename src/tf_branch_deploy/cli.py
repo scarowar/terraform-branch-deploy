@@ -223,7 +223,8 @@ def execute(
 
     # Plan or Apply
     if operation == "plan":
-        plan_file = resolved_working_dir / f"tfplan-{environment}-{sha[:8]}.tfplan"
+        # Plan file should be just the filename - executor runs from working_directory
+        plan_file = Path(f"tfplan-{environment}-{sha[:8]}.tfplan")
         result = executor.plan(out_file=plan_file)
         if result.plan_file and result.checksum:
             set_github_output("plan_file", str(result.plan_file))
