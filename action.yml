@@ -385,10 +385,13 @@ runs:
           ENV="${{ steps.branch-deploy.outputs.environment }}"
           SHA="${{ steps.branch-deploy.outputs.sha }}"
           OPERATION="${{ steps.branch-deploy.outputs.noop == 'true' && 'plan' || 'apply' }}"
+          # Params from PR comment (e.g., ".plan to dev | --target=module.base")
+          PARAMS="${{ steps.branch-deploy.outputs.params }}"
         else
           ENV="${{ inputs.environment }}"
           SHA="${{ inputs.sha }}"
           OPERATION="${{ inputs.operation }}"
+          PARAMS="${{ inputs.extra-args }}"
         fi
 
         DRY_RUN_FLAG=""
@@ -396,9 +399,17 @@ runs:
           DRY_RUN_FLAG="--dry-run"
         fi
 
+        # Build extra args from params
+        EXTRA_ARGS=""
+        if [ -n "$PARAMS" ]; then
+          echo "📝 Extra terraform args from command: $PARAMS"
+          EXTRA_ARGS="--extra-args \"$PARAMS\""
+        fi
+
         tf-branch-deploy execute \
           --environment "$ENV" \
           --operation "$OPERATION" \
           --sha "$SHA" \
           --config "${{ inputs.config-path }}" \
-          $DRY_RUN_FLAG
+          $DRY_RUN_FLAG \
+          $EXTRA_ARGS

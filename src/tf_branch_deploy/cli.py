@@ -120,12 +120,18 @@ def execute(
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Print commands without executing")
     ] = False,
+    extra_args: Annotated[
+        str | None, typer.Option("--extra-args", help="Extra terraform args from PR comment (e.g., --target=module.base)")
+    ] = None,
 ) -> None:
     """
     Execute terraform for the specified environment.
 
     This mode does NOT call branch-deploy - it assumes you've already
     done that and are passing the environment/sha from those outputs.
+
+    Dynamic args can be passed via PR comment:
+      .plan to dev | --target=module.base --target=module.network
     """
     console.print(Panel.fit(
         "[bold blue]Terraform Branch Deploy[/bold blue] v0.2.0",
@@ -148,6 +154,17 @@ def execute(
     env_config = config.get_environment(environment)
     resolved_working_dir = Path(working_dir or env_config.working_directory)
 
+    # Parse extra args (e.g., "--target=module.base --target=module.network")
+    parsed_extra_args = []
+    if extra_args:
+        # Split respecting quotes and equals signs
+        import shlex
+        try:
+            parsed_extra_args = shlex.split(extra_args)
+        except ValueError:
+            parsed_extra_args = extra_args.split()
+        console.print(f"[cyan]📝 Extra args from command:[/cyan] {parsed_extra_args}")
+
     # Display info
     table = Table(title="Terraform Execution")
     table.add_column("Setting", style="cyan")
@@ -157,14 +174,16 @@ def execute(
     table.add_row("SHA", sha[:8])
     table.add_row("Working Dir", str(resolved_working_dir))
     table.add_row("Dry Run", str(dry_run))
+    if parsed_extra_args:
+        table.add_row("Extra Args", " ".join(parsed_extra_args))
     console.print(table)
 
-    # Resolve args
+    # Resolve args from config
     var_files = config.resolve_var_files(environment)
     backend_configs = config.resolve_backend_configs(environment)
     init_args = config.resolve_args(environment, "init_args")
-    plan_args = config.resolve_args(environment, "plan_args")
-    apply_args = config.resolve_args(environment, "apply_args")
+    plan_args = config.resolve_args(environment, "plan_args") + parsed_extra_args
+    apply_args = config.resolve_args(environment, "apply_args") + parsed_extra_args
 
     # Set outputs for any downstream steps
     set_github_output("working_directory", str(resolved_working_dir))
