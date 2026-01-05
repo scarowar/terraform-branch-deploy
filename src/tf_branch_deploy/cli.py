@@ -265,6 +265,11 @@ def execute(
         
         if not result.success:
             raise typer.Exit(1)
+        
+        # Delete plan file after successful apply to prevent re-use
+        if plan_file.exists():
+            plan_file.unlink()
+            console.print(f"[dim]🗑️ Plan file consumed: {plan_filename}[/dim]")
     else:
         console.print(f"[red]Unknown operation: {operation}[/red]")
         raise typer.Exit(1)
