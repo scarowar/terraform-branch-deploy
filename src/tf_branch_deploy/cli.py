@@ -234,7 +234,9 @@ def execute(
             raise typer.Exit(1)
     elif operation == "apply":
         # Look for the plan file from a previous .plan command
-        plan_file = Path(f"tfplan-{environment}-{sha[:8]}.tfplan")
+        # Plan file is in the working directory, not repo root
+        plan_filename = f"tfplan-{environment}-{sha[:8]}.tfplan"
+        plan_file = resolved_working_dir / plan_filename
         
         # Check if this is a rollback (ref output from branch-deploy)
         # Rollback syntax: .apply main to dev (stable_branch → environment)
@@ -250,7 +252,8 @@ def execute(
                     console.print("[red]❌ Plan file checksum mismatch! Plan may have been tampered with.[/red]")
                     raise typer.Exit(1)
                 console.print("[green]✅ Plan checksum verified[/green]")
-            result = executor.apply(plan_file=plan_file)
+            # Pass just the filename since executor runs from working_directory
+            result = executor.apply(plan_file=Path(plan_filename))
         elif is_rollback:
             console.print("[yellow]⚡ Rollback detected - applying directly from stable branch[/yellow]")
             result = executor.apply()
