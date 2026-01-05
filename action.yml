@@ -376,7 +376,6 @@ runs:
       with:
         path: |
           **/*.tfplan
-          **/.*.consumed
         # Key format: tfplan-{env}-{sha}
         key: tfplan-${{ inputs.mode == 'dispatch' && steps.branch-deploy.outputs.environment || inputs.environment }}-${{ inputs.mode == 'dispatch' && steps.branch-deploy.outputs.sha || inputs.sha }}
 

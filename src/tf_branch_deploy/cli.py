@@ -242,14 +242,6 @@ def execute(
         # Rollback syntax: .apply main to dev (stable_branch → environment)
         is_rollback = os.environ.get("TF_BD_IS_ROLLBACK", "false").lower() == "true"
         
-        # Check for consumed marker - prevents re-applying the same plan
-        consumed_marker = resolved_working_dir / f".{plan_filename}.consumed"
-        
-        if consumed_marker.exists():
-            console.print(f"[red]❌ This plan has already been applied: {plan_filename}[/red]")
-            console.print("[yellow]💡 Run '.plan to {env}' to create a new plan before applying[/yellow]")
-            raise typer.Exit(1)
-        
         if plan_file.exists():
             console.print(f"[green]✅ Found plan file:[/green] {plan_file}")
             # Verify checksum if we have one stored
@@ -274,12 +266,9 @@ def execute(
         if not result.success:
             raise typer.Exit(1)
         
-        # Mark plan as consumed and delete the file
-        if plan_file.exists():
-            # Create consumed marker to prevent re-apply even if cache restores the file
-            consumed_marker.write_text(f"Applied at: {os.environ.get('GITHUB_RUN_ID', 'local')}\n")
-            plan_file.unlink()
-            console.print(f"[dim]🗑️ Plan file consumed: {plan_filename}[/dim]")
+        # Note: We don't delete the plan file because GitHub Actions cache is immutable.
+        # Multiple applies for the same SHA are safe - Terraform is idempotent.
+        console.print(f"[dim]📋 Plan applied: {plan_filename}[/dim]")
     else:
         console.print(f"[red]Unknown operation: {operation}[/red]")
         raise typer.Exit(1)
