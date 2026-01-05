@@ -233,7 +233,33 @@ def execute(
         if not result.success:
             raise typer.Exit(1)
     elif operation == "apply":
-        result = executor.apply()
+        # Look for the plan file from a previous .plan command
+        plan_file = Path(f"tfplan-{environment}-{sha[:8]}.tfplan")
+        
+        # Check if this is a rollback (ref output from branch-deploy)
+        # Rollback syntax: .apply main to dev (stable_branch → environment)
+        is_rollback = os.environ.get("TF_BD_IS_ROLLBACK", "false").lower() == "true"
+        
+        if plan_file.exists():
+            console.print(f"[green]✅ Found plan file:[/green] {plan_file}")
+            # Verify checksum if we have one stored
+            expected_checksum = os.environ.get("TF_BD_PLAN_CHECKSUM")
+            if expected_checksum:
+                from .artifacts import verify_checksum
+                if not verify_checksum(plan_file, expected_checksum):
+                    console.print("[red]❌ Plan file checksum mismatch! Plan may have been tampered with.[/red]")
+                    raise typer.Exit(1)
+                console.print("[green]✅ Plan checksum verified[/green]")
+            result = executor.apply(plan_file=plan_file)
+        elif is_rollback:
+            console.print("[yellow]⚡ Rollback detected - applying directly from stable branch[/yellow]")
+            result = executor.apply()
+        else:
+            console.print(f"[red]❌ No plan file found for this SHA: {plan_file}[/red]")
+            console.print("[yellow]💡 You must run '.plan to {env}' before '.apply to {env}'[/yellow]")
+            console.print("[yellow]💡 For rollback, use: '.apply main to {env}' (from stable branch)[/yellow]")
+            raise typer.Exit(1)
+        
         if not result.success:
             raise typer.Exit(1)
     else:

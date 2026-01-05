@@ -33,11 +33,78 @@ Terraform Branch Deploy extends [branch-deploy](https://github.com/github/branch
 - **Enterprise ready**: Works with GitHub Enterprise Server (GHES) and public GitHub, with automated GHES release tagging.
 - **Workflow integration**: Use the `skip` input to extract environment context for advanced, multi-step workflows without running Terraform operations.
 
+## 🏗️ Architecture: Choosing Your Mode
+
+Terraform Branch Deploy operates in two modes to support both simple and complex "Enterprise" requirements.
+
+| Mode | Description | Best For |
+|------|-------------|----------|
+| **`dispatch`** (Default) | **All-In-One**: Handles comment parsing, locking, status updates, and Terraform execution. | 95% of Use Cases. Easy setup, supports `pre-terraform-hooks` for custom logic. |
+| **`execute`** | **Terraform Only**: Runs *only* the Terraform logic. You manage the `github/branch-deploy` step yourself. | Complex Workflows. Use this if you need separate jobs for OPA policy checks, manual approvals, or matrix builds *between* the command parsing and execution. |
+
+### Enterprise Example using `execute` mode
+```yaml
+jobs:
+  # Job 1: Parse the command
+  parse:
+    uses: github/branch-deploy@v11
+    id: branch-deploy
+  
+  # Job 2: Run Policy Checks (e.g. OPA)
+  policy-check:
+    needs: parse
+    if: ${{ needs.parse.outputs.continue == 'true' }}
+    runs-on: ubuntu-latest
+    steps: ...
+
+  # Job 3: Execute Terraform (only if policy passed)
+  deploy:
+    needs: [parse, policy-check]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: scarowar/terraform-branch-deploy@v1
+        with:
+          mode: execute  # <--- The Magic Switch
+          environment: ${{ needs.parse.outputs.environment }}
+          sha: ${{ needs.parse.outputs.sha }}
+          operation: ${{ needs.parse.outputs.noop == 'true' && 'plan' || 'apply' }}
+```
+
 ## 📸 See It In Action
 
 Watch Terraform Branch Deploy in action - from comment to Terraform infrastructure deployment:
 
 [Terraform Branch Deploy Demo](https://github.com/user-attachments/assets/15b1c060-9be5-4203-9c5d-caa088c2535d)
+
+## 🚀 Advanced Features
+
+### 🎣 Pre-Terraform Hooks
+Execute custom shell commands before Terraform runs but after the environment is set up. Ideal for building Lambda functions, fetching dynamic secrets, or database migrations.
+```yaml
+- uses: scarowar/terraform-branch-deploy@v1
+  with:
+    pre-terraform-hook: |
+      echo "Building Lambda..."
+      npm ci && npm run build
+      echo "Fetching secrets..."
+      ./scripts/fetch-secrets.sh
+```
+Hooks have access to `TF_BD_*` environment variables (e.g., `TF_BD_ENVIRONMENT`, `TF_BD_SHA`).
+
+### 🔧 Dynamic Terraform Arguments
+Pass ad-hoc arguments to Terraform directly from your PR comment using the pipe `|` separator.
+```
+.plan to dev | --target=module.api_gateway --refresh=false
+```
+These arguments are appended to the `terraform plan` or `terraform apply` command.
+
+### 🛡️ Plan Safety & Rollbacks
+- **Enforced Plans**: Defaults to requiring a valid plan file for all `apply` operations to prevent accidental drift.
+- **Checksum Verification**: Validates plan file integrity before execution.
+- **Instant Rollbacks**: When merging a `stable` branch (e.g., reverting `main`), the action detects this and bypasses the plan text requirement, allowing for immediate remediation.
+
+### 💾 Smart Caching
+Plan files are automatically cached and restored between the `plan` and `apply` steps using specific keys (`tfplan-{env}-{sha}`), ensuring that even on ephemeral runners, you apply exactly what you planned.
 
 ---
 
