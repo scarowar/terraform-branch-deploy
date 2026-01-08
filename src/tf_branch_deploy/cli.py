@@ -154,15 +154,21 @@ def execute(
     env_config = config.get_environment(environment)
     resolved_working_dir = Path(working_dir or env_config.working_directory)
 
-    # Parse extra args (e.g., "--target=module.base --target=module.network")
+    # Parse extra args - check env var first (set by action.yml), then CLI option
+    # Using env var avoids shell escaping issues with complex args like -var='key=value'
+    import os
+    import shlex
+    
+    raw_extra_args = extra_args or os.environ.get("TF_BD_EXTRA_ARGS")
     parsed_extra_args = []
-    if extra_args:
+    
+    if raw_extra_args:
         # Split respecting quotes and equals signs
-        import shlex
         try:
-            parsed_extra_args = shlex.split(extra_args)
+            parsed_extra_args = shlex.split(raw_extra_args)
         except ValueError:
-            parsed_extra_args = extra_args.split()
+            # Fallback for malformed input
+            parsed_extra_args = raw_extra_args.split()
         console.print(f"[cyan]📝 Extra args from command:[/cyan] {parsed_extra_args}")
 
     # Display info

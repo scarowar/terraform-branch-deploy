@@ -430,16 +430,18 @@ runs:
         fi
 
         # Build extra args from params
-        EXTRA_ARGS=""
+        # SECURITY: Do NOT use eval with user input from PR comments!
+        # Pass via environment variable and let Python's shlex.split() safely parse it
         if [ -n "$PARAMS" ]; then
           echo "📝 Extra terraform args from command: $PARAMS"
-          EXTRA_ARGS="--extra-args \"$PARAMS\""
+          export TF_BD_EXTRA_ARGS="$PARAMS"
         fi
 
+        # Execute command - TF_BD_EXTRA_ARGS is read by Python if set
         tf-branch-deploy execute \
           --environment "$ENV" \
           --operation "$OPERATION" \
           --sha "$SHA" \
           --config "${{ inputs.config-path }}" \
-          $DRY_RUN_FLAG \
-          $EXTRA_ARGS
+          $DRY_RUN_FLAG
+
