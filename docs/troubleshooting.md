@@ -61,7 +61,7 @@ pre-terraform-hook: |
 
 **Cause:** Plan cache expired or different SHA.
 
-**Fix:** 
+**Fix:**
 - GitHub Actions cache expires after 7 days of no access
 - New commits = new SHA = new cache needed
 - Run `.plan` again

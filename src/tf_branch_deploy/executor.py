@@ -179,6 +179,7 @@ class TerraformExecutor:
         checksum = None
         if out_file.exists():
             from .artifacts import calculate_checksum
+
             checksum = calculate_checksum(out_file)
 
         return PlanResult(
@@ -254,9 +255,12 @@ class TerraformExecutor:
         # tfcmt wraps terraform and posts results to PR
         args = [
             "tfcmt",
-            "-owner", self.repo.split("/")[0],
-            "-repo", self.repo.split("/")[1],
-            "-pr", str(self.pr_number),
+            "-owner",
+            self.repo.split("/")[0],
+            "-repo",
+            self.repo.split("/")[1],
+            "-pr",
+            str(self.pr_number),
             operation,
             "--",
         ] + tf_args

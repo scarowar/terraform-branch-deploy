@@ -58,10 +58,10 @@ pre-terraform-hook: |
 pre-terraform-hook: |
   echo "=== Step 1: Install dependencies ==="
   npm ci
-  
+
   echo "=== Step 2: Build ==="
   npm run build
-  
+
   echo "=== Step 3: Validate ==="
   npm run lint
 ```

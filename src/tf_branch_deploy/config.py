@@ -208,9 +208,7 @@ class TerraformBranchDeployConfig(BaseModel):
 
         return result
 
-    def resolve_args(
-        self, environment: str, arg_type: str
-    ) -> list[str]:
+    def resolve_args(self, environment: str, arg_type: str) -> list[str]:
         """
         Resolve arguments for an environment, applying inheritance.
 

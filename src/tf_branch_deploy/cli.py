@@ -35,7 +35,7 @@ console = Console()
 class Mode(str, Enum):
     """Execution mode."""
 
-    PARSE = "parse"      # Just read config, output settings
+    PARSE = "parse"  # Just read config, output settings
     DISPATCH = "dispatch"  # Full flow (called by action.yml internally)
     EXECUTE = "execute"  # Just run terraform
 
@@ -47,24 +47,26 @@ def set_github_output(name: str, value: str) -> None:
         with open(output_file, "a") as f:
             if "\n" in value:
                 import uuid
+
                 delimiter = uuid.uuid4().hex
                 f.write(f"{name}<<{delimiter}\n{value}\n{delimiter}\n")
             else:
                 f.write(f"{name}={value}\n")
     console.print(f"[dim]Output: {name}={value[:50]}{'...' if len(value) > 50 else ''}[/dim]")
 
+
 def _parse_extra_args(raw: str) -> list[str]:
     """Parse extra args string into list, handling shell quoting.
-    
+
     When users write commands like:
         .plan to dev | -var='msg=hello world'
-    
+
     The quotes are meant for SHELL protection (to preserve spaces).
     But since we now bypass shell (set env var directly), we need to:
     1. Split on unquoted spaces
     2. Strip the outer shell quotes from values
     3. Preserve internal quotes like -target=module.test["key"]
-    
+
     Examples:
         "-var='msg=hello world'" -> ['-var=msg=hello world']
         "-var='key=value'" -> ['-var=key=value']
@@ -76,7 +78,7 @@ def _parse_extra_args(raw: str) -> list[str]:
     in_single = False
     in_double = False
     in_bracket = 0
-    
+
     for char in raw:
         if char == "'" and not in_double:
             in_single = not in_single
@@ -84,22 +86,22 @@ def _parse_extra_args(raw: str) -> list[str]:
         elif char == '"' and not in_single:
             in_double = not in_double
             current.append(char)
-        elif char == '[' and not in_single and not in_double:
+        elif char == "[" and not in_single and not in_double:
             in_bracket += 1
             current.append(char)
-        elif char == ']' and not in_single and not in_double:
+        elif char == "]" and not in_single and not in_double:
             in_bracket = max(0, in_bracket - 1)
             current.append(char)
-        elif char == ' ' and not in_single and not in_double and in_bracket == 0:
+        elif char == " " and not in_single and not in_double and in_bracket == 0:
             if current:
-                args.append(''.join(current))
+                args.append("".join(current))
                 current = []
         else:
             current.append(char)
-    
+
     if current:
-        args.append(''.join(current))
-    
+        args.append("".join(current))
+
     # Now strip shell quoting from each arg
     # e.g. -var='value' -> -var=value, -var="value" -> -var=value
     return [_strip_shell_quotes(arg) for arg in args]
@@ -107,7 +109,7 @@ def _parse_extra_args(raw: str) -> list[str]:
 
 def _strip_shell_quotes(arg: str) -> str:
     """Strip shell quoting from an argument value.
-    
+
     Handles patterns like:
         -var='key=value' -> -var=key=value
         -var="key=value" -> -var=key=value
@@ -115,21 +117,21 @@ def _strip_shell_quotes(arg: str) -> str:
         -target=module.test["key"] -> -target=module.test["key"] (preserve inner quotes)
     """
     # Find the first = to split flag from value
-    eq_pos = arg.find('=')
+    eq_pos = arg.find("=")
     if eq_pos == -1:
         return arg  # No value part (e.g., just a flag)
-    
-    flag = arg[:eq_pos + 1]  # e.g., "-var="
-    value = arg[eq_pos + 1:]  # e.g., "'key=value'"
-    
+
+    flag = arg[: eq_pos + 1]  # e.g., "-var="
+    value = arg[eq_pos + 1 :]  # e.g., "'key=value'"
+
     # Strip outer quotes from value if present
     if len(value) >= 2:
-        if (value.startswith("'") and value.endswith("'")) or \
-           (value.startswith('"') and value.endswith('"')):
+        if (value.startswith("'") and value.endswith("'")) or (
+            value.startswith('"') and value.endswith('"')
+        ):
             value = value[1:-1]
-    
-    return flag + value
 
+    return flag + value
 
 
 @app.command()
@@ -145,10 +147,9 @@ def parse(
     This mode does NOT call branch-deploy or run terraform.
     Use this when you need config info before calling branch-deploy yourself.
     """
-    console.print(Panel.fit(
-        "[bold blue]Terraform Branch Deploy[/bold blue] v0.2.0",
-        subtitle="Parse Mode"
-    ))
+    console.print(
+        Panel.fit("[bold blue]Terraform Branch Deploy[/bold blue] v0.2.0", subtitle="Parse Mode")
+    )
 
     try:
         config = load_config(config_path)
@@ -199,7 +200,10 @@ def execute(
         bool, typer.Option("--dry-run", help="Print commands without executing")
     ] = False,
     extra_args: Annotated[
-        str | None, typer.Option("--extra-args", help="Extra terraform args from PR comment (e.g., --target=module.base)")
+        str | None,
+        typer.Option(
+            "--extra-args", help="Extra terraform args from PR comment (e.g., --target=module.base)"
+        ),
     ] = None,
 ) -> None:
     """
@@ -211,10 +215,9 @@ def execute(
     Dynamic args can be passed via PR comment:
       .plan to dev | --target=module.base --target=module.network
     """
-    console.print(Panel.fit(
-        "[bold blue]Terraform Branch Deploy[/bold blue] v0.2.0",
-        subtitle="Execute Mode"
-    ))
+    console.print(
+        Panel.fit("[bold blue]Terraform Branch Deploy[/bold blue] v0.2.0", subtitle="Execute Mode")
+    )
 
     try:
         config = load_config(config_path)
@@ -235,10 +238,10 @@ def execute(
     # Parse extra args - check env var first (set by action.yml), then CLI option
     # Using env var avoids shell escaping issues with complex args like -var='key=value'
     import os
-    
+
     raw_extra_args = extra_args or os.environ.get("TF_BD_EXTRA_ARGS")
     parsed_extra_args = []
-    
+
     if raw_extra_args:
         # Custom parser that splits on unquoted spaces but preserves quotes in values
         # This handles -target=module.test["key"] and -var='key=value' correctly
@@ -317,35 +320,44 @@ def execute(
         # Plan file is in the working directory, not repo root
         plan_filename = f"tfplan-{environment}-{sha[:8]}.tfplan"
         plan_file = resolved_working_dir / plan_filename
-        
+
         # Check if this is a rollback (ref output from branch-deploy)
         # Rollback syntax: .apply main to dev (stable_branch → environment)
         is_rollback = os.environ.get("TF_BD_IS_ROLLBACK", "false").lower() == "true"
-        
+
         if plan_file.exists():
             console.print(f"[green]✅ Found plan file:[/green] {plan_file}")
             # Verify checksum if we have one stored
             expected_checksum = os.environ.get("TF_BD_PLAN_CHECKSUM")
             if expected_checksum:
                 from .artifacts import verify_checksum
+
                 if not verify_checksum(plan_file, expected_checksum):
-                    console.print("[red]❌ Plan file checksum mismatch! Plan may have been tampered with.[/red]")
+                    console.print(
+                        "[red]❌ Plan file checksum mismatch! Plan may have been tampered with.[/red]"
+                    )
                     raise typer.Exit(1)
                 console.print("[green]✅ Plan checksum verified[/green]")
             # Pass just the filename since executor runs from working_directory
             result = executor.apply(plan_file=Path(plan_filename))
         elif is_rollback:
-            console.print("[yellow]⚡ Rollback detected - applying directly from stable branch[/yellow]")
+            console.print(
+                "[yellow]⚡ Rollback detected - applying directly from stable branch[/yellow]"
+            )
             result = executor.apply()
         else:
             console.print(f"[red]❌ No plan file found for this SHA: {plan_file}[/red]")
-            console.print("[yellow]💡 You must run '.plan to {env}' before '.apply to {env}'[/yellow]")
-            console.print("[yellow]💡 For rollback, use: '.apply main to {env}' (from stable branch)[/yellow]")
+            console.print(
+                "[yellow]💡 You must run '.plan to {env}' before '.apply to {env}'[/yellow]"
+            )
+            console.print(
+                "[yellow]💡 For rollback, use: '.apply main to {env}' (from stable branch)[/yellow]"
+            )
             raise typer.Exit(1)
-        
+
         if not result.success:
             raise typer.Exit(1)
-        
+
         # Note: We don't delete the plan file because GitHub Actions cache is immutable.
         # Multiple applies for the same SHA are safe - Terraform is idempotent.
         console.print(f"[dim]📋 Plan applied: {plan_filename}[/dim]")
@@ -390,6 +402,7 @@ def validate(
 def schema() -> None:
     """Output the JSON schema for .tf-branch-deploy.yml."""
     from .config import generate_json_schema
+
     schema_json = generate_json_schema()
     console.print_json(data=schema_json)
 
@@ -411,4 +424,3 @@ def environments(
 
 if __name__ == "__main__":
     app()
-

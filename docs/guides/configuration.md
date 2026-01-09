@@ -37,7 +37,7 @@ environments:
       inherit: true
       paths:
         - dev.tfvars
-  
+
   prod:
     working-directory: terraform/prod
     var-files:

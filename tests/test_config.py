@@ -17,14 +17,16 @@ class TestTerraformBranchDeployConfig:
 
     def test_minimal_valid_config(self) -> None:
         """Test that minimal required config is valid."""
-        config = TerraformBranchDeployConfig.model_validate({
-            "default-environment": "dev",
-            "production-environments": ["prod"],
-            "environments": {
-                "dev": {},
-                "prod": {},
-            },
-        })
+        config = TerraformBranchDeployConfig.model_validate(
+            {
+                "default-environment": "dev",
+                "production-environments": ["prod"],
+                "environments": {
+                    "dev": {},
+                    "prod": {},
+                },
+            }
+        )
 
         assert config.default_environment == "dev"
         assert config.production_environments == ["prod"]
@@ -34,38 +36,44 @@ class TestTerraformBranchDeployConfig:
     def test_default_environment_must_exist(self) -> None:
         """Test that default-environment must reference an existing environment."""
         with pytest.raises(ValueError, match="not defined in environments"):
-            TerraformBranchDeployConfig.model_validate({
-                "default-environment": "staging",  # Doesn't exist
-                "production-environments": ["prod"],
-                "environments": {
-                    "dev": {},
-                    "prod": {},
-                },
-            })
+            TerraformBranchDeployConfig.model_validate(
+                {
+                    "default-environment": "staging",  # Doesn't exist
+                    "production-environments": ["prod"],
+                    "environments": {
+                        "dev": {},
+                        "prod": {},
+                    },
+                }
+            )
 
     def test_production_environment_must_exist(self) -> None:
         """Test that production-environments must reference existing environments."""
         with pytest.raises(ValueError, match="not defined in environments"):
-            TerraformBranchDeployConfig.model_validate({
-                "default-environment": "dev",
-                "production-environments": ["prod", "staging"],  # staging doesn't exist
-                "environments": {
-                    "dev": {},
-                    "prod": {},
-                },
-            })
+            TerraformBranchDeployConfig.model_validate(
+                {
+                    "default-environment": "dev",
+                    "production-environments": ["prod", "staging"],  # staging doesn't exist
+                    "environments": {
+                        "dev": {},
+                        "prod": {},
+                    },
+                }
+            )
 
     def test_is_production(self) -> None:
         """Test production environment detection."""
-        config = TerraformBranchDeployConfig.model_validate({
-            "default-environment": "dev",
-            "production-environments": ["prod", "prod-eu"],
-            "environments": {
-                "dev": {},
-                "prod": {},
-                "prod-eu": {},
-            },
-        })
+        config = TerraformBranchDeployConfig.model_validate(
+            {
+                "default-environment": "dev",
+                "production-environments": ["prod", "prod-eu"],
+                "environments": {
+                    "dev": {},
+                    "prod": {},
+                    "prod-eu": {},
+                },
+            }
+        )
 
         assert not config.is_production("dev")
         assert config.is_production("prod")
@@ -73,28 +81,17 @@ class TestTerraformBranchDeployConfig:
 
     def test_var_files_inheritance(self) -> None:
         """Test that var-files properly inherit from defaults."""
-        config = TerraformBranchDeployConfig.model_validate({
-            "default-environment": "dev",
-            "production-environments": ["prod"],
-            "defaults": {
-                "var-files": {
-                    "paths": ["common.tfvars"]
-                }
-            },
-            "environments": {
-                "dev": {
-                    "var-files": {
-                        "paths": ["dev.tfvars"]
-                    }
+        config = TerraformBranchDeployConfig.model_validate(
+            {
+                "default-environment": "dev",
+                "production-environments": ["prod"],
+                "defaults": {"var-files": {"paths": ["common.tfvars"]}},
+                "environments": {
+                    "dev": {"var-files": {"paths": ["dev.tfvars"]}},
+                    "prod": {"var-files": {"inherit": False, "paths": ["prod.tfvars"]}},
                 },
-                "prod": {
-                    "var-files": {
-                        "inherit": False,
-                        "paths": ["prod.tfvars"]
-                    }
-                },
-            },
-        })
+            }
+        )
 
         # dev inherits common.tfvars
         dev_var_files = config.resolve_var_files("dev")
@@ -106,24 +103,17 @@ class TestTerraformBranchDeployConfig:
 
     def test_args_inheritance(self) -> None:
         """Test that args properly inherit from defaults."""
-        config = TerraformBranchDeployConfig.model_validate({
-            "default-environment": "dev",
-            "production-environments": ["prod"],
-            "defaults": {
-                "plan-args": {
-                    "args": ["-compact-warnings"]
-                }
-            },
-            "environments": {
-                "dev": {},
-                "prod": {
-                    "plan-args": {
-                        "inherit": False,
-                        "args": ["-parallelism=30"]
-                    }
+        config = TerraformBranchDeployConfig.model_validate(
+            {
+                "default-environment": "dev",
+                "production-environments": ["prod"],
+                "defaults": {"plan-args": {"args": ["-compact-warnings"]}},
+                "environments": {
+                    "dev": {},
+                    "prod": {"plan-args": {"inherit": False, "args": ["-parallelism=30"]}},
                 },
-            },
-        })
+            }
+        )
 
         # dev inherits defaults
         dev_plan_args = config.resolve_args("dev", "plan_args")
@@ -135,37 +125,41 @@ class TestTerraformBranchDeployConfig:
 
     def test_working_directory_default(self) -> None:
         """Test that working-directory defaults to current directory."""
-        config = TerraformBranchDeployConfig.model_validate({
-            "default-environment": "dev",
-            "production-environments": ["dev"],
-            "environments": {
-                "dev": {},  # No working-directory specified
-            },
-        })
+        config = TerraformBranchDeployConfig.model_validate(
+            {
+                "default-environment": "dev",
+                "production-environments": ["dev"],
+                "environments": {
+                    "dev": {},  # No working-directory specified
+                },
+            }
+        )
 
         env = config.get_environment("dev")
         assert env.working_directory == "."
 
     def test_hotfix_config(self) -> None:
         """Test hotfix configuration parsing."""
-        config = TerraformBranchDeployConfig.model_validate({
-            "default-environment": "dev",
-            "production-environments": ["prod"],
-            "hotfix": {
-                "detection": {
-                    "branch-pattern": "hotfix/*",
-                    "targets-stable-branch": True,
+        config = TerraformBranchDeployConfig.model_validate(
+            {
+                "default-environment": "dev",
+                "production-environments": ["prod"],
+                "hotfix": {
+                    "detection": {
+                        "branch-pattern": "hotfix/*",
+                        "targets-stable-branch": True,
+                    },
+                    "safety": {
+                        "require_confirmation": True,
+                        "require_approval": True,
+                    },
                 },
-                "safety": {
-                    "require_confirmation": True,
-                    "require_approval": True,
+                "environments": {
+                    "dev": {},
+                    "prod": {},
                 },
-            },
-            "environments": {
-                "dev": {},
-                "prod": {},
-            },
-        })
+            }
+        )
 
         assert config.hotfix is not None
         assert config.hotfix.detection.branch_pattern == "hotfix/*"
@@ -174,12 +168,14 @@ class TestTerraformBranchDeployConfig:
     def test_extra_fields_rejected(self) -> None:
         """Test that unknown fields are rejected."""
         with pytest.raises(ValueError, match="Extra inputs are not permitted"):
-            TerraformBranchDeployConfig.model_validate({
-                "default-environment": "dev",
-                "production-environments": ["dev"],
-                "environments": {"dev": {}},
-                "unknown_field": "value",
-            })
+            TerraformBranchDeployConfig.model_validate(
+                {
+                    "default-environment": "dev",
+                    "production-environments": ["dev"],
+                    "environments": {"dev": {}},
+                    "unknown_field": "value",
+                }
+            )
 
 
 class TestLoadConfig:
@@ -201,7 +197,8 @@ class TestLoadConfig:
     def test_valid_yaml_file(self, tmp_path: Path) -> None:
         """Test loading a valid YAML config file."""
         config_file = tmp_path / ".tf-branch-deploy.yml"
-        config_file.write_text(dedent("""
+        config_file.write_text(
+            dedent("""
             default-environment: dev
             production-environments:
               - prod
@@ -210,7 +207,8 @@ class TestLoadConfig:
                 working-directory: ./terraform/dev
               prod:
                 working-directory: ./terraform/prod
-        """))
+        """)
+        )
 
         config = load_config(config_file)
 

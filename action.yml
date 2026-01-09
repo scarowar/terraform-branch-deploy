@@ -446,4 +446,3 @@ runs:
           --sha "$SHA" \
           --config "${{ inputs.config-path }}" \
           $DRY_RUN_FLAG
-
