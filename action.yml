@@ -416,13 +416,15 @@ runs:
           SHA="${{ steps.branch-deploy.outputs.sha }}"
           OPERATION="${{ steps.branch-deploy.outputs.noop == 'true' && 'plan' || 'apply' }}"
           # Params from PR comment (e.g., ".plan to dev | --target=module.base")
-          PARAMS="${{ steps.branch-deploy.outputs.params }}"
+          # Use single quotes to preserve inner quotes like ["key"] in targets
+          PARAMS='${{ steps.branch-deploy.outputs.params }}'
         else
           ENV="${{ inputs.environment }}"
           SHA="${{ inputs.sha }}"
           OPERATION="${{ inputs.operation }}"
-          PARAMS="${{ inputs.extra-args }}"
+          PARAMS='${{ inputs.extra-args }}'
         fi
+
 
         DRY_RUN_FLAG=""
         if [ "${{ inputs.dry-run }}" == "true" ]; then
