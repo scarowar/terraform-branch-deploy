@@ -1,57 +1,56 @@
+# See https://pre-commit.com for more information
 repos:
+  # Basic file hygiene
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
-        exclude: mkdocs.yml
       - id: check-added-large-files
       - id: check-merge-conflict
-      - id: check-case-conflict
-      - id: check-json
 
+  # Python linting and formatting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  # Python type checking
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.14.1
+    hooks:
+      - id: mypy
+        additional_dependencies:
+          - pydantic>=2.0
+          - typer>=0.9
+          - rich>=13.0
+        args: [--ignore-missing-imports]
+
+  # Python security scanning
+  - repo: https://github.com/PyCQA/bandit
+    rev: "1.9.2"
+    hooks:
+      - id: bandit
+        args: [-r, src/]
+        exclude: tests/
+
+  # Secret detection
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.28.0
+    rev: v8.30.0
     hooks:
       - id: gitleaks
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.4
-    hooks:
-      - id: ruff-check
-        args: [--fix]
-        files: scripts/prepare_tf_branch_deploy.py
-      - id: ruff-format
-        files: scripts/prepare_tf_branch_deploy.py
-
-  - repo: https://github.com/psf/black
-    rev: 25.1.0
-    hooks:
-      - id: black
-        language_version: python3.12
-        files: scripts/prepare_tf_branch_deploy.py
-
-  - repo: https://github.com/PyCQA/bandit
-    rev: 1.8.6
-    hooks:
-      - id: bandit
-        files: scripts/prepare_tf_branch_deploy.py
-
+  # GitHub Actions linting
   - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.7
+    rev: v1.7.10
     hooks:
       - id: actionlint
 
+  # Commit message linting
   - repo: https://github.com/jorisroovers/gitlint
     rev: v0.19.1
     hooks:
       - id: gitlint
-
-  - repo: https://github.com/jazzband/pip-tools
-    rev: 7.4.1
-    hooks:
-      - id: pip-compile
-        name: pip-compile requirements.in
-        args: [--generate-hashes, requirements.in]
-        files: ^requirements\.(in|txt)$

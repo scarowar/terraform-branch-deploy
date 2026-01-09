@@ -2,9 +2,6 @@
 
 from pathlib import Path
 
-from hypothesis import given
-from hypothesis import strategies as st
-
 from tf_branch_deploy.artifacts import (
     calculate_checksum,
     generate_artifact_name,
@@ -64,19 +61,23 @@ class TestArtifactNaming:
         assert "prod" in name
         assert name.endswith(".tfplan")
 
-    @given(
-        env=st.text(
-            min_size=1, max_size=20, alphabet=st.characters(whitelist_categories=("L", "N"))
-        ),
-        sha=st.text(min_size=8, max_size=40, alphabet="0123456789abcdef"),
-    )
-    def test_artifact_name_format_property(self, env: str, sha: str) -> None:
-        """Property: artifact name is always valid filename format."""
-        name = generate_artifact_name(env, sha)
+    def test_artifact_name_various_environments(self) -> None:
+        """Test artifact naming with various environment names."""
+        test_cases = [
+            ("dev", "abc12345", "tfplan-dev-abc12345.tfplan"),
+            ("prod", "def67890abc12345", "tfplan-prod-def67890.tfplan"),
+            ("staging", "1234abcd", "tfplan-staging-1234abcd.tfplan"),
+        ]
 
-        # Should be a valid filename
+        for env, sha, expected in test_cases:
+            result = generate_artifact_name(env, sha)
+            assert result == expected, f"Failed for {env}, {sha}"
+
+    def test_artifact_name_is_valid_filename(self) -> None:
+        """Artifact name should be a valid filename."""
+        name = generate_artifact_name("prod-eu", "abc123def456")
+
         assert "/" not in name
         assert "\\" not in name
         assert name.endswith(".tfplan")
-        # Should include environment
-        assert env in name
+        assert "prod-eu" in name

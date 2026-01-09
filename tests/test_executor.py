@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from tf_branch_deploy.executor import (
-    ApplyResult,
     CommandResult,
     PlanResult,
     TerraformExecutor,

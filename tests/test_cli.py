@@ -77,56 +77,6 @@ class TestEnvironmentsCommand:
         assert "prod" in result.stdout
 
 
-class TestRunCommand:
-    """Tests for the run command."""
-
-    def test_run_with_valid_environment(self, tmp_path: Path) -> None:
-        """Test running with a valid environment."""
-        config_file = tmp_path / ".tf-branch-deploy.yml"
-        config_file.write_text(dedent("""
-            default-environment: dev
-            production-environments: [prod]
-            environments:
-              dev:
-                working-directory: ./terraform/dev
-              prod:
-                working-directory: ./terraform/prod
-        """))
-
-        result = runner.invoke(app, [
-            "run",
-            "--environment", "dev",
-            "--operation", "plan",
-            "--sha", "abc123def456",
-            "--config", str(config_file),
-            "--mode", "skip",  # Skip mode - don't run terraform
-        ])
-
-        assert result.exit_code == 0
-        assert "dev" in result.stdout
-
-    def test_run_with_invalid_environment(self, tmp_path: Path) -> None:
-        """Test error for invalid environment."""
-        config_file = tmp_path / ".tf-branch-deploy.yml"
-        config_file.write_text(dedent("""
-            default-environment: dev
-            production-environments: [dev]
-            environments:
-              dev: {}
-        """))
-
-        result = runner.invoke(app, [
-            "run",
-            "--environment", "staging",  # Doesn't exist
-            "--operation", "plan",
-            "--sha", "abc123",
-            "--config", str(config_file),
-        ])
-
-        assert result.exit_code == 1
-        # Error message should mention the environment isn't found/defined
-        assert "staging" in result.stdout.lower()
-
 
 class TestSchemaCommand:
     """Tests for the schema command."""

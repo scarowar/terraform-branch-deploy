@@ -57,7 +57,7 @@ body:
         ```yaml
         jobs:
           deploy:
-            uses: scarowar/terraform-branch-deploy@v1
+            uses: scarowar/terraform-branch-deploy@v0.2.0
             with:
               ...
         ```

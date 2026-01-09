@@ -409,32 +409,6 @@ def environments(
         raise typer.Exit(1) from None
 
 
-# Keep backward compatibility with old 'run' command
-@app.command(hidden=True)
-def run(
-    environment: Annotated[str, typer.Option("--environment", "-e")],
-    operation: Annotated[str, typer.Option("--operation", "-o")],
-    sha: Annotated[str, typer.Option("--sha", "-s")],
-    config_path: Annotated[Path, typer.Option("--config", "-c")] = Path(".tf-branch-deploy.yml"),
-    mode: Annotated[str, typer.Option("--mode", "-m")] = "execute",
-    working_dir: Annotated[Path | None, typer.Option("--working-dir", "-w")] = None,
-) -> None:
-    """[DEPRECATED] Use 'parse' or 'execute' instead."""
-    console.print("[yellow]⚠️ 'run' command is deprecated. Use 'parse' or 'execute'.[/yellow]")
-
-    if mode == "skip":
-        # Old skip mode = new parse mode
-        parse(environment=environment, config_path=config_path)
-    else:
-        # Old run mode = new execute mode
-        execute(
-            environment=environment,
-            operation=operation,
-            sha=sha,
-            config_path=config_path,
-            working_dir=working_dir,
-        )
-
-
 if __name__ == "__main__":
     app()
+

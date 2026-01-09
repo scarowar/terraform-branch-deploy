@@ -1,4 +1,0 @@
-# file: /home/scarowar/dev/scarowar/terraform-branch-deploy/src/tf_branch_deploy/executor.py
-# hypothesis_version: 6.148.11
-
-['--', '--version', '-auto-approve', '-backend-config', '-detailed-exitcode', '-input=false', '-out', '-owner', '-pr', '-repo', '-var-file', '/', 'GITHUB_TOKEN', 'apply', 'init', 'no changes', 'plan', 'terraform', 'tfcmt', 'tfplan.bin', 'with changes']
