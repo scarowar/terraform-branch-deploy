@@ -53,14 +53,22 @@ def set_github_output(name: str, value: str) -> None:
                 f.write(f"{name}={value}\n")
     console.print(f"[dim]Output: {name}={value[:50]}{'...' if len(value) > 50 else ''}[/dim]")
 
-
 def _parse_extra_args(raw: str) -> list[str]:
-    """Parse extra args string into list, preserving quotes.
+    """Parse extra args string into list, handling shell quoting.
     
-    Splits on unquoted spaces but keeps quotes intact in the values.
+    When users write commands like:
+        .plan to dev | -var='msg=hello world'
+    
+    The quotes are meant for SHELL protection (to preserve spaces).
+    But since we now bypass shell (set env var directly), we need to:
+    1. Split on unquoted spaces
+    2. Strip the outer shell quotes from values
+    3. Preserve internal quotes like -target=module.test["key"]
+    
     Examples:
+        "-var='msg=hello world'" -> ['-var=msg=hello world']
+        "-var='key=value'" -> ['-var=key=value']
         "-target=module.test[\"key\"]" -> ['-target=module.test["key"]']
-        "-var='msg=hello world'" -> ["-var='msg=hello world'"]
         "-refresh=false -parallelism=5" -> ['-refresh=false', '-parallelism=5']
     """
     args = []
@@ -92,7 +100,36 @@ def _parse_extra_args(raw: str) -> list[str]:
     if current:
         args.append(''.join(current))
     
-    return args
+    # Now strip shell quoting from each arg
+    # e.g. -var='value' -> -var=value, -var="value" -> -var=value
+    return [_strip_shell_quotes(arg) for arg in args]
+
+
+def _strip_shell_quotes(arg: str) -> str:
+    """Strip shell quoting from an argument value.
+    
+    Handles patterns like:
+        -var='key=value' -> -var=key=value
+        -var="key=value" -> -var=key=value
+        -var='msg=hello world' -> -var=msg=hello world
+        -target=module.test["key"] -> -target=module.test["key"] (preserve inner quotes)
+    """
+    # Find the first = to split flag from value
+    eq_pos = arg.find('=')
+    if eq_pos == -1:
+        return arg  # No value part (e.g., just a flag)
+    
+    flag = arg[:eq_pos + 1]  # e.g., "-var="
+    value = arg[eq_pos + 1:]  # e.g., "'key=value'"
+    
+    # Strip outer quotes from value if present
+    if len(value) >= 2:
+        if (value.startswith("'") and value.endswith("'")) or \
+           (value.startswith('"') and value.endswith('"')):
+            value = value[1:-1]
+    
+    return flag + value
+
 
 
 @app.command()
