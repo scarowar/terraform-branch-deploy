@@ -54,6 +54,47 @@ def set_github_output(name: str, value: str) -> None:
     console.print(f"[dim]Output: {name}={value[:50]}{'...' if len(value) > 50 else ''}[/dim]")
 
 
+def _parse_extra_args(raw: str) -> list[str]:
+    """Parse extra args string into list, preserving quotes.
+    
+    Splits on unquoted spaces but keeps quotes intact in the values.
+    Examples:
+        "-target=module.test[\"key\"]" -> ['-target=module.test["key"]']
+        "-var='msg=hello world'" -> ["-var='msg=hello world'"]
+        "-refresh=false -parallelism=5" -> ['-refresh=false', '-parallelism=5']
+    """
+    args = []
+    current = []
+    in_single = False
+    in_double = False
+    in_bracket = 0
+    
+    for char in raw:
+        if char == "'" and not in_double:
+            in_single = not in_single
+            current.append(char)
+        elif char == '"' and not in_single:
+            in_double = not in_double
+            current.append(char)
+        elif char == '[' and not in_single and not in_double:
+            in_bracket += 1
+            current.append(char)
+        elif char == ']' and not in_single and not in_double:
+            in_bracket = max(0, in_bracket - 1)
+            current.append(char)
+        elif char == ' ' and not in_single and not in_double and in_bracket == 0:
+            if current:
+                args.append(''.join(current))
+                current = []
+        else:
+            current.append(char)
+    
+    if current:
+        args.append(''.join(current))
+    
+    return args
+
+
 @app.command()
 def parse(
     environment: Annotated[str, typer.Option("--environment", "-e", help="Target environment")],
@@ -157,18 +198,14 @@ def execute(
     # Parse extra args - check env var first (set by action.yml), then CLI option
     # Using env var avoids shell escaping issues with complex args like -var='key=value'
     import os
-    import shlex
     
     raw_extra_args = extra_args or os.environ.get("TF_BD_EXTRA_ARGS")
     parsed_extra_args = []
     
     if raw_extra_args:
-        # Split respecting quotes and equals signs
-        try:
-            parsed_extra_args = shlex.split(raw_extra_args)
-        except ValueError:
-            # Fallback for malformed input
-            parsed_extra_args = raw_extra_args.split()
+        # Custom parser that splits on unquoted spaces but preserves quotes in values
+        # This handles -target=module.test["key"] and -var='key=value' correctly
+        parsed_extra_args = _parse_extra_args(raw_extra_args)
         console.print(f"[cyan]📝 Extra args from command:[/cyan] {parsed_extra_args}")
 
     # Display info

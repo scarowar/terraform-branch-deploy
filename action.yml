@@ -409,37 +409,37 @@ runs:
         TF_BD_PR_NUMBER: ${{ inputs.mode == 'dispatch' && steps.branch-deploy.outputs.issue_number || inputs.pr-number }}
         # Rollback detection: .apply main to dev (ref is stable branch, not PR branch)
         TF_BD_IS_ROLLBACK: ${{ inputs.mode == 'dispatch' && steps.branch-deploy.outputs.ref == inputs.stable-branch || inputs.is-rollback }}
+        # CRITICAL: Set extra args directly as env var to bypass shell entirely!
+        # Shell quoting is broken for nested quotes like -var='key=value' or -target=module.test["key"]
+        # By setting here, GitHub Actions passes the raw value directly without shell interpretation
+        TF_BD_EXTRA_ARGS: ${{ inputs.mode == 'dispatch' && steps.branch-deploy.outputs.params || inputs.extra-args }}
+        # Also set other dispatch-mode values via env to avoid shell quoting issues
+        TF_BD_DISPATCH_ENV: ${{ steps.branch-deploy.outputs.environment }}
+        TF_BD_DISPATCH_SHA: ${{ steps.branch-deploy.outputs.sha }}
+        TF_BD_DISPATCH_OPERATION: ${{ steps.branch-deploy.outputs.noop == 'true' && 'plan' || 'apply' }}
       run: |
         # Determine values based on mode
         if [ "${{ inputs.mode }}" == "dispatch" ]; then
-          ENV="${{ steps.branch-deploy.outputs.environment }}"
-          SHA="${{ steps.branch-deploy.outputs.sha }}"
-          OPERATION="${{ steps.branch-deploy.outputs.noop == 'true' && 'plan' || 'apply' }}"
-          # Params from PR comment (e.g., ".plan to dev | --target=module.base")
-          # Use single quotes to preserve inner quotes like ["key"] in targets
-          PARAMS='${{ steps.branch-deploy.outputs.params }}'
+          ENV="$TF_BD_DISPATCH_ENV"
+          SHA="$TF_BD_DISPATCH_SHA"
+          OPERATION="$TF_BD_DISPATCH_OPERATION"
         else
           ENV="${{ inputs.environment }}"
           SHA="${{ inputs.sha }}"
           OPERATION="${{ inputs.operation }}"
-          PARAMS='${{ inputs.extra-args }}'
         fi
-
 
         DRY_RUN_FLAG=""
         if [ "${{ inputs.dry-run }}" == "true" ]; then
           DRY_RUN_FLAG="--dry-run"
         fi
 
-        # Build extra args from params
-        # SECURITY: Do NOT use eval with user input from PR comments!
-        # Pass via environment variable and let Python's shlex.split() safely parse it
-        if [ -n "$PARAMS" ]; then
-          echo "📝 Extra terraform args from command: $PARAMS"
-          export TF_BD_EXTRA_ARGS="$PARAMS"
+        # Log extra args if present (TF_BD_EXTRA_ARGS is set at env level above)
+        if [ -n "$TF_BD_EXTRA_ARGS" ]; then
+          echo "📝 Extra terraform args from command: $TF_BD_EXTRA_ARGS"
         fi
 
-        # Execute command - TF_BD_EXTRA_ARGS is read by Python if set
+        # Execute command - TF_BD_EXTRA_ARGS is already set as env var
         tf-branch-deploy execute \
           --environment "$ENV" \
           --operation "$OPERATION" \
