@@ -14,6 +14,9 @@ from pathlib import Path
 
 from rich.console import Console
 
+# Constants
+TF_INPUT_FALSE = "-input=false"
+
 console = Console()
 
 
@@ -105,7 +108,7 @@ class TerraformExecutor:
         """Run terraform init."""
         console.print("\n[bold blue]📦 Terraform Init[/bold blue]")
 
-        args = ["terraform", "init", "-input=false"]
+        args = ["terraform", "init", TF_INPUT_FALSE]
 
         # Add backend configs
         for backend in self.backend_configs:
@@ -139,7 +142,7 @@ class TerraformExecutor:
         if out_file is None:
             out_file = self.working_directory / "tfplan.bin"
 
-        args = ["terraform", "plan", "-input=false", "-detailed-exitcode"]
+        args = ["terraform", "plan", TF_INPUT_FALSE, "-detailed-exitcode"]
 
         # Add var files
         for var_file in self.var_files:
@@ -200,7 +203,7 @@ class TerraformExecutor:
         """
         console.print("\n[bold blue]🚀 Terraform Apply[/bold blue]")
 
-        args = ["terraform", "apply", "-input=false", "-auto-approve"]
+        args = ["terraform", "apply", TF_INPUT_FALSE, "-auto-approve"]
 
         if plan_file and plan_file.exists():
             args.append(str(plan_file))

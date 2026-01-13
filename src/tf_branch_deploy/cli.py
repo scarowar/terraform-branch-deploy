@@ -15,7 +15,10 @@ import json
 import os
 from enum import Enum
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
+
+if TYPE_CHECKING:
+    from .executor import TerraformExecutor
 
 import typer
 from rich.console import Console
@@ -23,6 +26,9 @@ from rich.panel import Panel
 from rich.table import Table
 
 from .config import load_config
+
+# Constants
+DEFAULT_CONFIG_PATH = Path(".tf-branch-deploy.yml")
 
 app = typer.Typer(
     name="tf-branch-deploy",
@@ -73,38 +79,56 @@ def _parse_extra_args(raw: str) -> list[str]:
         "-target=module.test[\"key\"]" -> ['-target=module.test["key"]']
         "-refresh=false -parallelism=5" -> ['-refresh=false', '-parallelism=5']
     """
-    args = []
-    current = []
-    in_single = False
-    in_double = False
-    in_bracket = 0
+    tokenizer = _ArgTokenizer()
+    tokens = tokenizer.tokenize(raw)
+    return [_strip_shell_quotes(arg) for arg in tokens]
 
-    for char in raw:
-        if char == "'" and not in_double:
-            in_single = not in_single
-            current.append(char)
-        elif char == '"' and not in_single:
-            in_double = not in_double
-            current.append(char)
-        elif char == "[" and not in_single and not in_double:
-            in_bracket += 1
-            current.append(char)
-        elif char == "]" and not in_single and not in_double:
-            in_bracket = max(0, in_bracket - 1)
-            current.append(char)
-        elif char == " " and not in_single and not in_double and in_bracket == 0:
-            if current:
-                args.append("".join(current))
-                current = []
+
+class _ArgTokenizer:
+    """Tokenizer for shell-quoted argument strings."""
+
+    def __init__(self) -> None:
+        self.args: list[str] = []
+        self.current: list[str] = []
+        self.in_single = False
+        self.in_double = False
+        self.in_bracket = 0
+
+    def tokenize(self, raw: str) -> list[str]:
+        """Tokenize a raw argument string into individual args."""
+        for char in raw:
+            self._process_char(char)
+        self._flush_current()
+        return self.args
+
+    def _process_char(self, char: str) -> None:
+        """Process a single character."""
+        if char == "'" and not self.in_double:
+            self.in_single = not self.in_single
+            self.current.append(char)
+        elif char == '"' and not self.in_single:
+            self.in_double = not self.in_double
+            self.current.append(char)
+        elif char == "[" and not self._in_quotes():
+            self.in_bracket += 1
+            self.current.append(char)
+        elif char == "]" and not self._in_quotes():
+            self.in_bracket = max(0, self.in_bracket - 1)
+            self.current.append(char)
+        elif char == " " and not self._in_quotes() and self.in_bracket == 0:
+            self._flush_current()
         else:
-            current.append(char)
+            self.current.append(char)
 
-    if current:
-        args.append("".join(current))
+    def _in_quotes(self) -> bool:
+        """Check if currently inside quotes."""
+        return self.in_single or self.in_double
 
-    # Now strip shell quoting from each arg
-    # e.g. -var='value' -> -var=value, -var="value" -> -var=value
-    return [_strip_shell_quotes(arg) for arg in args]
+    def _flush_current(self) -> None:
+        """Flush current token to args list."""
+        if self.current:
+            self.args.append("".join(self.current))
+            self.current = []
 
 
 def _strip_shell_quotes(arg: str) -> str:
@@ -139,7 +163,7 @@ def parse(
     environment: Annotated[str, typer.Option("--environment", "-e", help="Target environment")],
     config_path: Annotated[
         Path, typer.Option("--config", "-c", help="Path to .tf-branch-deploy.yml")
-    ] = Path(".tf-branch-deploy.yml"),
+    ] = DEFAULT_CONFIG_PATH,
 ) -> None:
     """
     Parse config and output settings for an environment.
@@ -192,7 +216,7 @@ def execute(
     sha: Annotated[str, typer.Option("--sha", "-s", help="Git commit SHA")],
     config_path: Annotated[
         Path, typer.Option("--config", "-c", help="Path to .tf-branch-deploy.yml")
-    ] = Path(".tf-branch-deploy.yml"),
+    ] = DEFAULT_CONFIG_PATH,
     working_dir: Annotated[
         Path | None, typer.Option("--working-dir", "-w", help="Override working directory")
     ] = None,
@@ -306,61 +330,9 @@ def execute(
 
     # Plan or Apply
     if operation == "plan":
-        # Plan file should be just the filename - executor runs from working_directory
-        plan_file = Path(f"tfplan-{environment}-{sha[:8]}.tfplan")
-        result = executor.plan(out_file=plan_file)
-        if result.plan_file and result.checksum:
-            set_github_output("plan_file", str(result.plan_file))
-            set_github_output("plan_checksum", result.checksum)
-            set_github_output("has_changes", str(result.has_changes).lower())
-        if not result.success:
-            raise typer.Exit(1)
+        _handle_plan(executor, environment, sha)
     elif operation == "apply":
-        # Look for the plan file from a previous .plan command
-        # Plan file is in the working directory, not repo root
-        plan_filename = f"tfplan-{environment}-{sha[:8]}.tfplan"
-        plan_file = resolved_working_dir / plan_filename
-
-        # Check if this is a rollback (ref output from branch-deploy)
-        # Rollback syntax: .apply main to dev (stable_branch → environment)
-        is_rollback = os.environ.get("TF_BD_IS_ROLLBACK", "false").lower() == "true"
-
-        if plan_file.exists():
-            console.print(f"[green]✅ Found plan file:[/green] {plan_file}")
-            # Verify checksum if we have one stored
-            expected_checksum = os.environ.get("TF_BD_PLAN_CHECKSUM")
-            if expected_checksum:
-                from .artifacts import verify_checksum
-
-                if not verify_checksum(plan_file, expected_checksum):
-                    console.print(
-                        "[red]❌ Plan file checksum mismatch! Plan may have been tampered with.[/red]"
-                    )
-                    raise typer.Exit(1)
-                console.print("[green]✅ Plan checksum verified[/green]")
-            # Pass just the filename since executor runs from working_directory
-            apply_result = executor.apply(plan_file=Path(plan_filename))
-        elif is_rollback:
-            console.print(
-                "[yellow]⚡ Rollback detected - applying directly from stable branch[/yellow]"
-            )
-            apply_result = executor.apply()
-        else:
-            console.print(f"[red]❌ No plan file found for this SHA: {plan_file}[/red]")
-            console.print(
-                "[yellow]💡 You must run '.plan to {env}' before '.apply to {env}'[/yellow]"
-            )
-            console.print(
-                "[yellow]💡 For rollback, use: '.apply main to {env}' (from stable branch)[/yellow]"
-            )
-            raise typer.Exit(1)
-
-        if not apply_result.success:
-            raise typer.Exit(1)
-
-        # Note: We don't delete the plan file because GitHub Actions cache is immutable.
-        # Multiple applies for the same SHA are safe - Terraform is idempotent.
-        console.print(f"[dim]📋 Plan applied: {plan_filename}[/dim]")
+        _handle_apply(executor, environment, sha, resolved_working_dir)
     else:
         console.print(f"[red]Unknown operation: {operation}[/red]")
         raise typer.Exit(1)
@@ -368,11 +340,67 @@ def execute(
     console.print("\n[green]✅ Terraform execution complete[/green]")
 
 
+def _handle_plan(executor: "TerraformExecutor", environment: str, sha: str) -> None:
+    """Handle terraform plan operation."""
+    from .executor import TerraformExecutor  # noqa: F811
+
+    plan_file = Path(f"tfplan-{environment}-{sha[:8]}.tfplan")
+    result = executor.plan(out_file=plan_file)
+    if result.plan_file and result.checksum:
+        set_github_output("plan_file", str(result.plan_file))
+        set_github_output("plan_checksum", result.checksum)
+        set_github_output("has_changes", str(result.has_changes).lower())
+    if not result.success:
+        raise typer.Exit(1)
+
+
+def _handle_apply(
+    executor: "TerraformExecutor", environment: str, sha: str, working_dir: Path
+) -> None:
+    """Handle terraform apply operation."""
+    plan_filename = f"tfplan-{environment}-{sha[:8]}.tfplan"
+    plan_file = working_dir / plan_filename
+    is_rollback = os.environ.get("TF_BD_IS_ROLLBACK", "false").lower() == "true"
+
+    if plan_file.exists():
+        _apply_with_plan(executor, plan_file, plan_filename)
+    elif is_rollback:
+        console.print("[yellow]⚡ Rollback detected - applying directly from stable branch[/yellow]")
+        apply_result = executor.apply()
+        if not apply_result.success:
+            raise typer.Exit(1)
+    else:
+        console.print(f"[red]❌ No plan file found for this SHA: {plan_file}[/red]")
+        console.print("[yellow]💡 You must run '.plan to {env}' before '.apply to {env}'[/yellow]")
+        console.print("[yellow]💡 For rollback, use: '.apply main to {env}' (from stable branch)[/yellow]")
+        raise typer.Exit(1)
+
+    console.print(f"[dim]📋 Plan applied: {plan_filename}[/dim]")
+
+
+def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path, plan_filename: str) -> None:
+    """Apply using an existing plan file with checksum verification."""
+    console.print(f"[green]✅ Found plan file:[/green] {plan_file}")
+    expected_checksum = os.environ.get("TF_BD_PLAN_CHECKSUM")
+
+    if expected_checksum:
+        from .artifacts import verify_checksum
+
+        if not verify_checksum(plan_file, expected_checksum):
+            console.print("[red]❌ Plan file checksum mismatch! Plan may have been tampered with.[/red]")
+            raise typer.Exit(1)
+        console.print("[green]✅ Plan checksum verified[/green]")
+
+    apply_result = executor.apply(plan_file=Path(plan_filename))
+    if not apply_result.success:
+        raise typer.Exit(1)
+
+
 @app.command()
 def validate(
     config_path: Annotated[
         Path, typer.Option("--config", "-c", help="Path to .tf-branch-deploy.yml")
-    ] = Path(".tf-branch-deploy.yml"),
+    ] = DEFAULT_CONFIG_PATH,
 ) -> None:
     """Validate the configuration file."""
     console.print(f"🔍 Validating [cyan]{config_path}[/cyan]")
@@ -411,7 +439,7 @@ def schema() -> None:
 def environments(
     config_path: Annotated[
         Path, typer.Option("--config", "-c", help="Path to .tf-branch-deploy.yml")
-    ] = Path(".tf-branch-deploy.yml"),
+    ] = DEFAULT_CONFIG_PATH,
 ) -> None:
     """List available environments (comma-separated for branch-deploy)."""
     try:

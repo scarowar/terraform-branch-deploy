@@ -9,6 +9,7 @@ from tf_branch_deploy.executor import (
     CommandResult,
     PlanResult,
     TerraformExecutor,
+    TF_INPUT_FALSE,
 )
 
 
@@ -24,6 +25,18 @@ def executor(tmp_path: Path) -> TerraformExecutor:
         apply_args=["-parallelism=5"],
         dry_run=True,
     )
+
+
+class TestConstants:
+    """Tests for executor constants."""
+
+    def test_tf_input_false_value(self) -> None:
+        """TF_INPUT_FALSE constant should be -input=false."""
+        assert TF_INPUT_FALSE == "-input=false"
+
+    def test_tf_input_false_is_string(self) -> None:
+        """TF_INPUT_FALSE should be a string."""
+        assert isinstance(TF_INPUT_FALSE, str)
 
 
 class TestCommandResult:
