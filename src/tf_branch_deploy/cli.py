@@ -339,12 +339,12 @@ def execute(
                     raise typer.Exit(1)
                 console.print("[green]✅ Plan checksum verified[/green]")
             # Pass just the filename since executor runs from working_directory
-            result = executor.apply(plan_file=Path(plan_filename))
+            apply_result = executor.apply(plan_file=Path(plan_filename))
         elif is_rollback:
             console.print(
                 "[yellow]⚡ Rollback detected - applying directly from stable branch[/yellow]"
             )
-            result = executor.apply()
+            apply_result = executor.apply()
         else:
             console.print(f"[red]❌ No plan file found for this SHA: {plan_file}[/red]")
             console.print(
@@ -355,7 +355,7 @@ def execute(
             )
             raise typer.Exit(1)
 
-        if not result.success:
+        if not apply_result.success:
             raise typer.Exit(1)
 
         # Note: We don't delete the plan file because GitHub Actions cache is immutable.

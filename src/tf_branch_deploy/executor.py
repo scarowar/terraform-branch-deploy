@@ -8,15 +8,11 @@ argument resolution and PR comment posting via tfcmt.
 from __future__ import annotations
 
 import os
-import subprocess
+import subprocess  # nosec B404 - subprocess is required to run terraform
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from rich.console import Console
-
-if TYPE_CHECKING:
-    from .config import EnvironmentConfig
 
 console = Console()
 
@@ -90,7 +86,7 @@ class TerraformExecutor:
 
         console.print(f"[dim]$ {' '.join(args)}[/dim]")
 
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603 B607 - args from validated config, terraform via PATH is expected
             args,
             cwd=self.working_directory,
             capture_output=True,
@@ -237,7 +233,7 @@ class TerraformExecutor:
     def _tfcmt_available(self) -> bool:
         """Check if tfcmt is installed."""
         try:
-            result = subprocess.run(
+            result = subprocess.run(  # nosec B603 B607 - tfcmt version check
                 ["tfcmt", "--version"],
                 capture_output=True,
                 text=True,
@@ -267,24 +263,3 @@ class TerraformExecutor:
 
         env = {"GITHUB_TOKEN": self.github_token}
         return self._run_command(args, env=env)
-
-
-def create_executor_from_config(
-    config: EnvironmentConfig,
-    working_dir: Path,
-    github_token: str | None = None,
-    repo: str | None = None,
-    pr_number: int | None = None,
-) -> TerraformExecutor:
-    """Create an executor from environment config."""
-    return TerraformExecutor(
-        working_directory=working_dir,
-        var_files=config.resolved_var_files or [],
-        backend_configs=config.resolved_backend_configs or [],
-        init_args=config.resolved_init_args or [],
-        plan_args=config.resolved_plan_args or [],
-        apply_args=config.resolved_apply_args or [],
-        github_token=github_token,
-        repo=repo,
-        pr_number=pr_number,
-    )
