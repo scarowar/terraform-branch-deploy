@@ -318,6 +318,14 @@ def execute(
     # Actually execute terraform
     from .executor import TerraformExecutor
 
+    # Parse PR number defensively (could be empty or non-numeric)
+    pr_number_str = os.environ.get("TF_BD_PR_NUMBER", "")
+    try:
+        pr_number = int(pr_number_str) if pr_number_str else None
+    except ValueError:
+        console.print(f"[yellow]⚠️ Invalid TF_BD_PR_NUMBER: {pr_number_str}, ignoring[/yellow]")
+        pr_number = None
+
     executor = TerraformExecutor(
         working_directory=resolved_working_dir,
         var_files=var_files,
@@ -327,7 +335,7 @@ def execute(
         apply_args=apply_args,
         github_token=os.environ.get("GITHUB_TOKEN"),
         repo=os.environ.get("GITHUB_REPOSITORY"),
-        pr_number=int(os.environ.get("TF_BD_PR_NUMBER", "0")) or None,
+        pr_number=pr_number,
     )
 
     # Init
@@ -371,6 +379,7 @@ def _handle_apply(
 
     if plan_file.exists():
         _apply_with_plan(executor, plan_file, plan_filename)
+        console.print(f"[dim]📋 Plan applied: {plan_filename}[/dim]")
     elif is_rollback:
         console.print(
             "[yellow]⚡ Rollback detected - applying directly from stable branch[/yellow]"
@@ -378,6 +387,7 @@ def _handle_apply(
         apply_result = executor.apply()
         if not apply_result.success:
             raise typer.Exit(1)
+        console.print("[dim]📋 Rollback applied directly (no plan file)[/dim]")
     else:
         console.print(f"[red]❌ No plan file found for this SHA: {plan_file}[/red]")
         console.print(
@@ -387,8 +397,6 @@ def _handle_apply(
             f"[yellow]💡 For rollback, use: '.apply main to {environment}' (from stable branch)[/yellow]"
         )
         raise typer.Exit(1)
-
-    console.print(f"[dim]📋 Plan applied: {plan_filename}[/dim]")
 
 
 def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path, plan_filename: str) -> None:

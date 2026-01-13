@@ -482,8 +482,8 @@ dev = [
 requires-dist = [
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "rich", specifier = ">=13.0" },
-    { name = "typer", specifier = ">=0.12" },
+    { name = "rich", specifier = ">=14.0" },
+    { name = "typer", specifier = ">=0.21" },
 ]
 
 [package.metadata.requires-dev]
