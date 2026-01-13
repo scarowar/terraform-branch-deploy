@@ -63,8 +63,7 @@ pre-terraform-hook: |
 
 **Fix:**
 - GitHub Actions cache expires after 7 days of no access
-- New commits = new SHA = new cache needed
-- Run `.plan` again
+- New commits = new SHA = new cache key, so run `.plan` again
 
 ## Debug Mode
 

@@ -102,7 +102,7 @@ jobs:
 
 Comment on PR:
 
-```
+```text
 .plan to dev | --target=module.api --refresh=false
 ```
 

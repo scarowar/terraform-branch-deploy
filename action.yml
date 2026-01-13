@@ -292,7 +292,9 @@ runs:
       run: |
         if [ -n "${{ inputs.environment-targets }}" ]; then
           echo "targets=${{ inputs.environment-targets }}" >> $GITHUB_OUTPUT
-          echo "default=${{ inputs.environment }}" >> $GITHUB_OUTPUT
+          # Use first environment from targets as default (inputs.environment is empty in dispatch mode)
+          default_env=$(echo "${{ inputs.environment-targets }}" | cut -d',' -f1)
+          echo "default=${default_env}" >> $GITHUB_OUTPUT
           echo "production=${{ inputs.production-environments }}" >> $GITHUB_OUTPUT
         else
           config_path="${{ inputs.config-path }}"
@@ -391,7 +393,7 @@ runs:
         TF_BD_ENVIRONMENT: ${{ inputs.mode == 'dispatch' && steps.branch-deploy.outputs.environment || inputs.environment }}
         TF_BD_SHA: ${{ inputs.mode == 'dispatch' && steps.branch-deploy.outputs.sha || inputs.sha }}
         TF_BD_OPERATION: ${{ inputs.mode == 'dispatch' && (steps.branch-deploy.outputs.noop == 'true' && 'plan' || 'apply') || inputs.operation }}
-        TF_BD_IS_NOOP: ${{ inputs.mode == 'dispatch' && steps.branch-deploy.outputs.noop || 'false' }}
+        TF_BD_IS_NOOP: ${{ inputs.mode == 'dispatch' && steps.branch-deploy.outputs.noop || (inputs.operation == 'plan' && 'true' || 'false') }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
       run: |
         echo "🔧 Running pre-terraform hook for environment: $TF_BD_ENVIRONMENT"

@@ -342,7 +342,6 @@ def execute(
 
 def _handle_plan(executor: "TerraformExecutor", environment: str, sha: str) -> None:
     """Handle terraform plan operation."""
-    from .executor import TerraformExecutor  # noqa: F811
 
     plan_file = Path(f"tfplan-{environment}-{sha[:8]}.tfplan")
     result = executor.plan(out_file=plan_file)
@@ -365,14 +364,18 @@ def _handle_apply(
     if plan_file.exists():
         _apply_with_plan(executor, plan_file, plan_filename)
     elif is_rollback:
-        console.print("[yellow]⚡ Rollback detected - applying directly from stable branch[/yellow]")
+        console.print(
+            "[yellow]⚡ Rollback detected - applying directly from stable branch[/yellow]"
+        )
         apply_result = executor.apply()
         if not apply_result.success:
             raise typer.Exit(1)
     else:
         console.print(f"[red]❌ No plan file found for this SHA: {plan_file}[/red]")
         console.print("[yellow]💡 You must run '.plan to {env}' before '.apply to {env}'[/yellow]")
-        console.print("[yellow]💡 For rollback, use: '.apply main to {env}' (from stable branch)[/yellow]")
+        console.print(
+            "[yellow]💡 For rollback, use: '.apply main to {env}' (from stable branch)[/yellow]"
+        )
         raise typer.Exit(1)
 
     console.print(f"[dim]📋 Plan applied: {plan_filename}[/dim]")
@@ -387,7 +390,9 @@ def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path, plan_filena
         from .artifacts import verify_checksum
 
         if not verify_checksum(plan_file, expected_checksum):
-            console.print("[red]❌ Plan file checksum mismatch! Plan may have been tampered with.[/red]")
+            console.print(
+                "[red]❌ Plan file checksum mismatch! Plan may have been tampered with.[/red]"
+            )
             raise typer.Exit(1)
         console.print("[green]✅ Plan checksum verified[/green]")
 

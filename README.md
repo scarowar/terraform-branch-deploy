@@ -27,7 +27,7 @@ A GitHub Action that enables Terraform deployments via PR comments. Built on top
 
 ## Commands
 
-```
+```text
 .plan to dev              # Preview changes
 .apply to dev             # Deploy changes
 .lock dev                 # Lock environment
