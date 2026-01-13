@@ -289,15 +289,20 @@ runs:
       id: detect-envs
       if: inputs.mode == 'dispatch'
       shell: bash
+      env:
+        # Use env vars to safely pass inputs (prevents shell injection)
+        INPUT_ENVIRONMENT_TARGETS: ${{ inputs.environment-targets }}
+        INPUT_PRODUCTION_ENVIRONMENTS: ${{ inputs.production-environments }}
+        INPUT_CONFIG_PATH: ${{ inputs.config-path }}
       run: |
-        if [ -n "${{ inputs.environment-targets }}" ]; then
-          echo "targets=${{ inputs.environment-targets }}" >> $GITHUB_OUTPUT
+        if [ -n "$INPUT_ENVIRONMENT_TARGETS" ]; then
+          echo "targets=$INPUT_ENVIRONMENT_TARGETS" >> $GITHUB_OUTPUT
           # Use first environment from targets as default (inputs.environment is empty in dispatch mode)
-          default_env=$(echo "${{ inputs.environment-targets }}" | cut -d',' -f1)
+          default_env=$(echo "$INPUT_ENVIRONMENT_TARGETS" | cut -d',' -f1)
           echo "default=${default_env}" >> $GITHUB_OUTPUT
-          echo "production=${{ inputs.production-environments }}" >> $GITHUB_OUTPUT
+          echo "production=$INPUT_PRODUCTION_ENVIRONMENTS" >> $GITHUB_OUTPUT
         else
-          config_path="${{ inputs.config-path }}"
+          config_path="$INPUT_CONFIG_PATH"
           if [ -f "$config_path" ]; then
             targets=$(tf-branch-deploy environments --config "$config_path" 2>/dev/null || echo "production")
             default=$(yq -r '.["default-environment"] // "production"' "$config_path" 2>/dev/null || echo "production")

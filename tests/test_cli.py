@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 from tf_branch_deploy.cli import (
     DEFAULT_CONFIG_PATH,
     _ArgTokenizer,
+    _load_and_validate_config,
     _parse_extra_args,
     _strip_shell_quotes,
     app,
@@ -111,6 +112,44 @@ class TestArgTokenizer:
         tokenizer = _ArgTokenizer()
         result = tokenizer.tokenize('-target=module["key"] -var=x')
         assert result == ['-target=module["key"]', "-var=x"]
+
+
+class TestLoadAndValidateConfig:
+    """Tests for _load_and_validate_config function."""
+
+    def test_valid_config(self, tmp_path: Path) -> None:
+        """Returns config and env_config for valid config."""
+        config_file = tmp_path / ".tf-branch-deploy.yml"
+        config_file.write_text(
+            """
+            default-environment: dev
+            production-environments: [prod]
+            environments:
+              dev: {}
+              prod: {}
+            """
+        )
+        config, env_config = _load_and_validate_config(config_file, "dev")
+        assert config is not None
+        assert env_config is not None
+
+    def test_missing_environment_exits(self, tmp_path: Path) -> None:
+        """Exits with error for non-existent environment."""
+        import pytest
+        from click.exceptions import Exit
+
+        config_file = tmp_path / ".tf-branch-deploy.yml"
+        config_file.write_text(
+            """
+            default-environment: dev
+            production-environments: [prod]
+            environments:
+              dev: {}
+              prod: {}
+            """
+        )
+        with pytest.raises(Exit):
+            _load_and_validate_config(config_file, "nonexistent")
 
 
 class TestValidateCommand:

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
 if TYPE_CHECKING:
+    from .config import EnvironmentConfig, TerraformBranchDeployConfig
     from .executor import TerraformExecutor
 
 import typer
@@ -209,6 +210,26 @@ def parse(
     console.print(f"[green]✅ Parsed config for environment: {environment}[/green]")
 
 
+def _load_and_validate_config(
+    config_path: Path, environment: str
+) -> tuple["TerraformBranchDeployConfig", "EnvironmentConfig"]:
+    """Load and validate config, returning config and environment config."""
+    try:
+        config = load_config(config_path)
+    except FileNotFoundError:
+        console.print(f"[red]Error:[/red] Config file not found: {config_path}")
+        raise typer.Exit(1) from None
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Invalid config: {e}")
+        raise typer.Exit(1) from None
+
+    if environment not in config.environments:
+        console.print(f"[red]Error:[/red] Environment '{environment}' not found")
+        raise typer.Exit(1)
+
+    return config, config.get_environment(environment)
+
+
 @app.command()
 def execute(
     environment: Annotated[str, typer.Option("--environment", "-e", help="Target environment")],
@@ -243,20 +264,7 @@ def execute(
         Panel.fit("[bold blue]Terraform Branch Deploy[/bold blue] v0.2.0", subtitle="Execute Mode")
     )
 
-    try:
-        config = load_config(config_path)
-    except FileNotFoundError:
-        console.print(f"[red]Error:[/red] Config file not found: {config_path}")
-        raise typer.Exit(1) from None
-    except Exception as e:
-        console.print(f"[red]Error:[/red] Invalid config: {e}")
-        raise typer.Exit(1) from None
-
-    if environment not in config.environments:
-        console.print(f"[red]Error:[/red] Environment '{environment}' not found")
-        raise typer.Exit(1)
-
-    env_config = config.get_environment(environment)
+    config, env_config = _load_and_validate_config(config_path, environment)
     resolved_working_dir = Path(working_dir or env_config.working_directory)
 
     # Parse extra args - check env var first (set by action.yml), then CLI option
@@ -372,9 +380,11 @@ def _handle_apply(
             raise typer.Exit(1)
     else:
         console.print(f"[red]❌ No plan file found for this SHA: {plan_file}[/red]")
-        console.print("[yellow]💡 You must run '.plan to {env}' before '.apply to {env}'[/yellow]")
         console.print(
-            "[yellow]💡 For rollback, use: '.apply main to {env}' (from stable branch)[/yellow]"
+            f"[yellow]💡 You must run '.plan to {environment}' before '.apply to {environment}'[/yellow]"
+        )
+        console.print(
+            f"[yellow]💡 For rollback, use: '.apply main to {environment}' (from stable branch)[/yellow]"
         )
         raise typer.Exit(1)
 
