@@ -164,6 +164,18 @@ class TestTerraformExecutor:
         assert result.success is True
 
     @patch("subprocess.run")
+    def test_plan_exit_code_1_means_error(
+        self, mock_run: MagicMock, executor: TerraformExecutor
+    ) -> None:
+        """Terraform plan exit code 1 means error (not changes)."""
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="Error!")
+
+        result = executor.plan()
+
+        assert result.has_changes is False
+        assert result.success is False
+
+    @patch("subprocess.run")
     def test_apply_builds_correct_command(
         self, mock_run: MagicMock, executor: TerraformExecutor
     ) -> None:

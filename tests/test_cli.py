@@ -1,5 +1,6 @@
 """Tests for CLI module."""
 
+import json
 from pathlib import Path
 from textwrap import dedent
 
@@ -234,7 +235,5 @@ class TestSchemaCommand:
 
         assert result.exit_code == 0
         # Output should be parseable JSON
-        import json
-
         schema = json.loads(result.stdout)
         assert "properties" in schema

@@ -74,7 +74,8 @@ class TerraformExecutor:
     # tfcmt integration
     use_tfcmt: bool = True
 
-    # Dry run mode for testing (skips actual terraform execution)
+    # Dry run mode - used by test fixtures to mark executor as non-production
+    # Note: actual dry-run logic is in cli.py before executor is invoked
     dry_run: bool = False
 
     def _run_command(

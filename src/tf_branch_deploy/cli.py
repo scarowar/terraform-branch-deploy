@@ -40,11 +40,11 @@ console = Console()
 
 
 class Mode(str, Enum):
-    """Execution mode."""
+    """Execution mode for action.yml."""
 
     PARSE = "parse"  # Just read config, output settings
-    DISPATCH = "dispatch"  # Full flow (called by action.yml internally)
-    EXECUTE = "execute"  # Just run terraform
+    DISPATCH = "dispatch"  # Full flow: branch-deploy + terraform (default in action.yml)
+    EXECUTE = "execute"  # Run terraform only (use after your own branch-deploy call)
 
 
 def set_github_output(name: str, value: str) -> None:
@@ -269,8 +269,6 @@ def execute(
 
     # Parse extra args - check env var first (set by action.yml), then CLI option
     # Using env var avoids shell escaping issues with complex args like -var='key=value'
-    import os
-
     raw_extra_args = extra_args or os.environ.get("TF_BD_EXTRA_ARGS")
     parsed_extra_args = []
 
@@ -414,7 +412,7 @@ def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path, plan_filena
             raise typer.Exit(1)
         console.print("[green]✅ Plan checksum verified[/green]")
 
-    apply_result = executor.apply(plan_file=Path(plan_filename))
+    apply_result = executor.apply(plan_file=plan_file)
     if not apply_result.success:
         raise typer.Exit(1)
 
@@ -469,7 +467,11 @@ def environments(
         config = load_config(config_path)
         env_list = ",".join(config.environments.keys())
         console.print(env_list)
-    except Exception:
+    except FileNotFoundError:
+        console.print(f"[red]Error:[/red] Config file not found: {config_path}")
+        raise typer.Exit(1) from None
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Failed to load config: {e}")
         raise typer.Exit(1) from None
 
 
