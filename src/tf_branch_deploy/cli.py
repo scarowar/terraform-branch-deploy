@@ -376,7 +376,7 @@ def _handle_apply(
     is_rollback = os.environ.get("TF_BD_IS_ROLLBACK", "false").lower() == "true"
 
     if plan_file.exists():
-        _apply_with_plan(executor, plan_file, plan_filename)
+        _apply_with_plan(executor, plan_file)
         console.print(f"[dim]📋 Plan applied: {plan_filename}[/dim]")
     elif is_rollback:
         console.print(
@@ -397,7 +397,7 @@ def _handle_apply(
         raise typer.Exit(1)
 
 
-def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path, plan_filename: str) -> None:
+def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path) -> None:
     """Apply using an existing plan file with checksum verification."""
     console.print(f"[green]✅ Found plan file:[/green] {plan_file}")
     expected_checksum = os.environ.get("TF_BD_PLAN_CHECKSUM")
