@@ -447,27 +447,27 @@ jobs:
       - uses: scarowar/terraform-branch-deploy@v0.2.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          
+
           # Access Control
           admins: "my-org/platform-team"
           admins-pat: ${{ secrets.ADMIN_PAT }}
           permissions: "write,admin"
-          
+
           # CI/CD Gates
           checks: all
           ignored-checks: "pr-labeler"
-          
+
           # Branch Protection
           outdated-mode: strict
           update-branch: warn
           commit-verification: true
           allow-forks: false
-          
+
           # Deployment Safety
           disable-naked-commands: true
           enforced-deployment-order: "dev,staging,prod"
           sticky-locks: true
-          
+
           # Production Protection
           deployment-confirmation: true
           deployment-confirmation-timeout: 120
