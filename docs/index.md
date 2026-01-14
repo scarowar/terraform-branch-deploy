@@ -3,7 +3,7 @@
 ![Terraform Branch Deploy Cover](assets/images/cover-dark.png#only-dark)
 ![Terraform Branch Deploy Cover](assets/images/cover-light.png#only-light)
 
-ChatOps for Terraform deployments via GitHub PRs.
+ChatOps for Terraform infrastructure deployments via GitHub PRs.
 
 ## Usage
 

@@ -1,6 +1,6 @@
 # Project information
 site_name: Terraform Branch Deploy
-site_description: ChatOps for Terraform deployments via GitHub PRs
+site_description: ChatOps for Terraform infrastructure deployments via GitHub PRs
 site_url: https://scarowar.github.io/terraform-branch-deploy/
 repo_url: https://github.com/scarowar/terraform-branch-deploy
 repo_name: scarowar/terraform-branch-deploy
