@@ -1,16 +1,25 @@
 # Project information
 site_name: Terraform Branch Deploy
+site_description: ChatOps for Terraform deployments via GitHub PRs
 site_url: https://scarowar.github.io/terraform-branch-deploy/
-repo_name: terraform-branch-deploy
 repo_url: https://github.com/scarowar/terraform-branch-deploy
+repo_name: scarowar/terraform-branch-deploy
+
+# Build configuration
+strict: true
+edit_uri: edit/main/docs/
 
 # Navigation
 nav:
   - Home: index.md
-  - Quickstart: quickstart.md
-  - Configuration: configuration.md
-  - Commands: commands.md
-  - Advanced: advanced.md
+  - Getting Started: getting-started/index.md
+  - Guides:
+    - Configuration: guides/configuration.md
+    - Modes: guides/modes.md
+    - Pre-Terraform Hooks: guides/hooks.md
+  - Reference: reference/inputs.md
+  - Examples: examples/index.md
+  - Troubleshooting: troubleshooting.md
 
 # Theme configuration
 theme:
@@ -18,9 +27,18 @@ theme:
   logo: assets/git-pull-request.png
   favicon: assets/git-pull-request.png
   palette:
-    scheme: dracula
-    primary: deep purple
-    accent: deep purple
+    - scheme: default
+      primary: deep purple
+      accent: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: deep purple
+      accent: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
   features:
     - content.code.annotate
     - content.code.copy
@@ -44,13 +62,7 @@ markdown_extensions:
   - attr_list
   - footnotes
   - md_in_html
-  - pymdownx.arithmatex:
-      generic: true
-  - pymdownx.blocks.caption
   - pymdownx.details
-  - pymdownx.emoji:
-      emoji_index: !!python/name:material.extensions.emoji.twemoji
-      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - pymdownx.highlight:
       anchor_linenums: true
       line_spans: __span
@@ -58,18 +70,19 @@ markdown_extensions:
   - pymdownx.inlinehilite
   - pymdownx.mark
   - pymdownx.snippets
-  - pymdownx.superfences
   - pymdownx.superfences:
       custom_fences:
-      - name: mermaid
-        class: mermaid
-  - pymdownx.tabbed
+        - name: mermaid
+          class: mermaid
+  - pymdownx.tabbed:
+      alternate_style: true
 
-# Plugins
-plugins:
-  - mkdocs_pymdownx_material_extras
-  - search:
-      lang: en
-
+# Extra CSS
 extra_css:
   - assets/stylesheets/extra.css
+
+# Extra configuration
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/scarowar/terraform-branch-deploy

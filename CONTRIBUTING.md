@@ -20,13 +20,13 @@ Thank you for your interest in contributing to terraform-branch-deploy! Your ide
 
 ## Code Style & Linting
 
-- Python code is formatted with [Black](https://black.readthedocs.io/en/stable/) and checked with [Ruff](https://docs.astral.sh/ruff/).
+- Python code is formatted and linted with [Ruff](https://docs.astral.sh/ruff/).
 - Pre-commit hooks are configured. Please run `pre-commit install` after cloning the repository to enable automatic checks before each commit.
 - You can manually run all pre-commit checks with:
   ```sh
   pre-commit run --all-files
   ```
-- YAML, JSON, and GitHub Actions workflows are also linted via pre-commit.
+- YAML and GitHub Actions workflows are also checked via pre-commit.
 
 ## Security
 

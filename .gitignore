@@ -1,38 +1,34 @@
-env/
-# Node dependencies
-node_modules/
-
-# Build output
-dist/
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
 build/
+dist/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Environment files
-.env*
+# Virtual environments
+.venv/
+venv/
+env/
 
-# Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pip-log.txt
-
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# Editor directories and files
-.vscode/
-.idea/
-*.swp
-*.swo
-.history/
+# Testing
 .pytest_cache/
-.mypy_cache/
 .coverage
-coverage.xml
+htmlcov/
+.hypothesis/
+
+# Linting/Type checking
+.mypy_cache/
+.ruff_cache/
 .cache/
 
-# GitHub Actions cache
-/.github/workflows/*.cache
+# Build artifacts
+site/
+*.tfplan
 
 # Terraform
 .terraform/
@@ -40,19 +36,27 @@ coverage.xml
 *.tfstate
 *.tfstate.backup
 
-# Python virtual environments
-venv/
-.venv/
-.venv-terraform-branch-deploy/
-env/
-.env/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
-# mkdocs documentation
-/site
-docs/site/
-docs/.cache/
-docs/.temp/
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+pip-log.txt
+
+# Environment
+.env*
+
+# Node (if any)
+node_modules/
+
+# Deprecated
+test-repo-setup/
+.actrc
