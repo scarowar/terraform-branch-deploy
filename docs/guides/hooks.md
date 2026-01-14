@@ -20,7 +20,6 @@ Run custom shell commands before Terraform executes.
 | `TF_BD_ENVIRONMENT` | Target environment (e.g., `dev`) |
 | `TF_BD_SHA` | Git commit SHA |
 | `TF_BD_OPERATION` | `plan` or `apply` |
-| `TF_BD_IS_NOOP` | `true` for plan, `false` for apply |
 
 ## Examples
 
