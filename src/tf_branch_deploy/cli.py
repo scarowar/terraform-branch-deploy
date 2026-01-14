@@ -412,7 +412,7 @@ def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path) -> None:
             raise typer.Exit(1)
         console.print("[green]✅ Plan checksum verified[/green]")
 
-    apply_result = executor.apply(plan_file=plan_file)
+    apply_result = executor.apply(plan_file=Path(plan_file.name))
     if not apply_result.success:
         raise typer.Exit(1)
 
