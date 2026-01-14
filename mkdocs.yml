@@ -17,6 +17,7 @@ nav:
     - Configuration: guides/configuration.md
     - Modes: guides/modes.md
     - Pre-Terraform Hooks: guides/hooks.md
+    - Guardrails & Security: guides/guardrails.md
   - Reference: reference/inputs.md
   - Examples: examples/index.md
   - Troubleshooting: troubleshooting.md
