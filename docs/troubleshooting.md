@@ -91,7 +91,7 @@ The fix depends on your `update-branch` and `outdated-mode` settings:
 === "update-branch: warn (default)"
 
     You'll see a warning but deployment proceeds. Consider updating your branch:
-    
+
     ```bash
     git fetch origin main
     git merge origin/main
@@ -105,7 +105,7 @@ The fix depends on your `update-branch` and `outdated-mode` settings:
 === "outdated-mode: strict"
 
     Deployment is blocked until you update:
-    
+
     1. Click "Update branch" in the GitHub PR UI
     2. Or merge main into your branch manually
 

@@ -107,7 +107,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Run Policy Check
         run: ./scripts/policy-check.sh
 
@@ -213,23 +213,23 @@ jobs:
       - uses: scarowar/terraform-branch-deploy@v0.2.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          
+
           # Access Control
           admins: "my-org/platform-team"
           admins-pat: ${{ secrets.ADMIN_PAT }}
-          
+
           # CI Requirements
           checks: all
-          
+
           # Branch Protection
           outdated-mode: strict
           allow-forks: false
-          
+
           # Deployment Safety
           disable-naked-commands: true
           enforced-deployment-order: "dev,staging,prod"
           sticky-locks: true
-          
+
           # Production Safety
           deployment-confirmation: true
 ```
