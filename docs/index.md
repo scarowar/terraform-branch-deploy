@@ -38,44 +38,25 @@ ChatOps for Terraform infrastructure deployments via GitHub PRs.
 
 ## PR Comment Examples
 
-=== "Plan Output"
+=== "Plan"
 
-    After running `.plan to dev`:
+    ![Plan Command](assets/images/plan-command.png)
 
-    ```
-    ✅ Plan succeeded for dev
+    ![Plan Output](assets/images/plan-output.png)
 
-    Terraform will perform the following actions:
+=== "Apply"
 
-      # aws_instance.web will be created
-      + resource "aws_instance" "web" {
-          + ami           = "ami-0c55b159cbfafe1f0"
-          + instance_type = "t3.micro"
-        }
+    ![Apply Command](assets/images/apply-command.png)
 
-    Plan: 1 to add, 0 to change, 0 to destroy.
-    ```
+    ![Apply Output](assets/images/apply-output.png)
 
-=== "Apply Output"
+=== "Locking"
 
-    After running `.apply to dev`:
+    ![Lock](assets/images/lock.png)
 
-    ```
-    ✅ Apply succeeded for dev
+    ![Who's deploying](assets/images/wcid.png)
 
-    aws_instance.web: Creating...
-    aws_instance.web: Creation complete after 32s
-
-    Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
-    ```
-
-=== "No Changes"
-
-    ```
-    ✅ Plan succeeded for dev
-
-    No changes. Your infrastructure matches the configuration.
-    ```
+    ![Unlock](assets/images/unlock.png)
 
 ## Inputs
 

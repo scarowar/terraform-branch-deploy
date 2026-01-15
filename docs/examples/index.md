@@ -257,6 +257,8 @@ Pass additional arguments to Terraform via PR comments:
 .plan to dev | -target=module.api -refresh=false
 ```
 
+![Dynamic Arguments Example](../assets/images/plan-extra-args.png)
+
 These arguments are appended to the `terraform plan` command.
 
 ```text
