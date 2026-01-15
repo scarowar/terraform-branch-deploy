@@ -9,7 +9,7 @@ Run custom shell commands before Terraform executes.
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     pre-terraform-hook: |
-      echo "Building Lambda..."
+      echo "Building assets..."
       npm ci && npm run build
 ```
 
@@ -23,23 +23,23 @@ Run custom shell commands before Terraform executes.
 
 ## Examples
 
-### Build Lambda Functions
+### Build Assets
 
 ```yaml
 pre-terraform-hook: |
-  cd lambda
+  cd assets
   npm ci
   npm run build
-  zip -r function.zip .
+  zip -r function.zip dist/
 ```
 
-### Fetch Dynamic Secrets
+### Fetch Dynamic Configuration
 
 ```yaml
 pre-terraform-hook: |
-  aws secretsmanager get-secret-value \
-    --secret-id "myapp/$TF_BD_ENVIRONMENT/db" \
-    --query SecretString --output text > .env
+  ./scripts/fetch-config.sh \
+    --env "$TF_BD_ENVIRONMENT" \
+    --output terraform.tfvars.json
 ```
 
 ### Conditional Logic
@@ -80,6 +80,6 @@ Hooks run in the workflow context. Pass secrets via environment variables:
     pre-terraform-hook: |
       ./scripts/auth.sh
   env:
-    AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-    AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    API_KEY: ${{ secrets.API_KEY }}
+    SECRET_TOKEN: ${{ secrets.SECRET_TOKEN }}
 ```

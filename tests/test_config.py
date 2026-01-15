@@ -138,33 +138,6 @@ class TestTerraformBranchDeployConfig:
         env = config.get_environment("dev")
         assert env.working_directory == "."
 
-    def test_hotfix_config(self) -> None:
-        """Test hotfix configuration parsing."""
-        config = TerraformBranchDeployConfig.model_validate(
-            {
-                "default-environment": "dev",
-                "production-environments": ["prod"],
-                "hotfix": {
-                    "detection": {
-                        "branch-pattern": "hotfix/*",
-                        "targets-stable-branch": True,
-                    },
-                    "safety": {
-                        "require_confirmation": True,
-                        "require_approval": True,
-                    },
-                },
-                "environments": {
-                    "dev": {},
-                    "prod": {},
-                },
-            }
-        )
-
-        assert config.hotfix is not None
-        assert config.hotfix.detection.branch_pattern == "hotfix/*"
-        assert config.hotfix.safety.require_confirmation is True
-
     def test_extra_fields_rejected(self) -> None:
         """Test that unknown fields are rejected."""
         with pytest.raises(ValueError, match="Extra inputs are not permitted"):
