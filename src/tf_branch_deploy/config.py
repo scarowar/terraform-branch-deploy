@@ -67,35 +67,6 @@ class DefaultsConfig(BaseModel):
     init_args: ArgsConfig | None = Field(default=None, alias="init-args")
 
 
-class HotfixSafetyConfig(BaseModel):
-    """Safety configuration for hotfix workflows."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    require_confirmation: bool = True
-    confirmation_command: str = ".confirm-hotfix"
-    require_approval: bool = True
-    require_ci_pass: bool = True
-
-
-class HotfixDetectionConfig(BaseModel):
-    """Configuration for detecting hotfix PRs."""
-
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
-
-    branch_pattern: str = Field(default="hotfix/*", alias="branch-pattern")
-    targets_stable_branch: bool = Field(default=True, alias="targets-stable-branch")
-
-
-class HotfixConfig(BaseModel):
-    """Configuration for hotfix workflow handling."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    detection: HotfixDetectionConfig = Field(default_factory=HotfixDetectionConfig)
-    safety: HotfixSafetyConfig = Field(default_factory=HotfixSafetyConfig)
-
-
 class EnvironmentConfig(BaseModel):
     """Configuration for a single deployment environment."""
 
@@ -126,7 +97,6 @@ class TerraformBranchDeployConfig(BaseModel):
 
     # Optional fields
     defaults: DefaultsConfig | None = None
-    hotfix: HotfixConfig | None = None
     stable_branch: str = Field(default="main", alias="stable-branch")
 
     @field_validator("production_environments", mode="before")

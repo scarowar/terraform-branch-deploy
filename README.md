@@ -21,9 +21,17 @@
 
 A GitHub Action that enables Terraform deployments via PR comments. Built on top of [github/branch-deploy](https://github.com/github/branch-deploy), it adds Terraform-specific features like plan caching, environment configuration, and pre-terraform hooks.
 
-## Demo
+https://github.com/user-attachments/assets/7b9d1660-bf20-4fa1-8b07-34f0c0e9f334
 
-[Terraform Branch Deploy Demo](https://github.com/user-attachments/assets/15b1c060-9be5-4203-9c5d-caa088c2535d)
+## Why This Action?
+
+| Without terraform-branch-deploy | With terraform-branch-deploy |
+|--------------------------------|------------------------------|
+| Multiple workflows for plan/apply | Single workflow handles everything |
+| Manual plan file management | Automatic plan caching with SHA verification |
+| Environment config scattered in workflows | Centralized `.tf-branch-deploy.yml` |
+| No enforcement of plan-before-apply | Built-in safety: apply requires matching plan |
+| Custom locking implementation | Environment locking via branch-deploy |
 
 ## Commands
 
@@ -95,6 +103,23 @@ environments:
 
 **3. Comment on a PR**: `.plan to dev`
 
+## How It Works
+
+```mermaid
+flowchart LR
+    A[PR Comment] --> B{terraform-branch-deploy}
+    B --> C[branch-deploy]
+    C --> D[Parse Command]
+    D --> E[Lock Environment]
+    E --> F[Run Terraform]
+    F --> G[Post Results]
+    G --> H[Unlock]
+```
+
+**Dispatch Mode** (default): The action handles everything—command parsing, locking, terraform execution, and status updates.
+
+**Execute Mode**: You manage `github/branch-deploy` yourself and use this action only for terraform execution. Useful for policy gates between parsing and execution.
+
 ## Inputs
 
 | Input | Required | Default | Description |
@@ -126,6 +151,7 @@ environments:
 | [Configuration](https://scarowar.github.io/terraform-branch-deploy/guides/configuration/) | `.tf-branch-deploy.yml` reference |
 | [Modes](https://scarowar.github.io/terraform-branch-deploy/guides/modes/) | Dispatch vs Execute |
 | [Pre-Terraform Hooks](https://scarowar.github.io/terraform-branch-deploy/guides/hooks/) | Custom pre-deploy logic |
+| [Guardrails & Security](https://scarowar.github.io/terraform-branch-deploy/guides/guardrails/) | Enterprise governance features |
 | [Examples](https://scarowar.github.io/terraform-branch-deploy/examples/) | Workflow snippets |
 | [Troubleshooting](https://scarowar.github.io/terraform-branch-deploy/troubleshooting/) | Common issues |
 

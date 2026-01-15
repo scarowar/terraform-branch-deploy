@@ -2,7 +2,9 @@
 
 ## Basic Setup
 
-```yaml
+The minimal workflow to get started:
+
+```yaml title=".github/workflows/deploy.yml"
 name: Terraform Deploy
 
 on:
@@ -26,20 +28,11 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-## With AWS Authentication
+---
 
-```yaml
-- uses: aws-actions/configure-aws-credentials@v4
-  with:
-    role-to-assume: arn:aws:iam::123456789:role/terraform
-    aws-region: us-east-1
+## Pre-Terraform Hooks
 
-- uses: scarowar/terraform-branch-deploy@v0.2.0
-  with:
-    github-token: ${{ secrets.GITHUB_TOKEN }}
-```
-
-## With Pre-Terraform Hook
+### Build Assets Before Deploy
 
 ```yaml
 - uses: scarowar/terraform-branch-deploy@v0.2.0
@@ -48,13 +41,54 @@ jobs:
     pre-terraform-hook: |
       npm ci
       npm run build
+      zip -r function.zip dist/
 ```
+
+### Conditional Logic by Environment
+
+```yaml
+- uses: scarowar/terraform-branch-deploy@v0.2.0
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    pre-terraform-hook: |
+      if [ "$TF_BD_ENVIRONMENT" = "prod" ]; then
+        echo "Running production safety checks..."
+        ./scripts/pre-prod-check.sh
+      fi
+```
+
+### Generate Configuration
+
+```yaml
+- uses: scarowar/terraform-branch-deploy@v0.2.0
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    pre-terraform-hook: |
+      echo "Generating config for $TF_BD_ENVIRONMENT..."
+      ./scripts/generate-config.sh --env $TF_BD_ENVIRONMENT
+```
+
+---
 
 ## Execute Mode with Policy Check
 
-```yaml
+Use execute mode when you need custom logic between command parsing and Terraform execution:
+
+```yaml title=".github/workflows/deploy.yml"
+name: Terraform Deploy with Policy
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  deployments: write
+
 jobs:
   parse:
+    if: github.event.issue.pull_request
     runs-on: ubuntu-latest
     outputs:
       continue: ${{ steps.branch-deploy.outputs.continue }}
@@ -73,13 +107,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: ./scripts/opa-check.sh
+
+      - name: Run Policy Check
+        run: ./scripts/policy-check.sh
 
   deploy:
     needs: [parse, policy]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: scarowar/terraform-branch-deploy@v0.2.0
         with:
           mode: execute
@@ -89,7 +126,119 @@ jobs:
           operation: ${{ needs.parse.outputs.noop == 'true' && 'plan' || 'apply' }}
 ```
 
-## With Terraform Version Pin
+---
+
+## Monorepo Setup
+
+For repositories with multiple Terraform configurations:
+
+```yaml title=".tf-branch-deploy.yml"
+default-environment: api-dev
+production-environments: [api-prod, web-prod]
+
+environments:
+  # API service
+  api-dev:
+    working-directory: services/api/terraform/dev
+  api-prod:
+    working-directory: services/api/terraform/prod
+
+  # Web service
+  web-dev:
+    working-directory: services/web/terraform/dev
+  web-prod:
+    working-directory: services/web/terraform/prod
+```
+
+Deploy with:
+
+```
+.plan to api-dev
+.apply to web-prod
+```
+
+---
+
+## Unlock on Merge
+
+Automatically release locks when PRs are merged:
+
+```yaml title=".github/workflows/unlock-on-merge.yml"
+name: Unlock on Merge
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  unlock:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: scarowar/terraform-branch-deploy@v0.2.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          unlock-on-merge-mode: true
+```
+
+---
+
+## Enterprise Guardrails
+
+Complete example with security features enabled:
+
+```yaml title=".github/workflows/deploy.yml"
+name: Terraform Deploy
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  deployments: write
+  checks: read
+
+jobs:
+  deploy:
+    if: github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: scarowar/terraform-branch-deploy@v0.2.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+          # Access Control
+          admins: "my-org/platform-team"
+          admins-pat: ${{ secrets.ADMIN_PAT }}
+
+          # CI Requirements
+          checks: all
+
+          # Branch Protection
+          outdated-mode: strict
+          allow-forks: false
+
+          # Deployment Safety
+          disable-naked-commands: true
+          enforced-deployment-order: "dev,staging,prod"
+          sticky-locks: true
+
+          # Production Safety
+          deployment-confirmation: true
+```
+
+---
+
+## Terraform Version Pinning
+
+Pin to a specific Terraform version:
 
 ```yaml
 - uses: scarowar/terraform-branch-deploy@v0.2.0
@@ -98,12 +247,23 @@ jobs:
     terraform-version: "1.7.0"
 ```
 
+---
+
 ## Dynamic Arguments
 
-Comment on PR:
+Pass additional arguments to Terraform via PR comments:
 
 ```text
-.plan to dev | --target=module.api --refresh=false
+.plan to dev | -target=module.api -refresh=false
 ```
 
-These arguments are passed to `terraform plan`.
+These arguments are appended to the `terraform plan` command.
+
+```text
+.apply to dev | -parallelism=1
+```
+
+For apply, arguments are appended to `terraform apply`.
+
+!!! warning "Security"
+    Dynamic arguments are sanitized but review them in the plan output before applying.
