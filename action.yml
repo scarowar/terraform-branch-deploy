@@ -296,7 +296,7 @@ runs:
         uv venv "${{ runner.temp }}/tf-bd-venv"
         . "${{ runner.temp }}/tf-bd-venv/bin/activate"
         uv pip install "${{ github.action_path }}"
-        
+
         # Export venv bin to PATH for subsequent steps
         echo "${{ runner.temp }}/tf-bd-venv/bin" >> $GITHUB_PATH
 
