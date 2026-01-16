@@ -258,17 +258,47 @@ runs:
   using: composite
   steps:
     # === SETUP (both modes) ===
-    - name: Setup Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: "3.12"
+    - name: Verify Python Requirements
+      shell: bash
+      run: |
+        set +e
+
+        # Check if Python 3 is available
+        if ! command -v python3 &> /dev/null; then
+          echo "::error::Python 3 is not installed or not in PATH"
+          echo "::error::tf-branch-deploy requires Python 3.12 or higher"
+          echo "::error::GitHub-hosted runners have Python pre-installed. If using a self-hosted runner, please install Python 3.12+."
+          exit 1
+        fi
+
+        # Check Python version requirement
+        python3 - <<'EOF'
+        import sys
+        if sys.version_info < (3, 12):
+            print("::error::tf-branch-deploy requires Python 3.12 or higher")
+            print(f"::error::Current version: {sys.version}")
+            print("::error::GitHub-hosted runners provide Python 3.12+. Consider using a newer runner image or upgrading Python.")
+            sys.exit(1)
+        print(f"Using Python {sys.version.split()[0]}")
+        EOF
+
+        if [[ $? -ne 0 ]]; then
+          exit 1
+        fi
 
     - name: Setup UV
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867
 
     - name: Install tf-branch-deploy
       shell: bash
-      run: uv pip install --system "${{ github.action_path }}"
+      run: |
+        # Create virtual environment and install package
+        uv venv "${{ runner.temp }}/tf-bd-venv"
+        . "${{ runner.temp }}/tf-bd-venv/bin/activate"
+        uv pip install "${{ github.action_path }}"
+
+        # Export venv bin to PATH for subsequent steps
+        echo "${{ runner.temp }}/tf-bd-venv/bin" >> $GITHUB_PATH
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
@@ -425,6 +455,14 @@ runs:
         TF_BD_DISPATCH_SHA: ${{ steps.branch-deploy.outputs.sha }}
         TF_BD_DISPATCH_OPERATION: ${{ steps.branch-deploy.outputs.noop == 'true' && 'plan' || 'apply' }}
       run: |
+        # Verify tf-branch-deploy is available (installed in venv, PATH set via GITHUB_PATH)
+        if ! command -v tf-branch-deploy &> /dev/null; then
+          echo "::error::tf-branch-deploy command not found"
+          echo "::error::Current PATH: $PATH"
+          echo "::error::This may indicate an installation issue. Please report this at https://github.com/scarowar/terraform-branch-deploy/issues"
+          exit 1
+        fi
+
         # Determine values based on mode
         if [ "${{ inputs.mode }}" == "dispatch" ]; then
           ENV="$TF_BD_DISPATCH_ENV"
