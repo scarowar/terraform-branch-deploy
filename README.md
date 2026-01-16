@@ -62,6 +62,10 @@ https://github.com/user-attachments/assets/7b9d1660-bf20-4fa1-8b07-34f0c0e9f334
 
 - **Rollback Support**: Use `.apply main to prod` to deploy the stable branch code directly, bypassing the plan requirement for emergency rollbacks.
 
+## Requirements
+
+- **Python 3.12+**: GitHub-hosted runners have Python pre-installed. Self-hosted or CodeBuild runners must have Python 3.12 or higher available.
+
 ## Quick Start
 
 **1. Create workflow** (`.github/workflows/deploy.yml`)
