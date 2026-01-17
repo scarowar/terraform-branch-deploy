@@ -572,43 +572,28 @@ runs:
             || echo "   ⚠️  Failed to add reaction"
         fi
         
-        # 4. Post result comment
-        if [[ -n "${TF_BD_PR_NUMBER}" ]]; then
-          echo "   💬 Posting result comment"
-          if [[ "${TF_BD_NOOP}" == "true" ]]; then
-            # Noop (plan) result
-            if [[ "${STATUS}" == "success" ]]; then
-              gh api --method POST \
-                "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
-                -f body="### Plan Results ✅
+        # 4. Post result comment (only for apply operations - tfcmt handles plan output)
+        # For noop (plan), tfcmt already posted the terraform plan output
+        if [[ -n "${TF_BD_PR_NUMBER}" && "${TF_BD_NOOP}" != "true" ]]; then
+          echo "   💬 Posting deployment result comment"
+          if [[ "${STATUS}" == "success" ]]; then
+            gh api --method POST \
+              "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
+              -f body="### Deployment Results ✅
 
-        **@${TF_BD_ACTOR}** ran a plan for \`${TF_BD_SHA}\` on **${TF_BD_ENVIRONMENT}**" \
-                || echo "   ⚠️  Failed to post success comment"
-            else
-              gh api --method POST \
-                "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
-                -f body="### Plan Results ❌
+**${TF_BD_ACTOR}** successfully deployed branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**
 
-        **@${TF_BD_ACTOR}** had a failure when planning \`${TF_BD_SHA}\` on **${TF_BD_ENVIRONMENT}**" \
-                || echo "   ⚠️  Failed to post failure comment"
-            fi
+- SHA: \`${TF_BD_SHA:0:7}\`" \
+              || echo "   ⚠️  Failed to post success comment"
           else
-            # Apply result
-            if [[ "${STATUS}" == "success" ]]; then
-              gh api --method POST \
-                "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
-                -f body="### Deployment Results ✅
+            gh api --method POST \
+              "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
+              -f body="### Deployment Results ❌
 
-        **@${TF_BD_ACTOR}** successfully deployed \`${TF_BD_SHA}\` to **${TF_BD_ENVIRONMENT}**" \
-                || echo "   ⚠️  Failed to post success comment"
-            else
-              gh api --method POST \
-                "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
-                -f body="### Deployment Results ❌
+**${TF_BD_ACTOR}** had a failure when deploying branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**
 
-        **@${TF_BD_ACTOR}** had a failure when deploying \`${TF_BD_SHA}\` to **${TF_BD_ENVIRONMENT}**" \
-                || echo "   ⚠️  Failed to post failure comment"
-            fi
+- SHA: \`${TF_BD_SHA:0:7}\`" \
+              || echo "   ⚠️  Failed to post failure comment"
           fi
         fi
         
