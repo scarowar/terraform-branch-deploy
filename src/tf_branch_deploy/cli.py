@@ -61,6 +61,46 @@ def set_github_output(name: str, value: str) -> None:
     console.print(f"[dim]Output: {name}={value[:50]}{'...' if len(value) > 50 else ''}[/dim]")
 
 
+def format_error_for_comment(
+    reason: str,
+    context: str,
+    fix_steps: list[str],
+    alternatives: list[str] | None = None,
+) -> str:
+    """Format a professional error message for GitHub comment.
+    
+    Matches branch-deploy's quality standard:
+    - Clear explanation of what went wrong
+    - Contextual details about the failure
+    - Step-by-step fix instructions
+    - Valid alternatives when applicable
+    
+    Args:
+        reason: One-line explanation of what went wrong
+        context: Details about the specific failure (SHA, env, etc.)
+        fix_steps: Ordered list of steps to resolve the issue
+        alternatives: Optional list of alternative actions
+    
+    Returns:
+        Formatted markdown string for the comment
+    """
+    lines = [reason, "", f"> {context}"]
+    
+    if fix_steps:
+        lines.append("")
+        lines.append("**How to fix:**")
+        for i, step in enumerate(fix_steps, 1):
+            lines.append(f"{i}. {step}")
+    
+    if alternatives:
+        lines.append("")
+        lines.append("**Alternatives:**")
+        for alt in alternatives:
+            lines.append(f"- {alt}")
+    
+    return "\n".join(lines)
+
+
 def _parse_extra_args(raw: str) -> list[str]:
     """Parse extra args string into list, handling shell quoting.
 
@@ -351,7 +391,16 @@ def _handle_plan(executor: "TerraformExecutor", environment: str, sha: str) -> N
         set_github_output("plan_checksum", result.checksum)
         set_github_output("has_changes", str(result.has_changes).lower())
     if not result.success:
-        set_github_output("failure_reason", "Terraform plan failed. Check logs for details.")
+        error_msg = format_error_for_comment(
+            reason="Terraform plan failed.",
+            context="The `terraform plan` command exited with an error. Review the logs above for details.",
+            fix_steps=[
+                "Review the Terraform error output in the workflow logs",
+                "Fix any configuration or syntax errors in your `.tf` files",
+                "Commit your fixes and run `.plan to " + environment + "` again",
+            ],
+        )
+        set_github_output("failure_reason", error_msg)
         raise typer.Exit(1)
 
 
@@ -372,17 +421,33 @@ def _handle_apply(
         )
         apply_result = executor.apply()
         if not apply_result.success:
-            set_github_output("failure_reason", "Rollback apply failed. Check logs for details.")
+            error_msg = format_error_for_comment(
+                reason="Rollback apply failed.",
+                context="Terraform encountered an error applying the stable branch state.",
+                fix_steps=[
+                    "Review the Terraform error output in the workflow logs",
+                    "Ensure the stable branch (`main`) has valid Terraform configuration",
+                    "Check that remote state is accessible and not locked",
+                ],
+            )
+            set_github_output("failure_reason", error_msg)
             raise typer.Exit(1)
         console.print("[dim]📋 Rollback applied directly (no plan file)[/dim]")
     else:
         console.print(f"[red]❌ No plan file found for this SHA: {plan_file}[/red]")
-        reason = (
-            f"No plan file found for this SHA: `{plan_filename}`.\n\n"
-            f"You must run `.plan to {environment}` before `.apply to {environment}`.\n"
-            f"For rollback, use `.apply main to {environment}`."
+        error_msg = format_error_for_comment(
+            reason="No plan file found for this commit.",
+            context=f"You attempted to apply changes, but no saved plan exists for commit `{sha[:8]}`.",
+            fix_steps=[
+                f"Run `.plan to {environment}` to create a plan for this commit",
+                "Review the plan output to verify the changes",
+                f"Run `.apply to {environment}` to apply the reviewed plan",
+            ],
+            alternatives=[
+                f"For rollback to stable: `.apply main to {environment}`",
+            ],
         )
-        set_github_output("failure_reason", reason)
+        set_github_output("failure_reason", error_msg)
         console.print(
             f"[yellow]💡 You must run '.plan to {environment}' before '.apply to {environment}'[/yellow]"
         )
@@ -404,13 +469,31 @@ def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path) -> None:
             console.print(
                 "[red]❌ Plan file checksum mismatch! Plan may have been tampered with.[/red]"
             )
-            set_github_output("failure_reason", "Plan file checksum mismatch! Security validation failed.")
+            error_msg = format_error_for_comment(
+                reason="Security validation failed: Plan file checksum mismatch.",
+                context="The plan file's checksum does not match the expected value. This could indicate tampering or corruption.",
+                fix_steps=[
+                    "Create a fresh plan by running `.plan to " + os.environ.get('TF_BD_ENVIRONMENT', 'dev') + "`",
+                    "Ensure no processes are modifying the plan file between plan and apply",
+                    "If this persists, check for cache corruption or CI configuration issues",
+                ],
+            )
+            set_github_output("failure_reason", error_msg)
             raise typer.Exit(1)
         console.print("[green]✅ Plan checksum verified[/green]")
 
     apply_result = executor.apply(plan_file=Path(plan_file.name))
     if not apply_result.success:
-        set_github_output("failure_reason", "Terraform apply failed. Check logs for details.")
+        error_msg = format_error_for_comment(
+            reason="Terraform apply failed.",
+            context="The `terraform apply` command exited with an error after applying the plan.",
+            fix_steps=[
+                "Review the Terraform error output in the workflow logs above",
+                "Identify and fix the root cause (permissions, resource conflicts, etc.)",
+                "Create a new plan with `.plan to " + os.environ.get('TF_BD_ENVIRONMENT', 'dev') + "` and try again",
+            ],
+        )
+        set_github_output("failure_reason", error_msg)
         raise typer.Exit(1)
 
 

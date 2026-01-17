@@ -590,11 +590,13 @@ runs:
             RESULT_HEADER="### Deployment Results ✅"
             RESULT_MSG="**${TF_BD_ACTOR}** successfully ${DEPLOY_TYPE} branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**"
           else
-            RESULT_HEADER="### Deployment Results ❌"
-            RESULT_MSG="**${TF_BD_ACTOR}** had a failure when deploying branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**"
+            RESULT_HEADER="### ⚠️ Cannot proceed with deployment"
             
             if [[ -n "${FAILURE_REASON}" ]]; then
-               RESULT_MSG="${RESULT_MSG}"$'\n\n'"> **Error**: ${FAILURE_REASON}"
+              # Use the structured error message from CLI
+              RESULT_MSG="${FAILURE_REASON}"
+            else
+              RESULT_MSG="An unexpected error occurred. Please review the workflow logs for details."
             fi
           fi
           
