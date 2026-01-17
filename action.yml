@@ -27,11 +27,8 @@ inputs:
   terraform-version:
     description: "Terraform version to install"
     default: "latest"
-  pre-terraform-hook:
-    description: |
-      Shell commands to run before terraform.
-      All TF_BD_* environment variables are available.
-    default: ""
+  # NOTE: Inline pre-terraform-hook has been removed in v0.2.0
+  # Use built-in hooks in .tf-branch-deploy.yml instead
   dry-run:
     description: "Print commands without running"
     default: "false"
@@ -495,17 +492,8 @@ runs:
           **/*.tfplan
         key: tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}
 
-    - name: "[Execute] Run Pre-Terraform Hook"
-      id: pre-hook
-      if: inputs.mode == 'execute' && inputs.pre-terraform-hook != ''
-      shell: bash
-      env:
-        GITHUB_TOKEN: ${{ inputs.github-token }}
-      run: |
-        echo "🔧 Running pre-terraform hook for environment: ${TF_BD_ENVIRONMENT}"
-        echo "   Operation: ${TF_BD_OPERATION}"
-        echo "   Is Rollback: ${TF_BD_IS_ROLLBACK}"
-        ${{ inputs.pre-terraform-hook }}
+    # NOTE: Inline pre-terraform-hook removed in v0.2.0
+    # Built-in hooks (trivy, tflint, etc.) replace ad-hoc shell commands
 
     - name: "[Execute] Run Terraform"
       id: tf-execute
@@ -588,7 +576,25 @@ runs:
             || echo "   ⚠️  Failed to add reaction"
         fi
         
-        # 4. Remove non-sticky lock
+        # 4. Post deployment result comment (EXACT branch-deploy format)
+        echo "   💬 Posting deployment result comment"
+        if [[ "${STATUS}" == "success" ]]; then
+          gh api --method POST \
+            "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
+            -f body="### Deployment Results ✅
+
+        **@${TF_BD_ACTOR}** successfully deployed \`${TF_BD_SHA}\` to **${TF_BD_ENVIRONMENT}**" \
+            || echo "   ⚠️  Failed to post success comment"
+        else
+          gh api --method POST \
+            "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
+            -f body="### Deployment Results ❌
+
+        **@${TF_BD_ACTOR}** had a failure when deploying \`${TF_BD_SHA}\` to **${TF_BD_ENVIRONMENT}**" \
+            || echo "   ⚠️  Failed to post failure comment"
+        fi
+        
+        # 5. Remove non-sticky lock
         LOCK_REF="${TF_BD_ENVIRONMENT}-branch-deploy-lock"
         echo "   🔓 Checking for non-sticky lock"
         LOCK_DATA=$(gh api "repos/${GH_REPO}/contents/lock.json?ref=${LOCK_REF}" --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || echo '{}')

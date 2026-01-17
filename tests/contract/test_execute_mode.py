@@ -191,3 +191,67 @@ class TestExecuteModeEnvironmentVariablesAvailable:
     def test_ref_available_to_hook(self) -> None:
         """TF_BD_REF must be available to hooks."""
         pass
+
+
+class TestBranchDeployCommentParity:
+    """Contract: Execute mode must match branch-deploy behavior exactly.
+    
+    This is a HARD CONTRACT. If we break this, we break trust.
+    """
+
+    @pytest.mark.skip(reason="Contract test - implementation pending")
+    def test_posts_success_comment_on_success(self) -> None:
+        """Success comment format must match branch-deploy exactly.
+        
+        Expected format:
+        ### Deployment Results ✅
+
+        **@username** successfully deployed `abc123` to **production**
+        """
+        pass
+
+    @pytest.mark.skip(reason="Contract test - implementation pending")
+    def test_posts_failure_comment_on_failure(self) -> None:
+        """Failure comment format must match branch-deploy exactly.
+        
+        Expected format:
+        ### Deployment Results ❌
+
+        **@username** had a failure when deploying `abc123` to **production**
+        """
+        pass
+
+    @pytest.mark.skip(reason="Contract test - implementation pending")
+    def test_adds_rocket_reaction_on_success(self) -> None:
+        """🚀 reaction must be added on successful deployment."""
+        pass
+
+    @pytest.mark.skip(reason="Contract test - implementation pending")
+    def test_adds_thumbsdown_reaction_on_failure(self) -> None:
+        """👎 reaction must be added on failed deployment."""
+        pass
+
+    @pytest.mark.skip(reason="Contract test - implementation pending")
+    def test_removes_initial_eyes_reaction(self) -> None:
+        """👀 reaction must be removed after completion."""
+        pass
+
+    @pytest.mark.skip(reason="Contract test - implementation pending")
+    def test_updates_deployment_status_to_success(self) -> None:
+        """Deployment status must be set to 'success' on successful execution."""
+        pass
+
+    @pytest.mark.skip(reason="Contract test - implementation pending")
+    def test_updates_deployment_status_to_failure(self) -> None:
+        """Deployment status must be set to 'failure' on failed execution."""
+        pass
+
+    @pytest.mark.skip(reason="Contract test - implementation pending")
+    def test_removes_non_sticky_lock(self) -> None:
+        """Non-sticky locks must be removed after completion."""
+        pass
+
+    @pytest.mark.skip(reason="Contract test - implementation pending")
+    def test_preserves_sticky_lock(self) -> None:
+        """Sticky locks must NOT be removed after completion."""
+        pass
