@@ -4,9 +4,9 @@ Terraform Branch Deploy CLI.
 Typer-based CLI for Terraform infrastructure deployments via GitHub PRs.
 
 Three modes:
-- parse: Just read config, no branch-deploy, no terraform
-- dispatch: [For action.yml] Full flow with branch-deploy
-- execute: Just run terraform, no branch-deploy
+- parse: Read config, output environment settings
+- trigger: [For action.yml] Parse command, export TF_BD_* env vars, STOP
+- execute: [For action.yml] Run terraform with lifecycle completion
 """
 
 from __future__ import annotations

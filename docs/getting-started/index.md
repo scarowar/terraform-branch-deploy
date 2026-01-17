@@ -22,8 +22,8 @@ environments:
     working-directory: terraform/prod
 ```
 
-!!! tip "Multiple Environments"
-    Add as many environments as you need. Each maps to a Terraform root module directory.
+> [!TIP]
+> Add as many environments as you need. Each maps to a Terraform root module directory.
 
 ## Step 2: Create Workflow
 
@@ -42,11 +42,23 @@ permissions:
   deployments: write
 
 jobs:
-  deploy:
+  trigger:
     if: github.event.issue.pull_request
     runs-on: ubuntu-latest
     steps:
+      - uses: scarowar/terraform-branch-deploy@v0.2.0
+        with:
+          mode: trigger
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  execute:
+    needs: trigger
+    if: env.TF_BD_CONTINUE == 'true'
+    runs-on: ubuntu-latest
+    steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TF_BD_REF }}
 
       # Optional: Configure cloud provider credentials
       # - uses: aws-actions/configure-aws-credentials@v4
@@ -56,6 +68,7 @@ jobs:
 
       - uses: scarowar/terraform-branch-deploy@v0.2.0
         with:
+          mode: execute
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
@@ -79,9 +92,9 @@ git push
 
 The action will:
 
-1. ✅ Parse your command
+1. ✅ Parse your command (trigger mode)
 2. ✅ Lock the environment
-3. ✅ Run `terraform init` and `terraform plan`
+3. ✅ Run `terraform init` and `terraform plan` (execute mode)
 4. ✅ Post the plan output as a PR comment
 5. ✅ Unlock the environment
 
@@ -118,6 +131,6 @@ The action will:
 
 - **[Configuration Guide](../guides/configuration.md)** — Define environments, var files, backend configs
 - **[Guardrails & Security](../guides/guardrails.md)** — Set up access controls, CI gates, deployment safety
-- **[Pre-Terraform Hooks](../guides/hooks.md)** — Run custom scripts before Terraform executes
-- **[Modes](../guides/modes.md)** — Learn when to use dispatch vs execute mode
+- **[Built-in Hooks](../guides/hooks.md)** — Security scanning, linting, cost estimation
+- **[Modes](../guides/modes.md)** — Learn about trigger and execute modes
 - **[Examples](../examples/index.md)** — Cloud provider auth, monorepos, and more

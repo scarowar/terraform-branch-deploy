@@ -8,9 +8,27 @@ ChatOps for Terraform infrastructure deployments via GitHub PRs.
 ## Usage
 
 ```yaml
-- uses: scarowar/terraform-branch-deploy@v0.2.0
-  with:
-    github-token: ${{ secrets.GITHUB_TOKEN }}
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: scarowar/terraform-branch-deploy@v0.2.0
+        with:
+          mode: trigger
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  execute:
+    needs: trigger
+    if: env.TF_BD_CONTINUE == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TF_BD_REF }}
+      - uses: scarowar/terraform-branch-deploy@v0.2.0
+        with:
+          mode: execute
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 ## Features
@@ -22,7 +40,7 @@ ChatOps for Terraform infrastructure deployments via GitHub PRs.
 | **Plan safety** | Requires `.plan` before `.apply` with SHA verification |
 | **Environment locking** | Prevents concurrent deployments to the same environment |
 | **Dynamic args** | Pass terraform arguments: `.plan to dev \| -target=module.api` |
-| **Pre-terraform hooks** | Build lambdas, fetch secrets, run migrations before TF |
+| **Built-in hooks** | Security scanning, linting, cost estimation (trivy, tflint, infracost) |
 | **GHES compatible** | Works with GitHub Enterprise Server |
 
 ## Commands
@@ -36,36 +54,13 @@ ChatOps for Terraform infrastructure deployments via GitHub PRs.
 | `.wcid` | Who's deploying? |
 | `.apply main to prod` | Rollback to main |
 
-## PR Comment Examples
-
-=== "Plan"
-
-    ![Plan Command](assets/images/plan-command.png)
-
-    ![Plan Output](assets/images/plan-output.png)
-
-=== "Apply"
-
-    ![Apply Command](assets/images/apply-command.png)
-
-    ![Apply Output](assets/images/apply-output.png)
-
-=== "Locking"
-
-    ![Lock](assets/images/lock.png)
-
-    ![Who's deploying](assets/images/wcid.png)
-
-    ![Unlock](assets/images/unlock.png)
-
 ## Inputs
 
 | Input | Required | Description |
 |-------|----------|-------------|
 | `github-token` | Yes | GitHub token with PR write access |
-| `mode` | No | `dispatch` (default) or `execute` |
+| `mode` | Yes | `trigger` or `execute` |
 | `config-path` | No | Path to `.tf-branch-deploy.yml` |
-| `pre-terraform-hook` | No | Shell commands before TF runs |
 
 [View all inputs →](reference/inputs.md)
 
@@ -84,8 +79,8 @@ ChatOps for Terraform infrastructure deployments via GitHub PRs.
 |------|-------------|
 | [Getting Started](getting-started/index.md) | First deployment in 5 minutes |
 | [Configuration](guides/configuration.md) | `.tf-branch-deploy.yml` reference |
-| [Modes](guides/modes.md) | Dispatch vs Execute |
-| [Pre-Terraform Hooks](guides/hooks.md) | Custom pre-deploy logic |
+| [Modes](guides/modes.md) | Trigger vs Execute |
+| [Built-in Hooks](guides/hooks.md) | Security, linting, cost estimation |
 | [Guardrails & Security](guides/guardrails.md) | Enterprise governance features |
 | [Reference](reference/inputs.md) | All inputs & outputs |
 | [Examples](examples/index.md) | Workflow snippets |

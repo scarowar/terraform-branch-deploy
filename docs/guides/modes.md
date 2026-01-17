@@ -1,77 +1,101 @@
 # Modes
 
-Terraform Branch Deploy has two modes: **dispatch** (default) and **execute**.
+Terraform Branch Deploy uses a **two-mode architecture**: **trigger** and **execute**.
 
-## Dispatch Mode (Default)
+## Overview
 
-All-in-one: Handles comment parsing, locking, status updates, and Terraform execution.
+| Mode | Purpose |
+|------|---------|
+| `trigger` | Parse PR comment, export `TF_BD_*` env vars, STOP |
+| `execute` | Run terraform with lifecycle completion |
+
+This split enables credential injection between jobs.
+
+## Trigger Mode
+
+Parses the deployment command via `github/branch-deploy` and exports context to environment variables.
 
 ```yaml
 - uses: scarowar/terraform-branch-deploy@v0.2.0
   with:
+    mode: trigger
     github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-Use dispatch mode for 95% of use cases.
+**After trigger mode, these variables are available:**
+
+| Variable | Description |
+|----------|-------------|
+| `TF_BD_CONTINUE` | Whether to continue with execution |
+| `TF_BD_ENVIRONMENT` | Target environment (dev, prod, etc.) |
+| `TF_BD_OPERATION` | Operation: plan, apply, or rollback |
+| `TF_BD_IS_ROLLBACK` | Whether this is a rollback |
+| `TF_BD_REF` | Git ref to checkout |
+| `TF_BD_SHA` | Git commit SHA |
 
 ## Execute Mode
 
-Runs **only** Terraform. You manage `github/branch-deploy` yourself.
+Runs terraform and completes the deployment lifecycle (reactions, comments, locks).
 
-Use this when you need:
+```yaml
+- uses: scarowar/terraform-branch-deploy@v0.2.0
+  with:
+    mode: execute
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+```
 
-- Separate jobs for OPA policy checks
-- Manual approval gates
-- Matrix builds between parsing and execution
+Execute mode reads from `TF_BD_*` environment variables set by trigger mode.
 
-### Example: Policy Check Workflow
+## Complete Workflow
 
 ```yaml
 jobs:
-  # Job 1: Parse the command
-  parse:
+  trigger:
     runs-on: ubuntu-latest
-    outputs:
-      continue: ${{ steps.branch-deploy.outputs.continue }}
-      environment: ${{ steps.branch-deploy.outputs.environment }}
-      sha: ${{ steps.branch-deploy.outputs.sha }}
-      noop: ${{ steps.branch-deploy.outputs.noop }}
     steps:
-      - uses: github/branch-deploy@v11
-        id: branch-deploy
+      - uses: scarowar/terraform-branch-deploy@v0.2.0
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          mode: trigger
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
-  # Job 2: Policy Check
-  policy:
-    needs: parse
-    if: needs.parse.outputs.continue == 'true'
+  configure-credentials:
+    needs: trigger
+    if: env.TF_BD_CONTINUE == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789:role/${{ env.TF_BD_ENVIRONMENT }}
+
+  execute:
+    needs: [trigger, configure-credentials]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: ./scripts/opa-check.sh ${{ needs.parse.outputs.environment }}
-
-  # Job 3: Execute Terraform
-  deploy:
-    needs: [parse, policy]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TF_BD_REF }}
       - uses: scarowar/terraform-branch-deploy@v0.2.0
         with:
           mode: execute
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          environment: ${{ needs.parse.outputs.environment }}
-          sha: ${{ needs.parse.outputs.sha }}
-          operation: ${{ needs.parse.outputs.noop == 'true' && 'plan' || 'apply' }}
 ```
+
+## Lifecycle Completion
+
+Execute mode automatically handles:
+
+1. Updates deployment status (success/failure)
+2. Removes initial 👀 reaction
+3. Adds result reaction (🚀 success, 👎 failure)
+4. Posts deployment result comment
+5. Removes non-sticky locks
 
 ## Comparison
 
-| Aspect | Dispatch | Execute |
-|--------|----------|---------|
-| Comment parsing | ✅ Included | ❌ You handle |
-| Locking | ✅ Included | ❌ You handle |
-| Status updates | ✅ Included | ❌ You handle |
-| Policy gates | Via hooks | ✅ Separate job |
-| Setup complexity | Low | Higher |
+| Aspect | Trigger | Execute |
+|--------|---------|---------|
+| Comment parsing | ✅ Yes | ❌ No |
+| Env var export | ✅ Yes | ❌ No |
+| Terraform execution | ❌ No | ✅ Yes |
+| Lifecycle completion | ❌ No | ✅ Yes |
+| Runs built-in hooks | ❌ No | ✅ Yes |

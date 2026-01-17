@@ -16,9 +16,25 @@ pre-init → terraform init → post-init → pre-plan → terraform → post-pl
 | `post-plan` | After terraform plan | Cost estimation, change review |
 | `post-apply` | After terraform apply | CMDB updates, documentation |
 
-## Configuration
+## Built-in Hooks
 
-Define hooks in `.tf-branch-deploy.yml`:
+v0.2.0 includes curated built-in hooks with structured output:
+
+| Hook | Default | Phase | Description |
+|------|---------|-------|-------------|
+| `terraform validate` | **ON** | pre-plan | Configuration validation |
+| `trivy` | off | pre-init | Security vulnerability scanning |
+| `gitleaks` | off | pre-init | Secrets detection |
+| `tflint` | off | pre-plan | Terraform linting |
+| `infracost` | off | post-plan | Cost estimation |
+| `terraform-docs` | off | post-apply | Documentation generation |
+
+> [!NOTE]
+> `terraform validate` runs by default. All other hooks are opt-in.
+
+## Custom Hooks
+
+Define custom hooks in `.tf-branch-deploy.yml`:
 
 ```yaml
 hooks:
@@ -48,10 +64,6 @@ hooks:
   post-apply:
     - name: "Generate Docs"
       run: terraform-docs markdown . > README.md
-      condition: apply-only
-    
-    - name: "Update CMDB"
-      run: ./scripts/update-cmdb.sh
       condition: apply-only
 ```
 
@@ -149,21 +161,6 @@ hooks:
       env:
         CMDB_TOKEN: ${{ secrets.CMDB_TOKEN }}
 ```
-
-## Inline Hook (Alternative)
-
-For simple use cases, use the `pre-terraform-hook` input:
-
-```yaml
-- uses: scarowar/terraform-branch-deploy@v0.2.0
-  with:
-    mode: execute
-    github-token: ${{ secrets.GITHUB_TOKEN }}
-    pre-terraform-hook: |
-      npm ci && npm run build
-```
-
-This is equivalent to a `pre-plan` hook with `fail-on-error: true`.
 
 ## Fail-on-Error Behavior
 
