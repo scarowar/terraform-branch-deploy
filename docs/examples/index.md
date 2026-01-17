@@ -30,42 +30,37 @@ jobs:
 
 ---
 
-## Pre-Terraform Hooks
+## Environment-Based Credential Injection
 
-### Build Assets Before Deploy
+### AWS with Environment Routing
 
 ```yaml
-- uses: scarowar/terraform-branch-deploy@v0.2.0
+- uses: aws-actions/configure-aws-credentials@v4
+  if: env.TF_BD_CONTINUE == 'true'
   with:
-    github-token: ${{ secrets.GITHUB_TOKEN }}
-    pre-terraform-hook: |
-      npm ci
-      npm run build
-      zip -r function.zip dist/
+    role-to-assume: arn:aws:iam::${{ env.TF_BD_ENVIRONMENT == 'prod' && '111111111' || '222222222' }}:role/terraform
+    aws-region: us-east-1
 ```
 
-### Conditional Logic by Environment
+### GCP with Per-Environment Workload Identity
 
 ```yaml
-- uses: scarowar/terraform-branch-deploy@v0.2.0
+- uses: google-github-actions/auth@v2
+  if: env.TF_BD_CONTINUE == 'true'
   with:
-    github-token: ${{ secrets.GITHUB_TOKEN }}
-    pre-terraform-hook: |
-      if [ "$TF_BD_ENVIRONMENT" = "prod" ]; then
-        echo "Running production safety checks..."
-        ./scripts/pre-prod-check.sh
-      fi
+    workload_identity_provider: projects/${{ env.TF_BD_ENVIRONMENT == 'prod' && 'prod-project' || 'dev-project' }}/locations/global/workloadIdentityPools/github/providers/github
+    service_account: terraform@${{ env.TF_BD_ENVIRONMENT }}-project.iam.gserviceaccount.com
 ```
 
-### Generate Configuration
+### Azure with Environment-Specific Credentials
 
 ```yaml
-- uses: scarowar/terraform-branch-deploy@v0.2.0
+- uses: azure/login@v2
+  if: env.TF_BD_CONTINUE == 'true'
   with:
-    github-token: ${{ secrets.GITHUB_TOKEN }}
-    pre-terraform-hook: |
-      echo "Generating config for $TF_BD_ENVIRONMENT..."
-      ./scripts/generate-config.sh --env $TF_BD_ENVIRONMENT
+    client-id: ${{ secrets[format('{0}_AZURE_CLIENT_ID', env.TF_BD_ENVIRONMENT)] }}
+    tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+    subscription-id: ${{ secrets[format('{0}_AZURE_SUBSCRIPTION_ID', env.TF_BD_ENVIRONMENT)] }}
 ```
 
 ---

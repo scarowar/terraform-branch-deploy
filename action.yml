@@ -27,8 +27,6 @@ inputs:
   terraform-version:
     description: "Terraform version to install"
     default: "latest"
-  # NOTE: Inline pre-terraform-hook has been removed in v0.2.0
-  # Use built-in hooks in .tf-branch-deploy.yml instead
   dry-run:
     description: "Print commands without running"
     default: "false"
@@ -491,9 +489,6 @@ runs:
         path: |
           **/*.tfplan
         key: tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}
-
-    # NOTE: Inline pre-terraform-hook removed in v0.2.0
-    # Built-in hooks (trivy, tflint, etc.) replace ad-hoc shell commands
 
     - name: "[Execute] Run Terraform"
       id: tf-execute
