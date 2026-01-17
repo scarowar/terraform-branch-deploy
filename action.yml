@@ -530,16 +530,19 @@ runs:
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         GH_REPO: ${{ github.repository }}
+        TF_BD_INITIAL_REACTION_ID: ${{ env.TF_BD_INITIAL_REACTION_ID }}
+        TF_BD_DEPLOYMENT_ID: ${{ env.TF_BD_DEPLOYMENT_ID }}
+        STATUS: ${{ steps.tf-execute.outcome }}
+        FAILURE_REASON: ${{ steps.tf-execute.outputs.failure_reason }}
       run: |
         # Determine success/failure from previous step
-        if [[ "${{ steps.tf-execute.outcome }}" == "success" ]]; then
+        if [[ "${{ env.STATUS }}" == "success" ]]; then
           STATUS="success"
           REACTION="rocket"
           echo "✅ Execution succeeded"
         else
           STATUS="failure"
           REACTION="-1"
-          echo "FAILURE_REASON=${{ steps.execute.outputs.failure_reason }}" >> $GITHUB_ENV
           echo "❌ Execution failed"
         fi
         
@@ -618,7 +621,7 @@ runs:
           gh api --method POST \
             "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
             -f body="${BODY}" \
-            || echo "   ⚠️  Failed to post result comment"
+            > /dev/null 2>&1 || echo "   ⚠️  Failed to post result comment"
         fi
         
         # 5. Remove non-sticky lock
