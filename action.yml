@@ -575,25 +575,45 @@ runs:
         # 4. Post result comment (for both noop and apply operations)
         if [[ -n "${TF_BD_PR_NUMBER}" ]]; then
           echo "   💬 Posting deployment result comment"
-          SHORT_SHA="${TF_BD_SHA:0:7}"
+          
           if [[ "${TF_BD_NOOP}" == "true" ]]; then
             DEPLOY_TYPE="**noop** deployed"
           else
             DEPLOY_TYPE="deployed"
           fi
+          
           if [[ "${STATUS}" == "success" ]]; then
-            BODY="### Deployment Results ✅"$'\n\n'"**${TF_BD_ACTOR}** successfully ${DEPLOY_TYPE} branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**"$'\n\n'"| | |"$'\n'"|-|-|"$'\n'"| **Commit** | \`${SHORT_SHA}\` |"
-            gh api --method POST \
-              "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
-              -f body="${BODY}" \
-              || echo "   ⚠️  Failed to post success comment"
+            RESULT_HEADER="### Deployment Results ✅"
+            RESULT_MSG="**${TF_BD_ACTOR}** successfully ${DEPLOY_TYPE} branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**"
           else
-            BODY="### Deployment Results ❌"$'\n\n'"**${TF_BD_ACTOR}** had a failure when deploying branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**"$'\n\n'"| | |"$'\n'"|-|-|"$'\n'"| **Commit** | \`${SHORT_SHA}\` |"
-            gh api --method POST \
-              "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
-              -f body="${BODY}" \
-              || echo "   ⚠️  Failed to post failure comment"
+            RESULT_HEADER="### Deployment Results ❌"
+            RESULT_MSG="**${TF_BD_ACTOR}** had a failure when deploying branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**"
           fi
+          
+          # Construct metadata JSON safely using jq
+          METADATA=$(jq -n \
+            --arg type "${TF_BD_TYPE}" \
+            --arg env "${TF_BD_ENVIRONMENT}" \
+            --arg ref "${TF_BD_REF}" \
+            --arg sha "${TF_BD_SHA}" \
+            --arg actor "${TF_BD_ACTOR}" \
+            --arg noop "${TF_BD_NOOP}" \
+            --arg deployment_id "${TF_BD_DEPLOYMENT_ID}" \
+            '{
+              type: $type,
+              environment: { name: $env },
+              deployment: { id: $deployment_id },
+              git: { ref: $ref, commit: $sha },
+              context: { actor: $actor, noop: ($noop == "true") }
+            }'
+          )
+          
+          BODY="${RESULT_HEADER}"$'\n\n'"${RESULT_MSG}"$'\n\n'"<details><summary>Details</summary>"$'\n\n'"\`\`\`json"$'\n'"${METADATA}"$'\n'"\`\`\`"$'\n\n'"</details>"
+          
+          gh api --method POST \
+            "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
+            -f body="${BODY}" \
+            || echo "   ⚠️  Failed to post result comment"
         fi
         
         # 5. Remove non-sticky lock
