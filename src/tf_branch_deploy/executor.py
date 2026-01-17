@@ -14,7 +14,6 @@ from pathlib import Path
 
 from rich.console import Console
 
-# Constants
 TF_INPUT_FALSE = "-input=false"
 
 console = Console()
@@ -52,12 +51,7 @@ class ApplyResult(CommandResult):
 
 @dataclass
 class TerraformExecutor:
-    """
-    Executes Terraform operations.
-
-    This is the core of tf-branch-deploy - we don't just configure,
-    we actually RUN terraform.
-    """
+    """Executes terraform init, plan, and apply operations."""
 
     working_directory: Path
     var_files: list[str] = field(default_factory=list)
@@ -71,11 +65,7 @@ class TerraformExecutor:
     repo: str | None = None
     pr_number: int | None = None
 
-    # tfcmt integration
     use_tfcmt: bool = True
-
-    # Dry run mode - used by test fixtures to mark executor as non-production
-    # Note: actual dry-run logic is in cli.py before executor is invoked
     dry_run: bool = False
 
     def _run_command(
@@ -111,11 +101,9 @@ class TerraformExecutor:
 
         args = ["terraform", "init", TF_INPUT_FALSE]
 
-        # Add backend configs
         for backend in self.backend_configs:
             args.extend(["-backend-config", backend])
 
-        # Add custom init args
         args.extend(self.init_args)
 
         result = self._run_command(args)
@@ -145,17 +133,12 @@ class TerraformExecutor:
 
         args = ["terraform", "plan", TF_INPUT_FALSE, "-detailed-exitcode"]
 
-        # Add var files
         for var_file in self.var_files:
             args.extend(["-var-file", var_file])
 
-        # Add output file
         args.extend(["-out", str(out_file)])
-
-        # Add custom plan args
         args.extend(self.plan_args)
 
-        # Use tfcmt if available
         if self.use_tfcmt and self._tfcmt_available():
             result = self._run_with_tfcmt("plan", args)
         else:
@@ -209,13 +192,10 @@ class TerraformExecutor:
         if plan_file and plan_file.exists():
             args.append(str(plan_file))
         else:
-            # Direct apply - add var files
             for var_file in self.var_files:
                 args.extend(["-var-file", var_file])
-            # Add custom apply args
             args.extend(self.apply_args)
 
-        # Use tfcmt if available
         if self.use_tfcmt and self._tfcmt_available():
             result = self._run_with_tfcmt("apply", args)
         else:
@@ -249,10 +229,8 @@ class TerraformExecutor:
     def _run_with_tfcmt(self, operation: str, tf_args: list[str]) -> CommandResult:
         """Run terraform command wrapped with tfcmt for PR comments."""
         if not self.github_token or not self.repo or not self.pr_number:
-            # Fall back to direct execution
             return self._run_command(tf_args)
 
-        # tfcmt wraps terraform and posts results to PR
         args = [
             "tfcmt",
             "-owner",

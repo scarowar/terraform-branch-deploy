@@ -28,7 +28,6 @@ from rich.table import Table
 
 from .config import load_config
 
-# Constants
 DEFAULT_CONFIG_PATH = Path(".tf-branch-deploy.yml")
 
 app = typer.Typer(
@@ -141,15 +140,13 @@ def _strip_shell_quotes(arg: str) -> str:
         -var='msg=hello world' -> -var=msg=hello world
         -target=module.test["key"] -> -target=module.test["key"] (preserve inner quotes)
     """
-    # Find the first = to split flag from value
     eq_pos = arg.find("=")
     if eq_pos == -1:
-        return arg  # No value part (e.g., just a flag)
+        return arg
 
-    flag = arg[: eq_pos + 1]  # e.g., "-var="
-    value = arg[eq_pos + 1 :]  # e.g., "'key=value'"
+    flag = arg[: eq_pos + 1]
+    value = arg[eq_pos + 1 :]
 
-    # Strip outer quotes from value if present
     if len(value) >= 2:
         if (value.startswith("'") and value.endswith("'")) or (
             value.startswith('"') and value.endswith('"')
@@ -191,14 +188,12 @@ def parse(
 
     env_config = config.get_environment(environment)
 
-    # Resolve all settings
     var_files = config.resolve_var_files(environment)
     backend_configs = config.resolve_backend_configs(environment)
     init_args = config.resolve_args(environment, "init_args")
     plan_args = config.resolve_args(environment, "plan_args")
     apply_args = config.resolve_args(environment, "apply_args")
 
-    # Set outputs
     set_github_output("working_directory", env_config.working_directory)
     set_github_output("var_files", json.dumps(var_files))
     set_github_output("backend_configs", json.dumps(backend_configs))
@@ -267,18 +262,13 @@ def execute(
     config, env_config = _load_and_validate_config(config_path, environment)
     resolved_working_dir = Path(working_dir or env_config.working_directory)
 
-    # Parse extra args - check env var first (set by action.yml), then CLI option
-    # Using env var avoids shell escaping issues with complex args like -var='key=value'
     raw_extra_args = extra_args or os.environ.get("TF_BD_EXTRA_ARGS")
     parsed_extra_args = []
 
     if raw_extra_args:
-        # Custom parser that splits on unquoted spaces but preserves quotes in values
-        # This handles -target=module.test["key"] and -var='key=value' correctly
         parsed_extra_args = _parse_extra_args(raw_extra_args)
         console.print(f"[cyan]📝 Extra args from command:[/cyan] {parsed_extra_args}")
 
-    # Display info
     table = Table(title="Terraform Execution")
     table.add_column("Setting", style="cyan")
     table.add_column("Value", style="green")
@@ -291,14 +281,12 @@ def execute(
         table.add_row("Extra Args", " ".join(parsed_extra_args))
     console.print(table)
 
-    # Resolve args from config
     var_files = config.resolve_var_files(environment)
     backend_configs = config.resolve_backend_configs(environment)
     init_args = config.resolve_args(environment, "init_args")
     plan_args = config.resolve_args(environment, "plan_args") + parsed_extra_args
     apply_args = config.resolve_args(environment, "apply_args") + parsed_extra_args
 
-    # Set outputs for any downstream steps
     set_github_output("working_directory", str(resolved_working_dir))
     set_github_output("var_files", json.dumps(var_files))
     set_github_output("is_production", str(config.is_production(environment)).lower())
@@ -313,10 +301,8 @@ def execute(
             console.print(f"  terraform apply {' '.join(apply_args)}")
         return
 
-    # Actually execute terraform
     from .executor import TerraformExecutor
 
-    # Parse PR number defensively (could be empty or non-numeric)
     pr_number_str = os.environ.get("TF_BD_PR_NUMBER", "")
     try:
         pr_number = int(pr_number_str) if pr_number_str else None
@@ -336,13 +322,11 @@ def execute(
         pr_number=pr_number,
     )
 
-    # Init
     init_result = executor.init()
     if not init_result.success:
         console.print("[red]Terraform init failed[/red]")
         raise typer.Exit(1)
 
-    # Plan or Apply
     if operation == "plan":
         _handle_plan(executor, environment, sha)
     elif operation == "apply":
