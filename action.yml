@@ -577,18 +577,18 @@ runs:
           echo "   💬 Posting deployment result comment"
           SHORT_SHA="${TF_BD_SHA:0:7}"
           if [[ "${TF_BD_NOOP}" == "true" ]]; then
-            DEPLOY_TYPE="noop deployed"
+            DEPLOY_TYPE="**noop** deployed"
           else
             DEPLOY_TYPE="deployed"
           fi
           if [[ "${STATUS}" == "success" ]]; then
-            BODY="### Deployment Results ✅"$'\n\n'"**${TF_BD_ACTOR}** successfully ${DEPLOY_TYPE} branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**"
+            BODY="### Deployment Results ✅"$'\n\n'"**${TF_BD_ACTOR}** successfully ${DEPLOY_TYPE} branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**"$'\n\n'"| | |"$'\n'"|-|-|"$'\n'"| **Commit** | \`${SHORT_SHA}\` |"
             gh api --method POST \
               "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
               -f body="${BODY}" \
               || echo "   ⚠️  Failed to post success comment"
           else
-            BODY="### Deployment Results ❌"$'\n\n'"**${TF_BD_ACTOR}** had a failure when deploying branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**"
+            BODY="### Deployment Results ❌"$'\n\n'"**${TF_BD_ACTOR}** had a failure when deploying branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**"$'\n\n'"| | |"$'\n'"|-|-|"$'\n'"| **Commit** | \`${SHORT_SHA}\` |"
             gh api --method POST \
               "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
               -f body="${BODY}" \
