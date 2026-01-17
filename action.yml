@@ -444,7 +444,7 @@ runs:
         echo "═══════════════════════════════════════════════════════════════════"
         echo ""
         echo "Next steps:"
-        echo "  1. Checkout: actions/checkout@v4 with ref: \${{ env.TF_BD_REF }}"
+        echo "  1. Checkout: actions/checkout with ref: \${TF_BD_REF}"
         echo "  2. Configure cloud credentials using TF_BD_ENVIRONMENT"
         echo "  3. Run execute mode"
 
