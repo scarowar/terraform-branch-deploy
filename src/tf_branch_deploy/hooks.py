@@ -11,7 +11,6 @@ Handles execution of lifecycle hooks with:
 from __future__ import annotations
 
 import os
-import signal
 import subprocess  # nosec B404 - subprocess is required to run hooks
 from dataclasses import dataclass, field
 from enum import Enum

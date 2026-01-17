@@ -7,29 +7,41 @@ All action inputs for `scarowar/terraform-branch-deploy`.
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `github-token` | Yes | - | GitHub token with PR write access |
-| `mode` | No | `dispatch` | `dispatch` or `execute` |
+| `mode` | Yes | - | `trigger` or `execute` |
 | `config-path` | No | `.tf-branch-deploy.yml` | Path to config file |
 | `terraform-version` | No | `latest` | Terraform version to install |
 | `dry-run` | No | `false` | Print commands without executing |
-| `pre-terraform-hook` | No | - | Shell commands before TF runs |
 
-## Execute Mode Inputs
+## Trigger Mode
 
-Required when `mode: execute`:
+Trigger mode parses PR comments and exports environment variables for execute mode.
 
-| Input | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `environment` | Yes | - | Target environment from branch-deploy outputs |
-| `operation` | Yes | - | `plan` or `apply` |
-| `sha` | Yes | - | Commit SHA from branch-deploy outputs |
-| `deployment-id` | No | - | Deployment ID for status updates |
-| `pr-number` | No | - | PR number for comments |
-| `is-rollback` | No | `false` | Set `true` for rollback (allows apply without plan) |
-| `extra-args` | No | - | Extra terraform arguments |
+### Environment Variables Exported
+
+| Variable | Description |
+|----------|-------------|
+| `TF_BD_CONTINUE` | `'true'` if execute mode should run |
+| `TF_BD_ENVIRONMENT` | Target environment |
+| `TF_BD_OPERATION` | `plan`, `apply`, or `rollback` |
+| `TF_BD_IS_ROLLBACK` | `'true'` if rollback operation |
+| `TF_BD_SHA` | Commit SHA to deploy |
+| `TF_BD_REF` | Branch ref to deploy |
+| `TF_BD_ACTOR` | User who triggered deployment |
+| `TF_BD_PR_NUMBER` | PR number |
+| `TF_BD_PARAMS` | Extra parameters from command |
+| `TF_BD_DEPLOYMENT_ID` | GitHub deployment ID |
+| `TF_BD_COMMENT_ID` | Triggering comment ID |
+| `TF_BD_NOOP` | `'true'` for plan operations |
+
+## Execute Mode
+
+Execute mode runs terraform and completes the deployment lifecycle.
+
+Reads from `TF_BD_*` environment variables set by trigger mode.
 
 ## Branch-Deploy Passthrough Inputs
 
-These inputs are passed to `github/branch-deploy` in dispatch mode.
+These inputs are passed to `github/branch-deploy` in trigger mode.
 
 ### Command Triggers
 
@@ -92,54 +104,23 @@ These inputs are passed to `github/branch-deploy` in dispatch mode.
 | `sticky-locks-for-noop` | `false` | Keep locks for plan operations |
 | `global-lock-flag` | `--global` | Global lock flag |
 
-### Labels
-
-| Input | Default | Description |
-|-------|---------|-------------|
-| `successful-deploy-labels` | - | Labels for successful deploy |
-| `successful-noop-labels` | - | Labels for successful plan |
-| `failed-deploy-labels` | - | Labels for failed deploy |
-| `failed-noop-labels` | - | Labels for failed plan |
-| `skip-successful-noop-labels-if-approved` | `false` | Skip noop labels if PR approved |
-| `skip-successful-deploy-labels-if-approved` | `false` | Skip deploy labels if PR approved |
-
-### Advanced
-
-| Input | Default | Description |
-|-------|---------|-------------|
-| `deployment-confirmation` | `false` | Require deployment confirmation |
-| `deployment-confirmation-timeout` | `60` | Confirmation timeout in seconds |
-| `use-security-warnings` | `true` | Show security warnings in logs |
-| `merge-deploy-mode` | `false` | Enable merge deploy mode |
-| `unlock-on-merge-mode` | `false` | Unlock environments on PR merge |
-| `environment-url-in-comment` | `true` | Append environment URL to success comment |
-| `deploy-message-path` | `.github/deployment_message.md` | Custom deployment message template |
-| `reaction` | `eyes` | Reaction emoji for trigger detection |
-
 ---
 
 # Outputs Reference
 
-## Dispatch Mode Outputs
+## Trigger Mode Outputs
 
-From `github/branch-deploy`:
+Exported as environment variables (not action outputs):
 
-| Output | Description |
-|--------|-------------|
-| `continue` | `'true'` if deployment should proceed |
-| `triggered` | `'true'` if command was detected |
-| `environment` | Target environment |
-| `sha` | Commit SHA to deploy |
-| `ref` | Branch ref to deploy |
-| `noop` | `'true'` for plan operations |
-| `actor` | User who triggered deployment |
-| `params` | Raw parameters from command |
-| `comment-id` | Triggering comment ID |
-| `deployment-id` | GitHub deployment ID |
-| `type` | Command type (`deploy`, `lock`, `unlock`, etc.) |
-| `issue-number` | PR/Issue number |
+| Variable | Description |
+|----------|-------------|
+| `TF_BD_CONTINUE` | `'true'` if deployment should proceed |
+| `TF_BD_ENVIRONMENT` | Target environment |
+| `TF_BD_OPERATION` | `plan`, `apply`, or `rollback` |
+| `TF_BD_SHA` | Commit SHA to deploy |
+| `TF_BD_REF` | Branch ref to checkout |
 
-## Terraform-Specific Outputs
+## Execute Mode Outputs
 
 | Output | Description |
 |--------|-------------|
@@ -148,4 +129,4 @@ From `github/branch-deploy`:
 | `is-production` | `'true'` if production environment |
 | `plan-file` | Path to generated plan file |
 | `plan-checksum` | SHA256 of plan file |
-| `has-changes` | `'true'` if plan detected changes |
+| `has-changes` | `'true'` if plan has changes |

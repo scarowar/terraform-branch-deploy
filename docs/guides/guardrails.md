@@ -438,14 +438,13 @@ permissions:
   statuses: read
 
 jobs:
-  deploy:
+  trigger:
     if: github.event.issue.pull_request
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
       - uses: scarowar/terraform-branch-deploy@v0.2.0
         with:
+          mode: trigger
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
           # Access Control
@@ -468,9 +467,19 @@ jobs:
           enforced-deployment-order: "dev,staging,prod"
           sticky-locks: true
 
-          # Production Protection
-          deployment-confirmation: true
-          deployment-confirmation-timeout: 120
+  execute:
+    needs: trigger
+    if: env.TF_BD_CONTINUE == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TF_BD_REF }}
+
+      - uses: scarowar/terraform-branch-deploy@v0.2.0
+        with:
+          mode: execute
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 ---
