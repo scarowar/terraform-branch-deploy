@@ -19,9 +19,7 @@
 
 ---
 
-A GitHub Action that enables Terraform deployments via PR comments. Built on top of [github/branch-deploy](https://github.com/github/branch-deploy), it adds Terraform-specific features like plan caching, environment configuration, and pre-terraform hooks.
-
-https://github.com/user-attachments/assets/7b9d1660-bf20-4fa1-8b07-34f0c0e9f334
+A GitHub Action that enables Terraform deployments via PR comments. Built on top of [github/branch-deploy](https://github.com/github/branch-deploy), it adds Terraform-specific features like plan caching, environment configuration, lifecycle hooks, and credential injection points.
 
 ## Why This Action?
 
@@ -32,6 +30,7 @@ https://github.com/user-attachments/assets/7b9d1660-bf20-4fa1-8b07-34f0c0e9f334
 | Environment config scattered in workflows | Centralized `.tf-branch-deploy.yml` |
 | No enforcement of plan-before-apply | Built-in safety: apply requires matching plan |
 | Custom locking implementation | Environment locking via branch-deploy |
+| Hardcoded cloud credentials | Environment-aware credential injection |
 
 ## Commands
 
@@ -43,28 +42,6 @@ https://github.com/user-attachments/assets/7b9d1660-bf20-4fa1-8b07-34f0c0e9f334
 .wcid                     # Who's deploying?
 .apply main to prod       # Emergency rollback
 ```
-
-> **Note**: `dev` and `prod` are example environment names. Define your own environments in `.tf-branch-deploy.yml`.
-
-## Features
-
-- **PR Comment Commands**: Run `.plan to dev` or `.apply to prod` directly from pull request comments. The action parses commands, manages deployments, and posts results back to the PR.
-
-- **Plan-Before-Apply Safety**: Apply operations require a matching plan file for the same commit SHA. This prevents applying stale plans after new commits and ensures you review exactly what will be deployed.
-
-- **Environment Locking**: Prevents concurrent deployments to the same environment. Use `.lock dev` to reserve an environment and `.unlock dev` to release it. Locks can optionally persist across deploys (`sticky-locks`).
-
-- **Multi-Environment Config**: Define per-environment settings in `.tf-branch-deploy.yml`—working directories, var files, backend configs, and terraform arguments. Environments can inherit from shared defaults.
-
-- **Deployment Order Enforcement**: Optionally require deployments to follow a specific order (e.g., `dev → staging → prod`). The action blocks production deploys if lower environments haven't been deployed first.
-
-- **Pre-Terraform Hooks**: Run shell commands after checkout but before terraform—useful for building Lambda packages, fetching secrets, or running database migrations.
-
-- **Rollback Support**: Use `.apply main to prod` to deploy the stable branch code directly, bypassing the plan requirement for emergency rollbacks.
-
-## Requirements
-
-- **Python 3.12+**: GitHub-hosted runners have Python pre-installed. Self-hosted or CodeBuild runners must have Python 3.12 or higher available.
 
 ## Quick Start
 
@@ -80,15 +57,37 @@ permissions:
   contents: write
   pull-requests: write
   deployments: write
+  id-token: write  # For OIDC credential injection
 
 jobs:
   deploy:
     if: github.event.issue.pull_request
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # TRIGGER: Parse command, export TF_BD_* env vars
       - uses: scarowar/terraform-branch-deploy@v0.2.0
         with:
+          mode: trigger
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      
+      # CHECKOUT: Use TF_BD_REF (handles rollbacks correctly)
+      - uses: actions/checkout@v4
+        if: env.TF_BD_CONTINUE == 'true'
+        with:
+          ref: ${{ env.TF_BD_REF }}
+      
+      # CREDENTIALS: Based on TF_BD_ENVIRONMENT
+      - uses: aws-actions/configure-aws-credentials@v4
+        if: env.TF_BD_CONTINUE == 'true'
+        with:
+          role-to-assume: arn:aws:iam::${{ env.TF_BD_ENVIRONMENT == 'prod' && '111111111111' || '222222222222' }}:role/terraform
+          aws-region: us-east-1
+      
+      # EXECUTE: Run terraform, complete lifecycle
+      - uses: scarowar/terraform-branch-deploy@v0.2.0
+        if: env.TF_BD_CONTINUE == 'true'
+        with:
+          mode: execute
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
@@ -107,45 +106,117 @@ environments:
 
 **3. Comment on a PR**: `.plan to dev`
 
-## How It Works
+## Architecture
 
 ```mermaid
 flowchart LR
-    A[PR Comment] --> B{terraform-branch-deploy}
-    B --> C[branch-deploy]
-    C --> D[Parse Command]
-    D --> E[Lock Environment]
-    E --> F[Run Terraform]
-    F --> G[Post Results]
-    G --> H[Unlock]
+    subgraph "Trigger Mode"
+        A[PR Comment] --> B[branch-deploy]
+        B --> C[Parse Command]
+        C --> D[Export TF_BD_*]
+    end
+    
+    D --> E["User Steps<br/>(checkout, credentials)"]
+    
+    subgraph "Execute Mode"
+        E --> F[Validate State]
+        F --> G[Run Hooks]
+        G --> H[Terraform]
+        H --> I[Lifecycle<br/>Completion]
+    end
 ```
 
-**Dispatch Mode** (default): The action handles everything—command parsing, locking, terraform execution, and status updates.
+### Two Modes
 
-**Execute Mode**: You manage `github/branch-deploy` yourself and use this action only for terraform execution. Useful for policy gates between parsing and execution.
+| Mode | Purpose |
+|------|---------|
+| `trigger` | Parse command, export 14 `TF_BD_*` env vars, STOP |
+| `execute` | Validate state, run hooks, terraform, complete lifecycle |
+
+### Environment Variables (from trigger mode)
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `TF_BD_CONTINUE` | Should deployment proceed? | `true` |
+| `TF_BD_ENVIRONMENT` | Target environment | `dev`, `prod` |
+| `TF_BD_OPERATION` | Operation type | `plan`, `apply`, `rollback` |
+| `TF_BD_IS_ROLLBACK` | Rollback flag | `true`, `false` |
+| `TF_BD_SHA` | Commit SHA | `abc123def456` |
+| `TF_BD_REF` | Branch to checkout | `feature/foo`, `main` |
+| `TF_BD_ACTOR` | User who triggered | `username` |
+| `TF_BD_PR_NUMBER` | Pull request number | `42` |
+| `TF_BD_PARAMS` | Extra args from command | `-target=module.foo` |
+| `TF_BD_DEPLOYMENT_ID` | GitHub deployment ID | `12345` |
+
+## Lifecycle Hooks
+
+Define hooks in `.tf-branch-deploy.yml`:
+
+```yaml
+hooks:
+  pre-init:
+    - name: "Security Scan"
+      run: trivy fs --security-checks vuln,secret .
+      fail-on-error: true
+  
+  pre-plan:
+    - name: "TFLint"
+      run: tflint --config .tflint.hcl
+  
+  post-plan:
+    - name: "Cost Estimation"
+      run: infracost diff --path .
+      condition: plan-only
+  
+  post-apply:
+    - name: "Update CMDB"
+      run: ./scripts/update-cmdb.sh
+      condition: apply-only
+```
+
+### Hook Phases
+
+| Phase | When | Examples |
+|-------|------|----------|
+| `pre-init` | Before terraform init | trivy, gitleaks |
+| `post-init` | After terraform init | terraform validate |
+| `pre-plan` | Before terraform plan/apply | tflint, checkov |
+| `post-plan` | After terraform plan | infracost |
+| `post-apply` | After terraform apply | terraform-docs, CMDB |
+
+### Hook Properties
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `name` | required | Human-readable name |
+| `run` | required | Shell command |
+| `fail-on-error` | `true` | Block on failure |
+| `timeout` | `600` | Max seconds |
+| `condition` | `always` | `always`, `plan-only`, `apply-only`, `rollback-only` |
 
 ## Inputs
 
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
+| `mode` | Yes | | `trigger` or `execute` |
 | `github-token` | Yes | | GitHub token with PR write access |
-| `mode` | No | `dispatch` | `dispatch` or `execute` |
 | `config-path` | No | `.tf-branch-deploy.yml` | Path to config file |
 | `terraform-version` | No | `latest` | Terraform version to install |
-| `pre-terraform-hook` | No | | Shell commands before TF runs |
+| `pre-terraform-hook` | No | | Quick inline hook (alternative to config) |
 | `dry-run` | No | `false` | Print commands without executing |
-
-[View all inputs →](https://scarowar.github.io/terraform-branch-deploy/reference/inputs/)
 
 ## Outputs
 
 | Output | Description |
 |--------|-------------|
-| `working-directory` | Resolved Terraform working directory |
-| `is-production` | `true` if deploying to production environment |
-| `has-changes` | `true` if plan detected infrastructure changes |
+| `continue` | `true` if deployment should proceed |
+| `environment` | Target environment |
+| `operation` | `plan`, `apply`, or `rollback` |
+| `is-rollback` | `true` if rollback operation |
+| `ref` | Branch ref to checkout |
+| `sha` | Commit SHA |
+| `has-changes` | `true` if plan has changes |
 | `plan-file` | Path to generated plan file |
-| `plan-checksum` | SHA256 checksum of plan file |
 
 ## Documentation
 
@@ -153,11 +224,10 @@ flowchart LR
 |-------|-------------|
 | [Getting Started](https://scarowar.github.io/terraform-branch-deploy/getting-started/) | First deployment in 5 minutes |
 | [Configuration](https://scarowar.github.io/terraform-branch-deploy/guides/configuration/) | `.tf-branch-deploy.yml` reference |
-| [Modes](https://scarowar.github.io/terraform-branch-deploy/guides/modes/) | Dispatch vs Execute |
-| [Pre-Terraform Hooks](https://scarowar.github.io/terraform-branch-deploy/guides/hooks/) | Custom pre-deploy logic |
-| [Guardrails & Security](https://scarowar.github.io/terraform-branch-deploy/guides/guardrails/) | Enterprise governance features |
+| [Modes](https://scarowar.github.io/terraform-branch-deploy/guides/modes/) | Trigger vs Execute |
+| [Lifecycle Hooks](https://scarowar.github.io/terraform-branch-deploy/guides/hooks/) | Pre/post terraform hooks |
+| [Guardrails & Security](https://scarowar.github.io/terraform-branch-deploy/guides/guardrails/) | Enterprise governance |
 | [Examples](https://scarowar.github.io/terraform-branch-deploy/examples/) | Workflow snippets |
-| [Troubleshooting](https://scarowar.github.io/terraform-branch-deploy/troubleshooting/) | Common issues |
 
 ## Contributing
 
