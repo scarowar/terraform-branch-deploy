@@ -47,18 +47,22 @@ class Mode(str, Enum):
 
 
 def set_github_output(name: str, value: str) -> None:
-    """Set a GitHub Actions output."""
-    output_file = os.environ.get("GITHUB_OUTPUT")
-    if output_file:
-        with open(output_file, "a") as f:
+    """Sets a GitHub Actions output. Handles multiline strings."""
+    if "GITHUB_OUTPUT" in os.environ:
+        with open(os.environ["GITHUB_OUTPUT"], "a") as f:
             if "\n" in value:
-                import uuid
-
-                delimiter = uuid.uuid4().hex
+                delimiter = f"EOF_{uuid.uuid4().hex}"
                 f.write(f"{name}<<{delimiter}\n{value}\n{delimiter}\n")
             else:
                 f.write(f"{name}={value}\n")
-    console.print(f"[dim]Output: {name}={value[:50]}{'...' if len(value) > 50 else ''}[/dim]")
+    else:
+        print(f"::set-output name={name}::{value}")
+
+
+def set_error_output(title: str, message: str) -> None:
+    """Helper to set failure title and reason."""
+    set_github_output("failure_title", title)
+    set_github_output("failure_reason", message)
 
 
 def _parse_extra_args(raw: str) -> list[str]:
@@ -325,7 +329,7 @@ def execute(
     init_result = executor.init()
     if not init_result.success:
         console.print("[red]Terraform init failed[/red]")
-        set_github_output("failure_reason", "Terraform initialization failed. Check logs for details.")
+        set_error_output("Terraform Init Failed", "Terraform initialization failed. Check the Action Logs for details.")
         raise typer.Exit(1)
 
     if operation == "plan":
@@ -336,9 +340,7 @@ def execute(
         msg = f"Unknown operation: {operation}"
         console.print(f"[red]{msg}[/red]")
         
-        reason = f"""**Configuration Error: Unknown Operation**
-
-The operation `{operation}` is not supported.
+        reason = f"""The operation `{operation}` is not supported.
 
 **Supported Operations:**
 *   `plan`
@@ -347,7 +349,7 @@ The operation `{operation}` is not supported.
 
 *Please check your workflow configuration.*
 """
-        set_github_output("failure_reason", reason)
+        set_error_output("Configuration Error", reason)
         raise typer.Exit(1)
 
     console.print("\n[green]✅ Terraform execution complete[/green]")
@@ -363,18 +365,14 @@ def _handle_plan(executor: "TerraformExecutor", environment: str, sha: str) -> N
         set_github_output("plan_checksum", result.checksum)
         set_github_output("has_changes", str(result.has_changes).lower())
     if not result.success:
-        set_github_output(
-            "failure_reason", 
-            """**Terraform Plan Failed**
-
-The `terraform plan` command exited with an error.
+        reason = """The `terraform plan` command exited with a non-zero status code.
 
 **Troubleshooting:**
-*   Check the **Action Logs** above for specific Terraform errors.
+*   Check the **Action Logs** above for specific Terraform error messages.
 *   Verify your Terraform configuration syntax.
 *   Check cloud provider credentials and permissions.
 """
-        )
+        set_error_output("Terraform Plan Failed", reason)
         raise typer.Exit(1)
 
 
@@ -387,7 +385,7 @@ def _handle_apply(
     is_rollback = os.environ.get("TF_BD_IS_ROLLBACK", "false").lower() == "true"
 
     if plan_file.exists():
-        _apply_with_plan(executor, plan_file)
+        _apply_with_plan(executor, plan_file, environment)
         console.print(f"[dim]📋 Plan applied: {plan_filename}[/dim]")
     elif is_rollback:
         console.print(
@@ -400,22 +398,28 @@ def _handle_apply(
         console.print("[dim]📋 Rollback applied directly (no plan file)[/dim]")
     else:
         console.print(f"[red]❌ No plan file found for this SHA: {plan_file}[/red]")
-        reason = (
-            f"No plan file found for this SHA: `{plan_filename}`.\n\n"
-            f"You must run `.plan to {environment}` before `.apply to {environment}`.\n"
-            f"For rollback, use `.apply main to {environment}`."
-        )
-        set_github_output("failure_reason", reason)
+        reason = f"""No plan file found for commit `{sha}`.
+        
+You must run a plan for this environment before you can deploy to it.
+
+> **Next Steps:**
+> 1. Run `.plan to {environment}` to generate a fresh plan.
+> 2. Wait for the plan to finish successfully.
+> 3. Run `.apply to {environment}` again.
+>
+> *To perform a rollback, use `.apply main to {environment}`.*
+"""
+        set_error_output("Deployment Blocked", reason)
         console.print(
             f"[yellow]💡 You must run '.plan to {environment}' before '.apply to {environment}'[/yellow]"
         )
         console.print(
-            f"[yellow]💡 For rollback, use: '.apply main to {environment}' (from stable branch)[/yellow]"
+            f"[yellow]💡 For rollback, use: '.apply main to {environment}' (from stable branch)'[/yellow]"
         )
         raise typer.Exit(1)
 
 
-def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path) -> None:
+def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path, environment: str) -> None:
     """Apply using an existing plan file with checksum verification."""
     console.print(f"[green]✅ Found plan file:[/green] {plan_file}")
     expected_checksum = os.environ.get("TF_BD_PLAN_CHECKSUM")
@@ -427,13 +431,30 @@ def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path) -> None:
             console.print(
                 "[red]❌ Plan file checksum mismatch! Plan may have been tampered with.[/red]"
             )
-            set_github_output("failure_reason", "Plan file checksum mismatch! Security validation failed.")
+            reason = f"""The Terraform plan file has been tampered with or corrupted since it was created.
+
+Deployment has been blocked for security reasons.
+
+> **Next Steps:**
+> 1. Run `.plan to {environment}` again to generate a secure plan.
+> 2. Retry the deployment.
+"""
+            set_error_output("Security Check Failed", reason)
             raise typer.Exit(1)
         console.print("[green]✅ Plan checksum verified[/green]")
 
     apply_result = executor.apply(plan_file=Path(plan_file.name))
     if not apply_result.success:
-        set_github_output("failure_reason", "Terraform apply failed. Check logs for details.")
+        reason = """The `terraform apply` command failed.
+
+Please check the **Action Logs** above for the specific Terraform error message.
+
+> **Common Issues:**
+> *   Cloud verification/permission errors.
+> *   Concurrent state lock overlap.
+> *   Resource availability issues.
+"""
+        set_error_output("Terraform Apply Failed", reason)
         raise typer.Exit(1)
 
 

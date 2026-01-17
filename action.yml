@@ -532,8 +532,9 @@ runs:
         GH_REPO: ${{ github.repository }}
         TF_BD_INITIAL_REACTION_ID: ${{ env.TF_BD_INITIAL_REACTION_ID }}
         TF_BD_DEPLOYMENT_ID: ${{ env.TF_BD_DEPLOYMENT_ID }}
-        STATUS: ${{ steps.tf-execute.outcome }}
-        FAILURE_REASON: ${{ steps.tf-execute.outputs.failure_reason }}
+        STATUS: ${{ steps.execute.outcome }}
+        FAILURE_REASON: ${{ steps.execute.outputs.failure_reason }}
+        FAILURE_TITLE: ${{ steps.execute.outputs.failure_title }}
       run: |
         # Determine success/failure from previous step
         if [[ "${{ env.STATUS }}" == "success" ]]; then
@@ -576,34 +577,38 @@ runs:
             > /dev/null 2>&1 || echo "   ⚠️  Failed to add reaction"
         fi
         
-        # 4. Post result comment (for both noop and apply operations)
-        if [[ -n "${TF_BD_PR_NUMBER}" ]]; then
-          echo "   💬 Posting deployment result comment"
-          
-          if [[ "${TF_BD_NOOP}" == "true" ]]; then
-            DEPLOY_TYPE="**noop** deployed"
-          else
-            DEPLOY_TYPE="deployed"
-          fi
-          
-          if [[ "${STATUS}" == "success" ]]; then
-            RESULT_HEADER="### Deployment Results ✅"
-            RESULT_MSG="**${TF_BD_ACTOR}** successfully ${DEPLOY_TYPE} branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**"
-          else
-            RESULT_HEADER="### Deployment Results ❌"
-            RESULT_MSG="**${TF_BD_ACTOR}** had a failure when deploying branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**"
+          # 4. Post result comment (for both noop and apply operations)
+          if [[ -n "${TF_BD_PR_NUMBER}" ]]; then
+            echo "   💬 Posting deployment result comment"
             
-            if [[ -n "${FAILURE_REASON}" ]]; then
-               # Format the reason as a Quote/Alert block
-               # 1. Prefix each line with "> " to ensure it stays in quote
-               FORMATTED_REASON=$(echo "${FAILURE_REASON}" | sed 's/^/> /')
-               
-               # 2. Append to message using GitHub Alert syntax
-               RESULT_MSG="${RESULT_MSG}"$'\n\n'"> [!CAUTION]"$'\n'"${FORMATTED_REASON}"
+            if [[ "${TF_BD_NOOP}" == "true" ]]; then
+              DEPLOY_TYPE="**noop** deployed"
+            else
+              DEPLOY_TYPE="deployed"
             fi
-          fi
-          
-          # Construct metadata JSON safely using jq
+            
+            if [[ "${STATUS}" == "success" ]]; then
+              RESULT_HEADER="### Deployment Results ✅"
+              RESULT_MSG="**${TF_BD_ACTOR}** successfully ${DEPLOY_TYPE} branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**"
+            else
+              # FAILURE HANDLING V3
+              if [[ -n "${FAILURE_TITLE}" ]]; then
+                  # Professional Error format: Title + Reason
+                  RESULT_HEADER="### ⚠️ ${FAILURE_TITLE}"
+                  RESULT_MSG="${FAILURE_REASON}"
+              else
+                  # Fallback for unexpected failures
+                  RESULT_HEADER="### Deployment Results ❌"
+                  RESULT_MSG="**${TF_BD_ACTOR}** had a failure when deploying branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**"
+                  
+                  if [[ -n "${FAILURE_REASON}" ]]; then
+                     FORMATTED_REASON=$(echo "${FAILURE_REASON}" | sed 's/^/> /')
+                     RESULT_MSG="${RESULT_MSG}"$'\n\n'"> [!CAUTION]"$'\n'"${FORMATTED_REASON}"
+                  fi
+              fi
+            fi
+            
+            # Construct metadata JSON safely using jq
           METADATA=$(jq -n \
             --arg type "${TF_BD_TYPE}" \
             --arg env "${TF_BD_ENVIRONMENT}" \
