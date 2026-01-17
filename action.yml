@@ -576,23 +576,18 @@ runs:
         # For noop (plan), tfcmt already posted the terraform plan output
         if [[ -n "${TF_BD_PR_NUMBER}" && "${TF_BD_NOOP}" != "true" ]]; then
           echo "   💬 Posting deployment result comment"
+          SHORT_SHA="${TF_BD_SHA:0:7}"
           if [[ "${STATUS}" == "success" ]]; then
+            BODY="### Deployment Results ✅"$'\n\n'"**${TF_BD_ACTOR}** successfully deployed branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**"$'\n\n'"- SHA: \`${SHORT_SHA}\`"
             gh api --method POST \
               "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
-              -f body="### Deployment Results ✅
-
-**${TF_BD_ACTOR}** successfully deployed branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**
-
-- SHA: \`${TF_BD_SHA:0:7}\`" \
+              -f body="${BODY}" \
               || echo "   ⚠️  Failed to post success comment"
           else
+            BODY="### Deployment Results ❌"$'\n\n'"**${TF_BD_ACTOR}** had a failure when deploying branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**"$'\n\n'"- SHA: \`${SHORT_SHA}\`"
             gh api --method POST \
               "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
-              -f body="### Deployment Results ❌
-
-**${TF_BD_ACTOR}** had a failure when deploying branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**
-
-- SHA: \`${TF_BD_SHA:0:7}\`" \
+              -f body="${BODY}" \
               || echo "   ⚠️  Failed to post failure comment"
           fi
         fi
