@@ -329,7 +329,7 @@ def execute(
 
     if operation == "plan":
         _handle_plan(executor, environment, sha)
-    elif operation == "apply":
+    elif operation == "apply" or operation == "rollback":
         _handle_apply(executor, environment, sha, resolved_working_dir)
     else:
         console.print(f"[red]Unknown operation: {operation}[/red]")
