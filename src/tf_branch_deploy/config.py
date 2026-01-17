@@ -10,7 +10,6 @@ using Pydantic models. These models serve as:
 
 from __future__ import annotations
 
-from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -18,78 +17,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-class HookCondition(str, Enum):
-    """When a hook should run."""
-
-    ALWAYS = "always"  # Run on all operations
-    PLAN_ONLY = "plan-only"  # Only on plan operations
-    APPLY_ONLY = "apply-only"  # On apply and rollback operations
-    ROLLBACK_ONLY = "rollback-only"  # Only when TF_BD_IS_ROLLBACK=true
-
-
-class Hook(BaseModel):
-    """A single lifecycle hook."""
-
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
-
-    name: str = Field(..., description="Human-readable name for the hook")
-    run: str = Field(..., description="Shell command to execute")
-    fail_on_error: bool = Field(
-        default=True,
-        alias="fail-on-error",
-        description="If true, non-zero exit code fails deployment",
-    )
-    timeout: int = Field(
-        default=600,
-        description="Maximum seconds the hook can run before being killed",
-    )
-    condition: HookCondition = Field(
-        default=HookCondition.ALWAYS,
-        description="When to run this hook",
-    )
-    working_directory: str | None = Field(
-        default=None,
-        alias="working-directory",
-        description="Override working directory for this hook",
-    )
-    env: dict[str, str] | None = Field(
-        default=None,
-        description="Additional environment variables for this hook",
-    )
-
-
-class HooksConfig(BaseModel):
-    """Configuration for lifecycle hooks."""
-
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
-
-    pre_init: list[Hook] = Field(
-        default_factory=list,
-        alias="pre-init",
-        description="Hooks before terraform init (security scanning)",
-    )
-    post_init: list[Hook] = Field(
-        default_factory=list,
-        alias="post-init",
-        description="Hooks after terraform init (provider validation)",
-    )
-    pre_plan: list[Hook] = Field(
-        default_factory=list,
-        alias="pre-plan",
-        description="Hooks before terraform plan/apply (linting, policy)",
-    )
-    post_plan: list[Hook] = Field(
-        default_factory=list,
-        alias="post-plan",
-        description="Hooks after terraform plan (cost estimation)",
-    )
-    post_apply: list[Hook] = Field(
-        default_factory=list,
-        alias="post-apply",
-        description="Hooks after terraform apply (CMDB, docs)",
-    )
 
 
 class ArgsConfig(BaseModel):
@@ -171,7 +98,6 @@ class TerraformBranchDeployConfig(BaseModel):
     # Optional fields
     defaults: DefaultsConfig | None = None
     stable_branch: str = Field(default="main", alias="stable-branch")
-    hooks: HooksConfig | None = None
 
     @field_validator("production_environments", mode="before")
     @classmethod

@@ -40,7 +40,7 @@ jobs:
 | **Plan safety** | Requires `.plan` before `.apply` with SHA verification |
 | **Environment locking** | Prevents concurrent deployments to the same environment |
 | **Dynamic args** | Pass terraform arguments: `.plan to dev \| -target=module.api` |
-| **Built-in hooks** | Security scanning, linting, cost estimation (trivy, tflint, infracost) |
+| **Rollbacks** | Deploy from stable branch: `.apply main to prod` |
 | **GHES compatible** | Works with GitHub Enterprise Server |
 
 ## Commands
@@ -80,7 +80,6 @@ jobs:
 | [Getting Started](getting-started/index.md) | First deployment in 5 minutes |
 | [Configuration](guides/configuration.md) | `.tf-branch-deploy.yml` reference |
 | [Modes](guides/modes.md) | Trigger vs Execute |
-| [Built-in Hooks](guides/hooks.md) | Security, linting, cost estimation |
 | [Guardrails & Security](guides/guardrails.md) | Enterprise governance features |
 | [Reference](reference/inputs.md) | All inputs & outputs |
 | [Examples](examples/index.md) | Workflow snippets |

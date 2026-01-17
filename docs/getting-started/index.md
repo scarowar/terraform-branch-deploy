@@ -131,6 +131,6 @@ The action will:
 
 - **[Configuration Guide](../guides/configuration.md)** — Define environments, var files, backend configs
 - **[Guardrails & Security](../guides/guardrails.md)** — Set up access controls, CI gates, deployment safety
-- **[Built-in Hooks](../guides/hooks.md)** — Security scanning, linting, cost estimation
 - **[Modes](../guides/modes.md)** — Learn about trigger and execute modes
 - **[Examples](../examples/index.md)** — Cloud provider auth, monorepos, and more
+

@@ -19,7 +19,7 @@
 
 ---
 
-A GitHub Action that enables Terraform deployments via PR comments. Built on top of [github/branch-deploy](https://github.com/github/branch-deploy), it adds Terraform-specific features like plan caching, environment configuration, lifecycle hooks, and credential injection points.
+A GitHub Action that enables Terraform deployments via PR comments. Built on top of [github/branch-deploy](https://github.com/github/branch-deploy), it adds Terraform-specific features like plan caching, environment configuration, and credential injection points.
 
 ## Why This Action?
 
@@ -120,9 +120,8 @@ flowchart LR
     
     subgraph "Execute Mode"
         E --> F[Validate State]
-        F --> G[Run Hooks]
-        G --> H[Terraform]
-        H --> I[Lifecycle<br/>Completion]
+        F --> G[Terraform]
+        G --> H[Lifecycle<br/>Completion]
     end
 ```
 
@@ -131,7 +130,7 @@ flowchart LR
 | Mode | Purpose |
 |------|---------|
 | `trigger` | Parse command, export 14 `TF_BD_*` env vars, STOP |
-| `execute` | Validate state, run hooks, terraform, complete lifecycle |
+| `execute` | Validate state, run terraform, complete lifecycle |
 
 ### Environment Variables (from trigger mode)
 
@@ -148,52 +147,6 @@ flowchart LR
 | `TF_BD_PARAMS` | Extra args from command | `-target=module.foo` |
 | `TF_BD_DEPLOYMENT_ID` | GitHub deployment ID | `12345` |
 
-## Lifecycle Hooks
-
-Define hooks in `.tf-branch-deploy.yml`:
-
-```yaml
-hooks:
-  pre-init:
-    - name: "Security Scan"
-      run: trivy fs --security-checks vuln,secret .
-      fail-on-error: true
-  
-  pre-plan:
-    - name: "TFLint"
-      run: tflint --config .tflint.hcl
-  
-  post-plan:
-    - name: "Cost Estimation"
-      run: infracost diff --path .
-      condition: plan-only
-  
-  post-apply:
-    - name: "Update CMDB"
-      run: ./scripts/update-cmdb.sh
-      condition: apply-only
-```
-
-### Hook Phases
-
-| Phase | When | Examples |
-|-------|------|----------|
-| `pre-init` | Before terraform init | trivy, gitleaks |
-| `post-init` | After terraform init | terraform validate |
-| `pre-plan` | Before terraform plan/apply | tflint, checkov |
-| `post-plan` | After terraform plan | infracost |
-| `post-apply` | After terraform apply | terraform-docs, CMDB |
-
-### Hook Properties
-
-| Property | Default | Description |
-|----------|---------|-------------|
-| `name` | required | Human-readable name |
-| `run` | required | Shell command |
-| `fail-on-error` | `true` | Block on failure |
-| `timeout` | `600` | Max seconds |
-| `condition` | `always` | `always`, `plan-only`, `apply-only`, `rollback-only` |
-
 ## Inputs
 
 | Input | Required | Default | Description |
@@ -202,7 +155,6 @@ hooks:
 | `github-token` | Yes | | GitHub token with PR write access |
 | `config-path` | No | `.tf-branch-deploy.yml` | Path to config file |
 | `terraform-version` | No | `latest` | Terraform version to install |
-| `pre-terraform-hook` | No | | Quick inline hook (alternative to config) |
 | `dry-run` | No | `false` | Print commands without executing |
 
 ## Outputs
@@ -225,7 +177,6 @@ hooks:
 | [Getting Started](https://scarowar.github.io/terraform-branch-deploy/getting-started/) | First deployment in 5 minutes |
 | [Configuration](https://scarowar.github.io/terraform-branch-deploy/guides/configuration/) | `.tf-branch-deploy.yml` reference |
 | [Modes](https://scarowar.github.io/terraform-branch-deploy/guides/modes/) | Trigger vs Execute |
-| [Lifecycle Hooks](https://scarowar.github.io/terraform-branch-deploy/guides/hooks/) | Pre/post terraform hooks |
 | [Guardrails & Security](https://scarowar.github.io/terraform-branch-deploy/guides/guardrails/) | Enterprise governance |
 | [Examples](https://scarowar.github.io/terraform-branch-deploy/examples/) | Workflow snippets |
 
