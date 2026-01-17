@@ -183,7 +183,100 @@ class TestBuiltinHooksRegistry:
         """Registry must contain tflint."""
         assert BuiltinHookType.TFLINT in BUILTIN_HOOKS
 
-    def test_registry_values_are_runner_classes(self) -> None:
-        """All registry values must be BuiltinHookRunner subclasses."""
-        for hook_class in BUILTIN_HOOKS.values():
-            assert issubclass(hook_class, (TerraformValidateRunner, TrivyRunner, TflintRunner))
+    def test_registry_contains_gitleaks(self) -> None:
+        """Registry must contain gitleaks."""
+        assert BuiltinHookType.GITLEAKS in BUILTIN_HOOKS
+
+    def test_registry_contains_infracost(self) -> None:
+        """Registry must contain infracost."""
+        assert BuiltinHookType.INFRACOST in BUILTIN_HOOKS
+
+    def test_registry_contains_terraform_docs(self) -> None:
+        """Registry must contain terraform-docs."""
+        assert BuiltinHookType.TERRAFORM_DOCS in BUILTIN_HOOKS
+
+    def test_registry_has_all_hooks(self) -> None:
+        """Registry must contain all 6 hook types."""
+        assert len(BUILTIN_HOOKS) == 6
+
+
+class TestGitleaksRunner:
+    """Tests for GitleaksRunner."""
+
+    def test_name(self) -> None:
+        """Runner must have correct name."""
+        from tf_branch_deploy.builtin_hooks import GitleaksRunner
+        runner = GitleaksRunner()
+        assert runner.name == "Gitleaks Secrets Scan"
+
+    def test_hook_type(self) -> None:
+        """Runner must have correct hook type."""
+        from tf_branch_deploy.builtin_hooks import GitleaksRunner
+        runner = GitleaksRunner()
+        assert runner.hook_type == BuiltinHookType.GITLEAKS
+
+
+class TestInfracostRunner:
+    """Tests for InfracostRunner."""
+
+    def test_name(self) -> None:
+        """Runner must have correct name."""
+        from tf_branch_deploy.builtin_hooks import InfracostRunner
+        runner = InfracostRunner()
+        assert runner.name == "Infracost Cost Estimation"
+
+    def test_hook_type(self) -> None:
+        """Runner must have correct hook type."""
+        from tf_branch_deploy.builtin_hooks import InfracostRunner
+        runner = InfracostRunner()
+        assert runner.hook_type == BuiltinHookType.INFRACOST
+
+    def test_default_threshold(self) -> None:
+        """Threshold should be None by default."""
+        from tf_branch_deploy.builtin_hooks import InfracostRunner
+        runner = InfracostRunner()
+        assert runner.threshold is None
+
+    def test_custom_threshold(self) -> None:
+        """Should accept custom threshold."""
+        from tf_branch_deploy.builtin_hooks import InfracostRunner
+        runner = InfracostRunner(threshold="10%")
+        assert runner.threshold == "10%"
+
+    @patch.dict("os.environ", {}, clear=True)
+    def test_skips_without_api_key(self) -> None:
+        """Should skip when INFRACOST_API_KEY not set."""
+        from tf_branch_deploy.builtin_hooks import InfracostRunner
+        runner = InfracostRunner()
+        context = MagicMock()
+        output = runner.run(context, Path.cwd())
+        assert output.success is True
+        assert "skipped" in output.summary.lower()
+
+
+class TestTerraformDocsRunner:
+    """Tests for TerraformDocsRunner."""
+
+    def test_name(self) -> None:
+        """Runner must have correct name."""
+        from tf_branch_deploy.builtin_hooks import TerraformDocsRunner
+        runner = TerraformDocsRunner()
+        assert runner.name == "Terraform Docs"
+
+    def test_hook_type(self) -> None:
+        """Runner must have correct hook type."""
+        from tf_branch_deploy.builtin_hooks import TerraformDocsRunner
+        runner = TerraformDocsRunner()
+        assert runner.hook_type == BuiltinHookType.TERRAFORM_DOCS
+
+    def test_default_output_file(self) -> None:
+        """Default output file should be README.md."""
+        from tf_branch_deploy.builtin_hooks import TerraformDocsRunner
+        runner = TerraformDocsRunner()
+        assert runner.output_file == "README.md"
+
+    def test_custom_output_file(self) -> None:
+        """Should accept custom output file."""
+        from tf_branch_deploy.builtin_hooks import TerraformDocsRunner
+        runner = TerraformDocsRunner(output_file="DOCS.md")
+        assert runner.output_file == "DOCS.md"

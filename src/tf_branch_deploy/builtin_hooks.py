@@ -401,3 +401,268 @@ BUILTIN_HOOKS: dict[BuiltinHookType, type[BuiltinHookRunner]] = {
     BuiltinHookType.TRIVY: TrivyRunner,
     BuiltinHookType.TFLINT: TflintRunner,
 }
+
+
+class GitleaksRunner(BuiltinHookRunner):
+    """
+    Run Gitleaks for secrets detection.
+
+    Scans for hardcoded secrets, API keys, and credentials.
+    """
+
+    @property
+    def name(self) -> str:
+        return "Gitleaks Secrets Scan"
+
+    @property
+    def hook_type(self) -> BuiltinHookType:
+        return BuiltinHookType.GITLEAKS
+
+    def is_installed(self) -> bool:
+        return self._check_command_exists("gitleaks")
+
+    def run(self, context: "HookContext", working_dir: Path) -> HookOutput:
+        console.print(f"  [dim]Running gitleaks in {working_dir}[/dim]")
+
+        try:
+            result = subprocess.run(
+                ["gitleaks", "detect", "--source", ".", "--no-git", "--report-format", "json"],
+                cwd=working_dir,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+
+            import json
+
+            findings = []
+            try:
+                if result.stdout.strip():
+                    findings = json.loads(result.stdout)
+            except json.JSONDecodeError:
+                pass
+
+            success = result.returncode == 0
+
+            if success:
+                summary = "✅ No secrets detected"
+                markdown = """### Gitleaks Secrets Scan ✅
+
+No hardcoded secrets, API keys, or credentials found."""
+            else:
+                summary = f"❌ Found {len(findings)} potential secrets"
+                markdown = f"""### Gitleaks Secrets Scan ❌
+
+**{len(findings)} potential secrets detected**
+
+<details>
+<summary>Findings</summary>
+
+| File | Rule | Line |
+|------|------|------|
+"""
+                for f in findings[:10]:  # Limit to 10
+                    file = f.get("File", "unknown")
+                    rule = f.get("RuleID", "unknown")
+                    line = f.get("StartLine", "?")
+                    markdown += f"| `{file}` | {rule} | {line} |\n"
+
+                if len(findings) > 10:
+                    markdown += f"\n... and {len(findings) - 10} more\n"
+
+                markdown += "\n</details>"
+
+            return HookOutput(
+                success=success,
+                exit_code=result.returncode,
+                summary=summary,
+                markdown=markdown,
+                findings=findings,
+            )
+
+        except subprocess.TimeoutExpired:
+            return HookOutput(
+                success=False,
+                exit_code=124,
+                summary="❌ Gitleaks timed out",
+                markdown="### Gitleaks ⏱️\n\nScan timed out after 300 seconds.",
+            )
+        except Exception as e:
+            return HookOutput(
+                success=False,
+                exit_code=1,
+                summary=f"❌ Gitleaks error: {e}",
+                markdown=f"### Gitleaks ❌\n\nError: {e}",
+            )
+
+
+class InfracostRunner(BuiltinHookRunner):
+    """
+    Run Infracost for cost estimation.
+
+    Estimates cloud cost changes before deployment.
+    """
+
+    def __init__(self, threshold: str | None = None):
+        self.threshold = threshold  # e.g., "10%" to warn if cost increases >10%
+
+    @property
+    def name(self) -> str:
+        return "Infracost Cost Estimation"
+
+    @property
+    def hook_type(self) -> BuiltinHookType:
+        return BuiltinHookType.INFRACOST
+
+    def is_installed(self) -> bool:
+        return self._check_command_exists("infracost")
+
+    def run(self, context: "HookContext", working_dir: Path) -> HookOutput:
+        console.print(f"  [dim]Running infracost in {working_dir}[/dim]")
+
+        try:
+            # Infracost requires INFRACOST_API_KEY
+            import os
+            if not os.environ.get("INFRACOST_API_KEY"):
+                return HookOutput(
+                    success=True,
+                    exit_code=0,
+                    summary="⏭️ Infracost skipped (no API key)",
+                    markdown="### Infracost ⏭️\n\nSkipped: `INFRACOST_API_KEY` not set.",
+                )
+
+            result = subprocess.run(
+                ["infracost", "diff", "--path", ".", "--format", "json"],
+                cwd=working_dir,
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+
+            import json
+
+            try:
+                output = json.loads(result.stdout)
+                diff = output.get("diffTotalMonthlyCost", "0")
+                currency = output.get("currency", "USD")
+                past = output.get("pastTotalMonthlyCost", "0")
+                current = output.get("totalMonthlyCost", "0")
+            except json.JSONDecodeError:
+                diff = "?"
+                currency = "USD"
+                past = "?"
+                current = "?"
+
+            summary = f"💰 Cost change: {diff} {currency}/month"
+            markdown = f"""### Infracost Cost Estimation 💰
+
+| Metric | Value |
+|--------|-------|
+| Previous | {past} {currency}/month |
+| New | {current} {currency}/month |
+| **Change** | **{diff} {currency}/month** |
+"""
+
+            return HookOutput(
+                success=True,  # Infracost is advisory, not blocking
+                exit_code=result.returncode,
+                summary=summary,
+                markdown=markdown,
+            )
+
+        except subprocess.TimeoutExpired:
+            return HookOutput(
+                success=True,
+                exit_code=124,
+                summary="⏱️ Infracost timed out",
+                markdown="### Infracost ⏱️\n\nCost estimation timed out after 600 seconds.",
+            )
+        except Exception as e:
+            return HookOutput(
+                success=True,
+                exit_code=1,
+                summary=f"⚠️ Infracost error: {e}",
+                markdown=f"### Infracost ⚠️\n\nError: {e}",
+            )
+
+
+class TerraformDocsRunner(BuiltinHookRunner):
+    """
+    Run terraform-docs to generate documentation.
+
+    Auto-generates README from Terraform modules.
+    """
+
+    def __init__(self, output_file: str = "README.md"):
+        self.output_file = output_file
+
+    @property
+    def name(self) -> str:
+        return "Terraform Docs"
+
+    @property
+    def hook_type(self) -> BuiltinHookType:
+        return BuiltinHookType.TERRAFORM_DOCS
+
+    def is_installed(self) -> bool:
+        return self._check_command_exists("terraform-docs")
+
+    def run(self, context: "HookContext", working_dir: Path) -> HookOutput:
+        console.print(f"  [dim]Running terraform-docs in {working_dir}[/dim]")
+
+        try:
+            result = subprocess.run(
+                ["terraform-docs", "markdown", ".", "--output-file", self.output_file],
+                cwd=working_dir,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+
+            success = result.returncode == 0
+
+            if success:
+                summary = f"📄 Updated {self.output_file}"
+                markdown = f"""### Terraform Docs 📄
+
+Documentation updated in `{self.output_file}`."""
+            else:
+                summary = f"❌ terraform-docs failed"
+                markdown = f"""### Terraform Docs ❌
+
+Failed to generate documentation.
+
+```
+{result.stderr}
+```"""
+
+            return HookOutput(
+                success=success,
+                exit_code=result.returncode,
+                summary=summary,
+                markdown=markdown,
+            )
+
+        except subprocess.TimeoutExpired:
+            return HookOutput(
+                success=False,
+                exit_code=124,
+                summary="❌ terraform-docs timed out",
+                markdown="### Terraform Docs ⏱️\n\nGeneration timed out after 120 seconds.",
+            )
+        except Exception as e:
+            return HookOutput(
+                success=False,
+                exit_code=1,
+                summary=f"❌ terraform-docs error: {e}",
+                markdown=f"### Terraform Docs ❌\n\nError: {e}",
+            )
+
+
+# Update registry with all hooks
+BUILTIN_HOOKS.update({
+    BuiltinHookType.GITLEAKS: GitleaksRunner,
+    BuiltinHookType.INFRACOST: InfracostRunner,
+    BuiltinHookType.TERRAFORM_DOCS: TerraformDocsRunner,
+})
+
