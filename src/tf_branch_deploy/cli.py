@@ -43,8 +43,8 @@ class Mode(str, Enum):
     """Execution mode for action.yml."""
 
     PARSE = "parse"  # Just read config, output settings
-    DISPATCH = "dispatch"  # Full flow: branch-deploy + terraform (default in action.yml)
-    EXECUTE = "execute"  # Run terraform only (use after your own branch-deploy call)
+    TRIGGER = "trigger"  # Parse command, export TF_BD_* env vars, STOP
+    EXECUTE = "execute"  # Run terraform with lifecycle completion
 
 
 def set_github_output(name: str, value: str) -> None:
