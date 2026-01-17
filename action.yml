@@ -526,33 +526,29 @@ runs:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         GH_REPO: ${{ github.repository }}
       run: |
-        # Skip lifecycle completion if no deployment was created
-        if [[ -z "${TF_BD_DEPLOYMENT_ID}" ]]; then
-          echo "⏭️  No deployment ID - skipping lifecycle completion"
-          exit 0
-        fi
-        
         # Determine success/failure from previous step
         if [[ "${{ steps.tf-execute.outcome }}" == "success" ]]; then
           STATUS="success"
           REACTION="rocket"
-          echo "✅ Deployment succeeded"
+          echo "✅ Execution succeeded"
         else
           STATUS="failure"
           REACTION="-1"
-          echo "❌ Deployment failed"
+          echo "❌ Execution failed"
         fi
         
         echo ""
-        echo "🔄 Completing deployment lifecycle..."
+        echo "🔄 Completing lifecycle..."
         
-        # 1. Update deployment status
-        echo "   📊 Updating deployment status to: ${STATUS}"
-        gh api --method POST \
-          "repos/${GH_REPO}/deployments/${TF_BD_DEPLOYMENT_ID}/statuses" \
-          -f state="${STATUS}" \
-          -f environment="${TF_BD_ENVIRONMENT}" \
-          || echo "   ⚠️  Failed to update deployment status"
+        # 1. Update deployment status (only if deployment was created)
+        if [[ -n "${TF_BD_DEPLOYMENT_ID}" ]]; then
+          echo "   📊 Updating deployment status to: ${STATUS}"
+          gh api --method POST \
+            "repos/${GH_REPO}/deployments/${TF_BD_DEPLOYMENT_ID}/statuses" \
+            -f state="${STATUS}" \
+            -f environment="${TF_BD_ENVIRONMENT}" \
+            || echo "   ⚠️  Failed to update deployment status"
+        fi
         
         # 2. Remove initial reaction
         if [[ -n "${TF_BD_INITIAL_REACTION_ID}" && -n "${TF_BD_COMMENT_ID}" ]]; then
@@ -571,22 +567,44 @@ runs:
             || echo "   ⚠️  Failed to add reaction"
         fi
         
-        # 4. Post deployment result comment (EXACT branch-deploy format)
-        echo "   💬 Posting deployment result comment"
-        if [[ "${STATUS}" == "success" ]]; then
-          gh api --method POST \
-            "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
-            -f body="### Deployment Results ✅
+        # 4. Post result comment
+        if [[ -n "${TF_BD_PR_NUMBER}" ]]; then
+          echo "   💬 Posting result comment"
+          if [[ "${TF_BD_NOOP}" == "true" ]]; then
+            # Noop (plan) result
+            if [[ "${STATUS}" == "success" ]]; then
+              gh api --method POST \
+                "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
+                -f body="### Plan Results ✅
+
+        **@${TF_BD_ACTOR}** ran a plan for \`${TF_BD_SHA}\` on **${TF_BD_ENVIRONMENT}**" \
+                || echo "   ⚠️  Failed to post success comment"
+            else
+              gh api --method POST \
+                "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
+                -f body="### Plan Results ❌
+
+        **@${TF_BD_ACTOR}** had a failure when planning \`${TF_BD_SHA}\` on **${TF_BD_ENVIRONMENT}**" \
+                || echo "   ⚠️  Failed to post failure comment"
+            fi
+          else
+            # Apply result
+            if [[ "${STATUS}" == "success" ]]; then
+              gh api --method POST \
+                "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
+                -f body="### Deployment Results ✅
 
         **@${TF_BD_ACTOR}** successfully deployed \`${TF_BD_SHA}\` to **${TF_BD_ENVIRONMENT}**" \
-            || echo "   ⚠️  Failed to post success comment"
-        else
-          gh api --method POST \
-            "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
-            -f body="### Deployment Results ❌
+                || echo "   ⚠️  Failed to post success comment"
+            else
+              gh api --method POST \
+                "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
+                -f body="### Deployment Results ❌
 
         **@${TF_BD_ACTOR}** had a failure when deploying \`${TF_BD_SHA}\` to **${TF_BD_ENVIRONMENT}**" \
-            || echo "   ⚠️  Failed to post failure comment"
+                || echo "   ⚠️  Failed to post failure comment"
+            fi
+          fi
         fi
         
         # 5. Remove non-sticky lock
@@ -603,4 +621,5 @@ runs:
         fi
         
         echo ""
-        echo "✅ Deployment lifecycle complete"
+        echo "✅ Lifecycle complete"
+
