@@ -6,46 +6,82 @@
 
 <p align="center">
   <a href="https://github.com/scarowar/terraform-branch-deploy/actions/workflows/ci.yml"><img src="https://github.com/scarowar/terraform-branch-deploy/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/scarowar/terraform-branch-deploy/actions/workflows/codeql.yml"><img src="https://github.com/scarowar/terraform-branch-deploy/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
-  <a href="https://api.scorecard.dev/projects/github.com/scarowar/terraform-branch-deploy"><img src="https://api.scorecard.dev/projects/github.com/scarowar/terraform-branch-deploy/badge" alt="OpenSSF Scorecard"></a>
   <a href="https://github.com/scarowar/terraform-branch-deploy/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT License"></a>
 </p>
 
-<p align="center">
-  <a href="https://scarowar.github.io/terraform-branch-deploy/">Documentation</a> •
-  <a href="https://scarowar.github.io/terraform-branch-deploy/getting-started/">Getting Started</a> •
-  <a href="https://scarowar.github.io/terraform-branch-deploy/examples/">Examples</a>
-</p>
+# Terraform Branch Deploy
 
----
+**The authoritative GitOps platform for Terraform on GitHub Actions.**
 
-A GitHub Action that enables Terraform deployments via PR comments. Built on top of [github/branch-deploy](https://github.com/github/branch-deploy), it adds Terraform-specific features like plan caching, environment configuration, and credential injection points.
+Terraform Branch Deploy (v0.2.0) transforms GitHub Actions into a secure, interactive control plane for infrastructure. It replaces fragile "apply-on-merge" workflows with a deterministic, PR-centric lifecycle designed for platform engineering teams.
 
-## Why This Action?
+## The Problem
 
-| Without terraform-branch-deploy | With terraform-branch-deploy |
-|--------------------------------|------------------------------|
-| Multiple workflows for plan/apply | Single workflow handles everything |
-| Manual plan file management | Automatic plan caching with SHA verification |
-| Environment config scattered in workflows | Centralized `.tf-branch-deploy.yml` |
-| No enforcement of plan-before-apply | Built-in safety: apply requires matching plan |
-| Custom locking implementation | Environment locking via branch-deploy |
-| Hardcoded cloud credentials | Environment-aware credential injection |
+Traditional CI/CD for Terraform is often broken:
+*   **Blind Merges**: "Apply on merge" means you merge code without proving it works.
+*   **Console Noise**: Debugging requires digging through thousands of lines of raw logs.
+*   **Race Conditions**: Multiple engineers deploying to `dev` simultaneously corrupt state.
+*   **Security Gaps**: Long-lived credentials are often exposed to untrusted workflows.
 
-## Commands
+## The Solution
 
-```text
-.plan to dev              # Preview changes
-.apply to dev             # Deploy changes
-.lock dev                 # Lock environment
-.unlock dev               # Release lock
-.wcid                     # Who's deploying?
-.apply main to prod       # Emergency rollback
+We treat infrastructure changes as a conversation. You declare intent (`.plan`), the system validates it, and you execute against that exact validated state (`.apply`).
+
+*   **Interactive**: drive deployments via PR comments.
+*   **Deterministic**: the plan you review is exactly what gets applied (SHA-pinned).
+*   **Secure**: short-lived OIDC credentials, injected only when needed.
+*   **Exclusive**: distributed locking ensures only one deployment happens at a time.
+
+## Architecture
+
+This action operates in two distinct modes to balance security and performance:
+
+```mermaid
+flowchart LR
+    User[User] -->|Comment| PR[Pull Request]
+    PR -->|Trigger| Dispatch[Dispatch Workflow]
+    
+    subgraph "Trigger Mode (Fast/Safe)"
+        Dispatch -->|Parse| Action1[tf-branch-deploy]
+        Action1 -->|Export| Env[TF_BD_* Env Vars]
+    end
+    
+    Env -->|Pass| Execute[Execute Workflow]
+    
+    subgraph "Execute Mode (Privileged)"
+        Execute -->|Checkout| Code[Source Code]
+        Execute -->|Auth| Cloud[AWS/GCP/Azure]
+        Execute -->|Run| Terraform[Terraform Plan/Apply]
+        Terraform -->|Report| Comment[PR Comment]
+    end
 ```
 
-## Quick Start
+1.  **Trigger Mode**: fast, stateless. Parses commands, checks permissions, acquires locks, and exports configuration.
+2.  **Execute Mode**: privileged, stateful. Checks out code, assumes IAM roles, runs Terraform, and reports results.
 
-**1. Create workflow** (`.github/workflows/deploy.yml`)
+## Getting Started
+
+### Prerequisites
+*   A GitHub App or PAT for writing PR comments.
+*   An S3/GCS backend for Terraform state.
+*   OpenID Connect (OIDC) configured for your cloud provider.
+
+### 1. Configuration
+Create `.tf-branch-deploy.yml` in your repository root:
+
+```yaml
+default-environment: dev
+production-environments: [prod]
+
+environments:
+  dev:
+    working-directory: terraform/environments/dev
+  prod:
+    working-directory: terraform/environments/prod
+```
+
+### 2. Workflow
+Create `.github/workflows/deploy.yml`. This usage pattern ensures security best practices:
 
 ```yaml
 name: Terraform Deploy
@@ -54,36 +90,37 @@ on:
     types: [created]
 
 permissions:
-  contents: write
   pull-requests: write
+  contents: write
   deployments: write
-  id-token: write  # For OIDC credential injection
+  id-token: write # Required for OIDC
 
 jobs:
   deploy:
     if: github.event.issue.pull_request
     runs-on: ubuntu-latest
     steps:
-      # TRIGGER: Parse command, export TF_BD_* env vars
+      # 1. TRIGGER: Parse command and lock environment
       - uses: scarowar/terraform-branch-deploy@v0.2.0
+        id: trigger
         with:
           mode: trigger
           github-token: ${{ secrets.GITHUB_TOKEN }}
-      
-      # CHECKOUT: Use TF_BD_REF (handles rollbacks correctly)
+
+      # 2. CHECKOUT: Checkout the specific ref from the trigger
       - uses: actions/checkout@v4
         if: env.TF_BD_CONTINUE == 'true'
         with:
           ref: ${{ env.TF_BD_REF }}
-      
-      # CREDENTIALS: Based on TF_BD_ENVIRONMENT
+
+      # 3. AUTH: Assume role based on target environment
       - uses: aws-actions/configure-aws-credentials@v4
         if: env.TF_BD_CONTINUE == 'true'
         with:
-          role-to-assume: arn:aws:iam::${{ env.TF_BD_ENVIRONMENT == 'prod' && '111111111111' || '222222222222' }}:role/terraform
+          role-to-assume: arn:aws:iam::123456789012:role/github-actions-${{ env.TF_BD_ENVIRONMENT }}
           aws-region: us-east-1
-      
-      # EXECUTE: Run terraform, complete lifecycle
+
+      # 4. EXECUTE: Run Terraform and report results
       - uses: scarowar/terraform-branch-deploy@v0.2.0
         if: env.TF_BD_CONTINUE == 'true'
         with:
@@ -91,99 +128,39 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-**2. Create config** (`.tf-branch-deploy.yml`)
+## Usage
 
-```yaml
-default-environment: dev
-production-environments: [prod]
+Control your infrastructure directly from the Pull Request:
 
-environments:
-  dev:
-    working-directory: terraform/dev
-  prod:
-    working-directory: terraform/prod
-```
+*   **Plan**: `.plan to dev`
+    *   Generates a distinct plan file.
+    *   Posts a "Deployment Results" summary with the plan output.
+*   **Apply**: `.apply to dev`
+    *   Verifies the plan exists and matches the current commit.
+    *   Applies the changes and reports status.
+*   **Unlock**: `.unlock dev`
+    *   Forces a release of the environment lock (normally automatic).
+*   **Rollback**: `.apply main to prod`
+    *   Emergency latch. Deploys the stable `main` branch to production immediately.
 
-**3. Comment on a PR**: `.plan to dev`
+## Production Readiness
 
-## Architecture
+This project is built for high-stakes environments where failure is not an option.
 
-```mermaid
-flowchart LR
-    subgraph "Trigger Mode"
-        A[PR Comment] --> B[branch-deploy]
-        B --> C[Parse Command]
-        C --> D[Export TF_BD_*]
-    end
-    
-    D --> E["User Steps<br/>(checkout, credentials)"]
-    
-    subgraph "Execute Mode"
-        E --> F[Validate State]
-        F --> G[Terraform]
-        G --> H[Lifecycle<br/>Completion]
-    end
-```
+### Safety
+*   **Plan matching**: `.apply` will strictly fail if the plan file is missing or stale.
+*   **Context awareness**: The action prevents deploying to `prod` if the PR is not targeting the `main` branch (configurable).
 
-### Two Modes
+### Determinism
+*   We do not simply run `terraform apply -auto-approve`. We run `terraform apply planfile`.
+*   This guarantees that exactly what you reviewed is what gets provisioned.
 
-| Mode | Purpose |
-|------|---------|
-| `trigger` | Parse command, export 14 `TF_BD_*` env vars, STOP |
-| `execute` | Validate state, run terraform, complete lifecycle |
-
-### Environment Variables (from trigger mode)
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `TF_BD_CONTINUE` | Should deployment proceed? | `true` |
-| `TF_BD_ENVIRONMENT` | Target environment | `dev`, `prod` |
-| `TF_BD_OPERATION` | Operation type | `plan`, `apply`, `rollback` |
-| `TF_BD_IS_ROLLBACK` | Rollback flag | `true`, `false` |
-| `TF_BD_SHA` | Commit SHA | `abc123def456` |
-| `TF_BD_REF` | Branch to checkout | `feature/foo`, `main` |
-| `TF_BD_ACTOR` | User who triggered | `username` |
-| `TF_BD_PR_NUMBER` | Pull request number | `42` |
-| `TF_BD_PARAMS` | Extra args from command | `-target=module.foo` |
-| `TF_BD_DEPLOYMENT_ID` | GitHub deployment ID | `12345` |
-
-## Inputs
-
-| Input | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `mode` | Yes | | `trigger` or `execute` |
-| `github-token` | Yes | | GitHub token with PR write access |
-| `config-path` | No | `.tf-branch-deploy.yml` | Path to config file |
-| `terraform-version` | No | `latest` | Terraform version to install |
-| `dry-run` | No | `false` | Print commands without executing |
-
-## Outputs
-
-| Output | Description |
-|--------|-------------|
-| `continue` | `true` if deployment should proceed |
-| `environment` | Target environment |
-| `operation` | `plan`, `apply`, or `rollback` |
-| `is-rollback` | `true` if rollback operation |
-| `ref` | Branch ref to checkout |
-| `sha` | Commit SHA |
-| `has-changes` | `true` if plan has changes |
-| `plan-file` | Path to generated plan file |
+### Observability
+*   **Rich Reporting**: Deployment results are summarized in clear, formatted comments.
+*   **Clean Logs**: Sensitive inputs are masked; noisy API calls are silenced.
 
 ## Documentation
 
-| Guide | Description |
-|-------|-------------|
-| [Getting Started](https://scarowar.github.io/terraform-branch-deploy/getting-started/) | First deployment in 5 minutes |
-| [Configuration](https://scarowar.github.io/terraform-branch-deploy/guides/configuration/) | `.tf-branch-deploy.yml` reference |
-| [Modes](https://scarowar.github.io/terraform-branch-deploy/guides/modes/) | Trigger vs Execute |
-| [Guardrails & Security](https://scarowar.github.io/terraform-branch-deploy/guides/guardrails/) | Enterprise governance |
-| [Examples](https://scarowar.github.io/terraform-branch-deploy/examples/) | Workflow snippets |
+For advanced configuration, policy enforcement, and architecture deep dives, consult the full documentation:
 
-## Contributing
-
-Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+[**View Full Documentation**](https://scarowar.github.io/terraform-branch-deploy/)
