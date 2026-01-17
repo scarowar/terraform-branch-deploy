@@ -539,6 +539,7 @@ runs:
         else
           STATUS="failure"
           REACTION="-1"
+          echo "FAILURE_REASON=${{ steps.execute.outputs.failure_reason }}" >> $GITHUB_ENV
           echo "❌ Execution failed"
         fi
         
@@ -552,7 +553,7 @@ runs:
             "repos/${GH_REPO}/deployments/${TF_BD_DEPLOYMENT_ID}/statuses" \
             -f state="${STATUS}" \
             -f environment="${TF_BD_ENVIRONMENT}" \
-            || echo "   ⚠️  Failed to update deployment status"
+            > /dev/null 2>&1 || echo "   ⚠️  Failed to update deployment status"
         fi
         
         # 2. Remove initial reaction
@@ -560,7 +561,7 @@ runs:
           echo "   🗑️  Removing initial reaction"
           gh api --method DELETE \
             "repos/${GH_REPO}/issues/comments/${TF_BD_COMMENT_ID}/reactions/${TF_BD_INITIAL_REACTION_ID}" \
-            2>/dev/null || true
+            > /dev/null 2>&1 || true
         fi
         
         # 3. Add result reaction
@@ -569,7 +570,7 @@ runs:
           gh api --method POST \
             "repos/${GH_REPO}/issues/comments/${TF_BD_COMMENT_ID}/reactions" \
             -f content="${REACTION}" \
-            || echo "   ⚠️  Failed to add reaction"
+            > /dev/null 2>&1 || echo "   ⚠️  Failed to add reaction"
         fi
         
         # 4. Post result comment (for both noop and apply operations)
@@ -588,6 +589,10 @@ runs:
           else
             RESULT_HEADER="### Deployment Results ❌"
             RESULT_MSG="**${TF_BD_ACTOR}** had a failure when deploying branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**"
+            
+            if [[ -n "${FAILURE_REASON}" ]]; then
+               RESULT_MSG="${RESULT_MSG}"$'\n\n'"> **Error**: ${FAILURE_REASON}"
+            fi
           fi
           
           # Construct metadata JSON safely using jq

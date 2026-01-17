@@ -325,6 +325,7 @@ def execute(
     init_result = executor.init()
     if not init_result.success:
         console.print("[red]Terraform init failed[/red]")
+        set_github_output("failure_reason", "Terraform initialization failed. Check logs for details.")
         raise typer.Exit(1)
 
     if operation == "plan":
@@ -332,7 +333,9 @@ def execute(
     elif operation == "apply" or operation == "rollback":
         _handle_apply(executor, environment, sha, resolved_working_dir)
     else:
-        console.print(f"[red]Unknown operation: {operation}[/red]")
+        msg = f"Unknown operation: {operation}"
+        console.print(f"[red]{msg}[/red]")
+        set_github_output("failure_reason", msg)
         raise typer.Exit(1)
 
     console.print("\n[green]✅ Terraform execution complete[/green]")
@@ -348,6 +351,7 @@ def _handle_plan(executor: "TerraformExecutor", environment: str, sha: str) -> N
         set_github_output("plan_checksum", result.checksum)
         set_github_output("has_changes", str(result.has_changes).lower())
     if not result.success:
+        set_github_output("failure_reason", "Terraform plan failed. Check logs for details.")
         raise typer.Exit(1)
 
 
@@ -368,10 +372,17 @@ def _handle_apply(
         )
         apply_result = executor.apply()
         if not apply_result.success:
+            set_github_output("failure_reason", "Rollback apply failed. Check logs for details.")
             raise typer.Exit(1)
         console.print("[dim]📋 Rollback applied directly (no plan file)[/dim]")
     else:
         console.print(f"[red]❌ No plan file found for this SHA: {plan_file}[/red]")
+        reason = (
+            f"No plan file found for this SHA: `{plan_filename}`.\n\n"
+            f"You must run `.plan to {environment}` before `.apply to {environment}`.\n"
+            f"For rollback, use `.apply main to {environment}`."
+        )
+        set_github_output("failure_reason", reason)
         console.print(
             f"[yellow]💡 You must run '.plan to {environment}' before '.apply to {environment}'[/yellow]"
         )
@@ -393,11 +404,13 @@ def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path) -> None:
             console.print(
                 "[red]❌ Plan file checksum mismatch! Plan may have been tampered with.[/red]"
             )
+            set_github_output("failure_reason", "Plan file checksum mismatch! Security validation failed.")
             raise typer.Exit(1)
         console.print("[green]✅ Plan checksum verified[/green]")
 
     apply_result = executor.apply(plan_file=Path(plan_file.name))
     if not apply_result.success:
+        set_github_output("failure_reason", "Terraform apply failed. Check logs for details.")
         raise typer.Exit(1)
 
 
