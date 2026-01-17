@@ -11,8 +11,13 @@ inputs:
   # === MODE SELECTION ===
   mode:
     description: |
-      trigger = Parse command via branch-deploy, export TF_BD_* env vars, STOP
-      execute = Run terraform with lifecycle completion (reads from TF_BD_* env vars)
+      trigger = Parse command via branch-deploy, export TF_BD_* to GITHUB_ENV, STOP
+      execute = Run terraform with lifecycle completion (reads TF_BD_* from GITHUB_ENV)
+      
+      Use both modes as CONDITIONAL STEPS in a SINGLE JOB:
+      - Trigger mode exports env vars
+      - Custom steps (credentials) can access env vars  
+      - Execute mode picks up env vars automatically
     required: true
 
   # === REQUIRED ===
