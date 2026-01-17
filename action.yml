@@ -594,7 +594,12 @@ runs:
             RESULT_MSG="**${TF_BD_ACTOR}** had a failure when deploying branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**"
             
             if [[ -n "${FAILURE_REASON}" ]]; then
-               RESULT_MSG="${RESULT_MSG}"$'\n\n'"> **Error**: ${FAILURE_REASON}"
+               # Format the reason as a Quote/Alert block
+               # 1. Prefix each line with "> " to ensure it stays in quote
+               FORMATTED_REASON=$(echo "${FAILURE_REASON}" | sed 's/^/> /')
+               
+               # 2. Append to message using GitHub Alert syntax
+               RESULT_MSG="${RESULT_MSG}"$'\n\n'"> [!CAUTION]"$'\n'"${FORMATTED_REASON}"
             fi
           fi
           

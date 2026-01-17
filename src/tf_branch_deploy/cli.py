@@ -335,7 +335,19 @@ def execute(
     else:
         msg = f"Unknown operation: {operation}"
         console.print(f"[red]{msg}[/red]")
-        set_github_output("failure_reason", msg)
+        
+        reason = f"""**Configuration Error: Unknown Operation**
+
+The operation `{operation}` is not supported.
+
+**Supported Operations:**
+*   `plan`
+*   `apply`
+*   `rollback` (internal alias for apply)
+
+*Please check your workflow configuration.*
+"""
+        set_github_output("failure_reason", reason)
         raise typer.Exit(1)
 
     console.print("\n[green]✅ Terraform execution complete[/green]")
@@ -351,7 +363,18 @@ def _handle_plan(executor: "TerraformExecutor", environment: str, sha: str) -> N
         set_github_output("plan_checksum", result.checksum)
         set_github_output("has_changes", str(result.has_changes).lower())
     if not result.success:
-        set_github_output("failure_reason", "Terraform plan failed. Check logs for details.")
+        set_github_output(
+            "failure_reason", 
+            """**Terraform Plan Failed**
+
+The `terraform plan` command exited with an error.
+
+**Troubleshooting:**
+*   Check the **Action Logs** above for specific Terraform errors.
+*   Verify your Terraform configuration syntax.
+*   Check cloud provider credentials and permissions.
+"""
+        )
         raise typer.Exit(1)
 
 
