@@ -22,7 +22,7 @@ Values exported by the execute mode for use in subsequent workflow steps.
 Access outputs using `steps.<id>.outputs`:
 
 ```yaml
-- uses: scarowar/terraform-branch-deploy@v0
+- uses: scarowar/terraform-branch-deploy@v0.2.0
   id: execute
   if: env.TF_BD_CONTINUE == 'true'
   with:
@@ -47,7 +47,7 @@ jobs:
     outputs:
       has-changes: ${{ steps.execute.outputs.has-changes }}
     steps:
-      - uses: scarowar/terraform-branch-deploy@v0
+      - uses: scarowar/terraform-branch-deploy@v0.2.0
         id: execute
         # ...
 

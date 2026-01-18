@@ -48,7 +48,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # Parse command, acquire lock, export context
-      - uses: scarowar/terraform-branch-deploy@v0
+      - uses: scarowar/terraform-branch-deploy@v0.2.0
         with:
           mode: trigger
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -60,7 +60,7 @@ jobs:
           ref: ${{ env.TF_BD_REF }}
 
       # Run Terraform
-      - uses: scarowar/terraform-branch-deploy@v0
+      - uses: scarowar/terraform-branch-deploy@v0.2.0
         if: env.TF_BD_CONTINUE == 'true'
         with:
           mode: execute

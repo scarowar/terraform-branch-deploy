@@ -41,7 +41,7 @@ This split enables credential injection between the two action invocations.
 Parses the deployment command and exports context to environment variables.
 
 ```yaml
-- uses: scarowar/terraform-branch-deploy@v0
+- uses: scarowar/terraform-branch-deploy@v0.2.0
   with:
     mode: trigger
     github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -67,7 +67,7 @@ See [Environment Variables](../reference/environment-vars.md) for the full list.
 Runs terraform and completes the deployment lifecycle.
 
 ```yaml
-- uses: scarowar/terraform-branch-deploy@v0
+- uses: scarowar/terraform-branch-deploy@v0.2.0
   if: env.TF_BD_CONTINUE == 'true'
   with:
     mode: execute
@@ -90,7 +90,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # Parse command, acquire lock
-      - uses: scarowar/terraform-branch-deploy@v0
+      - uses: scarowar/terraform-branch-deploy@v0.2.0
         with:
           mode: trigger
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -109,7 +109,7 @@ jobs:
           aws-region: us-east-1
 
       # Run terraform
-      - uses: scarowar/terraform-branch-deploy@v0
+      - uses: scarowar/terraform-branch-deploy@v0.2.0
         if: env.TF_BD_CONTINUE == 'true'
         with:
           mode: execute

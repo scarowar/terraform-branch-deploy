@@ -92,7 +92,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: scarowar/terraform-branch-deploy@v0
+      - uses: scarowar/terraform-branch-deploy@v0.2.0
         with:
           mode: trigger
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -102,7 +102,7 @@ jobs:
         with:
           ref: ${{ env.TF_BD_REF }}
 
-      - uses: scarowar/terraform-branch-deploy@v0
+      - uses: scarowar/terraform-branch-deploy@v0.2.0
         if: env.TF_BD_CONTINUE == 'true'
         with:
           mode: execute
