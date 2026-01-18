@@ -1,12 +1,23 @@
+<div align="center">
+
 # Terraform Branch Deploy
 
-[![GitHub release](https://img.shields.io/github/v/release/scarowar/terraform-branch-deploy)](https://github.com/scarowar/terraform-branch-deploy/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Documentation](https://img.shields.io/badge/docs-zensical-purple)](https://scarowar.github.io/terraform-branch-deploy/)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/images/cover-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/images/cover-light.png">
+  <img alt="Terraform Branch Deploy" src="docs/assets/images/cover-light.png" width="600">
+</picture>
 
-Terraform integrated into the [Branch Deploy](https://github.com/github/branch-deploy) operating model.
+**Terraform integrated into the [Branch Deploy](https://github.com/github/branch-deploy) operating model.**
 
-**[Documentation](https://scarowar.github.io/terraform-branch-deploy/)** · **[Quickstart](https://scarowar.github.io/terraform-branch-deploy/quickstart/)** · **[Configuration](https://scarowar.github.io/terraform-branch-deploy/configuration/)**
+[![GitHub release](https://img.shields.io/github/v/release/scarowar/terraform-branch-deploy?style=flat-square)](https://github.com/scarowar/terraform-branch-deploy/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/scarowar/terraform-branch-deploy/ci.yml?style=flat-square&label=CI)](https://github.com/scarowar/terraform-branch-deploy/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/scarowar/terraform-branch-deploy?style=flat-square&label=scorecard)](https://securityscorecards.dev/viewer/?uri=github.com/scarowar/terraform-branch-deploy)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
+
+[**Documentation**](https://scarowar.github.io/terraform-branch-deploy/) · [**Quickstart**](https://scarowar.github.io/terraform-branch-deploy/quickstart/) · [**Configuration**](https://scarowar.github.io/terraform-branch-deploy/configuration/)
+
+</div>
 
 ---
 
@@ -100,13 +111,12 @@ Pass extra arguments: `.plan to prod | -target=module.database`
 
 ## Documentation
 
-- **[Quickstart](https://scarowar.github.io/terraform-branch-deploy/quickstart/)** — First deployment in 5 minutes
-- **[Trigger and Execute](https://scarowar.github.io/terraform-branch-deploy/concepts/modes/)** — Two-mode architecture
-- **[Configuration](https://scarowar.github.io/terraform-branch-deploy/configuration/)** — Environment setup and inheritance
-- **[Commands Reference](https://scarowar.github.io/terraform-branch-deploy/reference/commands/)** — All PR comment commands
-- **[Inputs Reference](https://scarowar.github.io/terraform-branch-deploy/reference/inputs/)** — Workflow configuration
-- **[Security](https://scarowar.github.io/terraform-branch-deploy/security/)** — Access control and guardrails
-- **[Troubleshooting](https://scarowar.github.io/terraform-branch-deploy/troubleshooting/)** — Common issues
+- [**Quickstart**](https://scarowar.github.io/terraform-branch-deploy/quickstart/) — First deployment in 5 minutes
+- [**Trigger and Execute**](https://scarowar.github.io/terraform-branch-deploy/concepts/modes/) — Two-mode architecture
+- [**Configuration**](https://scarowar.github.io/terraform-branch-deploy/configuration/) — Environment setup
+- [**Commands**](https://scarowar.github.io/terraform-branch-deploy/reference/commands/) — All PR commands
+- [**Security**](https://scarowar.github.io/terraform-branch-deploy/security/) — Access control
+- [**Troubleshooting**](https://scarowar.github.io/terraform-branch-deploy/troubleshooting/) — Common issues
 
 ---
 

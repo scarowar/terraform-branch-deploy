@@ -267,7 +267,7 @@ This shows:
 Test without executing terraform:
 
 ```yaml
-- uses: scarowar/terraform-branch-deploy@v0.2.0
+- uses: scarowar/terraform-branch-deploy@v0
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     dry-run: true
