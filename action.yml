@@ -1,5 +1,5 @@
 name: terraform-branch-deploy
-description: ChatOps for Terraform deployments via GitHub PRs - enterprise-grade integration with branch-deploy
+description: Terraform integrated into the Branch Deploy operating model. Plan, review, and apply infrastructure changes within Pull Requests to ensure the main branch remains stable.
 
 author: Sourab Kanthavar <@scarowar>
 

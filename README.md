@@ -9,6 +9,7 @@
 </picture>
 
 **Terraform integrated into the [Branch Deploy](https://github.com/github/branch-deploy) operating model.**
+**Plan, review, and apply infrastructure changes within Pull Requests to ensure the main branch remains stable.**
 
 [![GitHub release](https://img.shields.io/github/v/release/scarowar/terraform-branch-deploy?style=flat-square)](https://github.com/scarowar/terraform-branch-deploy/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/scarowar/terraform-branch-deploy/ci.yml?style=flat-square&label=CI)](https://github.com/scarowar/terraform-branch-deploy/actions/workflows/ci.yml)
