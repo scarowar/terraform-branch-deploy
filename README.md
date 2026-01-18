@@ -54,36 +54,33 @@ The action operates in two distinct modes within a single workflow.
 
 This separation allows organizations to gate cloud credentials behind explicit workflow conditions. The trigger phase can run on any event; the execute phase runs only when a deployment has been authorized.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              Deployment Lifecycle                           │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────┐        ┌─────────────────────────────────────────────────┐ │
-│  │   Comment   │───────▶│  Trigger Mode                                   │ │
-│  │  .plan to   │        │  • Parse command and target environment         │ │
-│  │    dev      │        │  • Validate user permissions                    │ │
-│  └─────────────┘        │  • Acquire environment lock                     │ │
-│                         │  • Export TF_BD_* context variables             │ │
-│                         └──────────────────────────┬──────────────────────┘ │
-│                                                    │                        │
-│                                                    ▼                        │
-│                         ┌─────────────────────────────────────────────────┐ │
-│                         │  Workflow Steps (user-controlled)               │ │
-│                         │  • Checkout ref: ${{ env.TF_BD_REF }}           │ │
-│                         │  • Configure cloud credentials                  │ │
-│                         └──────────────────────────┬──────────────────────┘ │
-│                                                    │                        │
-│                                                    ▼                        │
-│                         ┌─────────────────────────────────────────────────┐ │
-│                         │  Execute Mode                                   │ │
-│                         │  • Run terraform init                           │ │
-│                         │  • Run terraform plan/apply                     │ │
-│                         │  • Cache plan file (SHA-keyed)                  │ │
-│                         │  • Report results to pull request               │ │
-│                         └─────────────────────────────────────────────────┘ │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph trigger["Trigger Mode"]
+        A[PR Comment] --> B[Parse Command]
+        B --> C[Validate Permissions]
+        C --> D[Acquire Lock]
+        D --> E[Export TF_BD_* Variables]
+    end
+    
+    subgraph custom["User-Controlled Steps"]
+        F[Checkout PR Branch]
+        G[Configure Cloud Credentials]
+    end
+    
+    subgraph execute["Execute Mode"]
+        H[Terraform Init]
+        I[Terraform Plan/Apply]
+        J[Cache Plan File]
+        K[Report to PR]
+    end
+    
+    E --> F
+    F --> G
+    G --> H
+    H --> I
+    I --> J
+    J --> K
 ```
 
 ---
@@ -142,12 +139,16 @@ jobs:
     if: github.event.issue.pull_request
     runs-on: ubuntu-latest
     steps:
+      # Initial checkout to read .tf-branch-deploy.yml
+      - uses: actions/checkout@v4
+
       - uses: scarowar/terraform-branch-deploy@v0
         id: trigger
         with:
           mode: trigger
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Checkout the PR branch for Terraform execution
       - uses: actions/checkout@v4
         if: env.TF_BD_CONTINUE == 'true'
         with:
@@ -166,7 +167,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-The workflow structure is intentional. Between trigger and execute, the operator controls checkout, authentication, and any pre-deployment steps. The action does not assume exclusive control of the workflow—it provides deployment primitives that compose with existing automation.
+The initial checkout is required for trigger mode to read the `.tf-branch-deploy.yml` configuration file. The second checkout retrieves the PR branch for Terraform execution.
 
 ---
 
