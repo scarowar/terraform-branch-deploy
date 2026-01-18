@@ -309,8 +309,8 @@ runs:
           config_path="$INPUT_CONFIG_PATH"
           if [ -f "$config_path" ]; then
             targets=$(tf-branch-deploy environments --config "$config_path" 2>/dev/null || echo "production")
-            default=$(yq -r '.["default-environment"] // "production"' "$config_path" 2>/dev/null || echo "production")
-            production=$(yq -r '.["production-environments"] | join(",")' "$config_path" 2>/dev/null || echo "production")
+            default=$(tf-branch-deploy get-config default-environment --config "$config_path" 2>/dev/null || echo "production")
+            production=$(tf-branch-deploy get-config production-environments --config "$config_path" 2>/dev/null || echo "production")
           else
             targets="production"
             default="production"
@@ -530,115 +530,16 @@ runs:
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         GH_REPO: ${{ github.repository }}
-        TF_BD_INITIAL_REACTION_ID: ${{ env.TF_BD_INITIAL_REACTION_ID }}
-        TF_BD_DEPLOYMENT_ID: ${{ env.TF_BD_DEPLOYMENT_ID }}
         STATUS: ${{ steps.tf-execute.outcome }}
         FAILURE_REASON: ${{ steps.tf-execute.outputs.failure_reason }}
       run: |
-        # Determine success/failure from previous step
-        if [[ "${{ env.STATUS }}" == "success" ]]; then
-          STATUS="success"
-          REACTION="rocket"
-          echo "✅ Execution succeeded"
+        if [[ "${STATUS}" == "success" ]]; then
+          FINAL_STATUS="success"
         else
-          STATUS="failure"
-          REACTION="-1"
-          echo "❌ Execution failed"
+          FINAL_STATUS="failure"
         fi
         
-        echo ""
-        echo "🔄 Completing lifecycle..."
-        
-        # 1. Update deployment status (only if deployment was created)
-        if [[ -n "${TF_BD_DEPLOYMENT_ID}" ]]; then
-          echo "   📊 Updating deployment status to: ${STATUS}"
-          gh api --method POST \
-            "repos/${GH_REPO}/deployments/${TF_BD_DEPLOYMENT_ID}/statuses" \
-            -f state="${STATUS}" \
-            -f environment="${TF_BD_ENVIRONMENT}" \
-            > /dev/null 2>&1 || echo "   ⚠️  Failed to update deployment status"
-        fi
-        
-        # 2. Remove initial reaction
-        if [[ -n "${TF_BD_INITIAL_REACTION_ID}" && -n "${TF_BD_COMMENT_ID}" ]]; then
-          echo "   🗑️  Removing initial reaction"
-          gh api --method DELETE \
-            "repos/${GH_REPO}/issues/comments/${TF_BD_COMMENT_ID}/reactions/${TF_BD_INITIAL_REACTION_ID}" \
-            > /dev/null 2>&1 || true
-        fi
-        
-        # 3. Add result reaction
-        if [[ -n "${TF_BD_COMMENT_ID}" ]]; then
-          echo "   ✨ Adding ${REACTION} reaction"
-          gh api --method POST \
-            "repos/${GH_REPO}/issues/comments/${TF_BD_COMMENT_ID}/reactions" \
-            -f content="${REACTION}" \
-            > /dev/null 2>&1 || echo "   ⚠️  Failed to add reaction"
-        fi
-        
-        # 4. Post result comment (for both noop and apply operations)
-        if [[ -n "${TF_BD_PR_NUMBER}" ]]; then
-          echo "   💬 Posting deployment result comment"
-          
-          if [[ "${TF_BD_NOOP}" == "true" ]]; then
-            DEPLOY_TYPE="**noop** deployed"
-          else
-            DEPLOY_TYPE="deployed"
-          fi
-          
-          if [[ "${STATUS}" == "success" ]]; then
-            RESULT_HEADER="### Deployment Results ✅"
-            RESULT_MSG="**${TF_BD_ACTOR}** successfully ${DEPLOY_TYPE} branch \`${TF_BD_REF}\` to **${TF_BD_ENVIRONMENT}**"
-          else
-            RESULT_HEADER="### ⚠️ Cannot proceed with deployment"
-            
-            if [[ -n "${FAILURE_REASON}" ]]; then
-              # Use the structured error message from CLI
-              RESULT_MSG="${FAILURE_REASON}"
-            else
-              RESULT_MSG="An unexpected error occurred. Please review the workflow logs for details."
-            fi
-          fi
-          
-          # Construct metadata JSON safely using jq
-          METADATA=$(jq -n \
-            --arg type "${TF_BD_TYPE}" \
-            --arg env "${TF_BD_ENVIRONMENT}" \
-            --arg ref "${TF_BD_REF}" \
-            --arg sha "${TF_BD_SHA}" \
-            --arg actor "${TF_BD_ACTOR}" \
-            --arg noop "${TF_BD_NOOP}" \
-            --arg deployment_id "${TF_BD_DEPLOYMENT_ID}" \
-            '{
-              type: $type,
-              environment: { name: $env },
-              deployment: { id: $deployment_id },
-              git: { ref: $ref, commit: $sha },
-              context: { actor: $actor, noop: ($noop == "true") }
-            }'
-          )
-          
-          BODY="${RESULT_HEADER}"$'\n\n'"${RESULT_MSG}"$'\n\n'"<details><summary>Details</summary>"$'\n\n'"\`\`\`json"$'\n'"${METADATA}"$'\n'"\`\`\`"$'\n\n'"</details>"
-          
-          gh api --method POST \
-            "repos/${GH_REPO}/issues/${TF_BD_PR_NUMBER}/comments" \
-            -f body="${BODY}" \
-            > /dev/null 2>&1 || echo "   ⚠️  Failed to post result comment"
-        fi
-        
-        # 5. Remove non-sticky lock
-        LOCK_REF="${TF_BD_ENVIRONMENT}-branch-deploy-lock"
-        echo "   🔓 Checking for non-sticky lock"
-        LOCK_DATA=$(gh api "repos/${GH_REPO}/contents/lock.json?ref=${LOCK_REF}" --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || echo '{}')
-        STICKY=$(echo "${LOCK_DATA}" | jq -r '.sticky // "false"' 2>/dev/null || echo "false")
-        
-        if [[ "${STICKY}" != "true" ]]; then
-          echo "   🗑️  Removing non-sticky lock"
-          gh api --method DELETE "repos/${GH_REPO}/git/refs/heads/${LOCK_REF}" 2>/dev/null || true
-        else
-          echo "   🔒 Lock is sticky - preserving"
-        fi
-        
-        echo ""
-        echo "✅ Lifecycle complete"
+        tf-branch-deploy complete-lifecycle \
+          --status "${FINAL_STATUS}" \
+          --failure-reason "${FAILURE_REASON}"
 

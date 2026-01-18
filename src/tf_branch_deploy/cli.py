@@ -41,7 +41,7 @@ console = Console()
 class Mode(str, Enum):
     """Execution mode for action.yml."""
 
-    PARSE = "parse"  # Just read config, output settings
+
     TRIGGER = "trigger"  # Parse command, export TF_BD_* env vars, STOP
     EXECUTE = "execute"  # Run terraform with lifecycle completion
 
@@ -197,53 +197,7 @@ def _strip_shell_quotes(arg: str) -> str:
     return flag + value
 
 
-@app.command()
-def parse(
-    environment: Annotated[str, typer.Option("--environment", "-e", help="Target environment")],
-    config_path: Annotated[
-        Path, typer.Option("--config", "-c", help="Path to .tf-branch-deploy.yml")
-    ] = DEFAULT_CONFIG_PATH,
-) -> None:
-    """
-    Parse config and output settings for an environment.
 
-    This mode does NOT call branch-deploy or run terraform.
-    Use this when you need config info before calling branch-deploy yourself.
-    """
-    console.print(
-        Panel.fit("[bold blue]Terraform Branch Deploy[/bold blue] v0.2.0", subtitle="Parse Mode")
-    )
-
-    try:
-        config = load_config(config_path)
-    except FileNotFoundError:
-        console.print(f"[red]Error:[/red] Config file not found: {config_path}")
-        raise typer.Exit(1) from None
-    except Exception as e:
-        console.print(f"[red]Error:[/red] Invalid config: {e}")
-        raise typer.Exit(1) from None
-
-    if environment not in config.environments:
-        console.print(f"[red]Error:[/red] Environment '{environment}' not found")
-        raise typer.Exit(1)
-
-    env_config = config.get_environment(environment)
-
-    var_files = config.resolve_var_files(environment)
-    backend_configs = config.resolve_backend_configs(environment)
-    init_args = config.resolve_args(environment, "init_args")
-    plan_args = config.resolve_args(environment, "plan_args")
-    apply_args = config.resolve_args(environment, "apply_args")
-
-    set_github_output("working_directory", env_config.working_directory)
-    set_github_output("var_files", json.dumps(var_files))
-    set_github_output("backend_configs", json.dumps(backend_configs))
-    set_github_output("init_args", json.dumps(init_args))
-    set_github_output("plan_args", json.dumps(plan_args))
-    set_github_output("apply_args", json.dumps(apply_args))
-    set_github_output("is_production", str(config.is_production(environment)).lower())
-
-    console.print(f"[green]✅ Parsed config for environment: {environment}[/green]")
 
 
 def _load_and_validate_config(
@@ -264,6 +218,85 @@ def _load_and_validate_config(
         raise typer.Exit(1)
 
     return config, config.get_environment(environment)
+
+
+@app.command(name="get-config")
+def get_config(
+    key: Annotated[str, typer.Argument(help="Config key to retrieve (default-environment or production-environments)")],
+    config_path: Annotated[
+        Path, typer.Option("--config", "-c", help="Path to .tf-branch-deploy.yml")
+    ] = DEFAULT_CONFIG_PATH,
+) -> None:
+    """
+    Retrieve a value from the configuration file.
+    
+    Replaces yq usage in action.yml for robust, dependency-free config parsing.
+    """
+    try:
+        config = load_config(config_path)
+    except FileNotFoundError:
+        console.print(f"[red]Error:[/red] Config file not found: {config_path}")
+        raise typer.Exit(1) from None
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Invalid config: {e}")
+        raise typer.Exit(1) from None
+
+    if key == "default-environment":
+        print(config.default_environment)
+    elif key == "production-environments":
+        print(",".join(config.production_environments))
+    else:
+        console.print(f"[red]Error:[/red] Unsupported key: {key}")
+        raise typer.Exit(1)
+
+
+@app.command(name="complete-lifecycle")
+def complete_lifecycle(
+    status: Annotated[str, typer.Option(help="Execution status (success/failure)")],
+    failure_reason: Annotated[str | None, typer.Option(help="Reason for failure if status is failure")] = None,
+) -> None:
+    """Complete the deployment lifecycle (update status, reactions, comments)."""
+    from .lifecycle import LifecycleManager
+
+    # Gather context from env vars
+    env_vars = dict(os.environ)
+    repo = env_vars.get("GH_REPO") or env_vars.get("GITHUB_REPOSITORY")
+    token = env_vars.get("GITHUB_TOKEN")
+    
+    if not repo or not token:
+        console.print("[red]Error:[/red] GITHUB_REPOSITORY or GITHUB_TOKEN not set")
+        raise typer.Exit(1)
+
+    manager = LifecycleManager(repo=repo, github_token=token)
+
+    # 1. Update deployment status
+    deployment_id = env_vars.get("TF_BD_DEPLOYMENT_ID")
+    environment = env_vars.get("TF_BD_ENVIRONMENT")
+    if deployment_id and environment:
+        manager.update_deployment_status(deployment_id, status, environment)
+
+    # 2. Remove initial reaction
+    comment_id = env_vars.get("TF_BD_COMMENT_ID")
+    reaction_id = env_vars.get("TF_BD_INITIAL_REACTION_ID")
+    if comment_id and reaction_id:
+        manager.remove_reaction(comment_id, reaction_id)
+
+    # 3. Add result reaction
+    reaction = "rocket" if status == "success" else "-1"
+    if comment_id:
+        manager.add_reaction(comment_id, reaction)
+
+    # 4. Post result comment
+    pr_number = env_vars.get("TF_BD_PR_NUMBER")
+    if pr_number:
+        body = manager.format_result_comment(status, env_vars, failure_reason)
+        manager.post_result_comment(pr_number, body)
+    
+    # 5. Remove non-sticky lock
+    if environment:
+        manager.remove_non_sticky_lock(environment)
+    
+    console.print("\n[green]✅ Lifecycle complete[/green]")
 
 
 @app.command()
