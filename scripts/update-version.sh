@@ -13,14 +13,14 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 VERSION_FILE="$ROOT_DIR/docs/includes/version.txt"
 
 if [[ ! -f "$VERSION_FILE" ]]; then
-    echo "Error: $VERSION_FILE not found"
+    echo "Error: $VERSION_FILE not found" >&2
     exit 1
 fi
 
 VERSION=$(cat "$VERSION_FILE" | tr -d '\n')
 
 if [[ -z "$VERSION" ]]; then
-    echo "Error: Version file is empty"
+    echo "Error: Version file is empty" >&2
     exit 1
 fi
 

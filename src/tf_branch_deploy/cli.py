@@ -29,6 +29,8 @@ from rich.table import Table
 from .config import load_config
 
 DEFAULT_CONFIG_PATH = Path(".tf-branch-deploy.yml")
+GITHUB_URL_DEFAULT = "https://github.com"
+ACTIONS_RUNS_PATH = "/actions/runs/"
 
 app = typer.Typer(
     name="tf-branch-deploy",
@@ -187,11 +189,11 @@ def _strip_shell_quotes(arg: str) -> str:
     flag = arg[: eq_pos + 1]
     value = arg[eq_pos + 1 :]
 
-    if len(value) >= 2:
-        if (value.startswith("'") and value.endswith("'")) or (
-            value.startswith('"') and value.endswith('"')
-        ):
-            value = value[1:-1]
+    if len(value) >= 2 and (
+        (value.startswith("'") and value.endswith("'"))
+        or (value.startswith('"') and value.endswith('"'))
+    ):
+        value = value[1:-1]
 
     return flag + value
 
@@ -424,7 +426,13 @@ def _handle_plan(executor: "TerraformExecutor", environment: str, sha: str) -> N
         set_github_output("plan_checksum", result.checksum)
         set_github_output("has_changes", str(result.has_changes).lower())
     if not result.success:
-        logs_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com") + "/" + os.environ.get("GITHUB_REPOSITORY", "") + "/actions/runs/" + os.environ.get("GITHUB_RUN_ID", "")
+        logs_url = (
+            os.environ.get("GITHUB_SERVER_URL", GITHUB_URL_DEFAULT)
+            + "/"
+            + os.environ.get("GITHUB_REPOSITORY", "")
+            + ACTIONS_RUNS_PATH
+            + os.environ.get("GITHUB_RUN_ID", "")
+        )
         error_msg = format_error_for_comment(
             message="Terraform plan failed. The `terraform plan` command exited with an error.",
             logs_url=logs_url,
@@ -451,7 +459,13 @@ def _handle_apply(
         )
         apply_result = executor.apply()
         if not apply_result.success:
-            logs_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com") + "/" + os.environ.get("GITHUB_REPOSITORY", "") + "/actions/runs/" + os.environ.get("GITHUB_RUN_ID", "")
+            logs_url = (
+                os.environ.get("GITHUB_SERVER_URL", GITHUB_URL_DEFAULT)
+                + "/"
+                + os.environ.get("GITHUB_REPOSITORY", "")
+                + ACTIONS_RUNS_PATH
+                + os.environ.get("GITHUB_RUN_ID", "")
+            )
             error_msg = format_error_for_comment(
                 message="Rollback apply failed. Terraform encountered an error applying the stable branch state.",
                 logs_url=logs_url,
@@ -500,7 +514,13 @@ def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path) -> None:
 
     apply_result = executor.apply(plan_file=Path(plan_file.name))
     if not apply_result.success:
-        logs_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com") + "/" + os.environ.get("GITHUB_REPOSITORY", "") + "/actions/runs/" + os.environ.get("GITHUB_RUN_ID", "")
+        logs_url = (
+            os.environ.get("GITHUB_SERVER_URL", GITHUB_URL_DEFAULT)
+            + "/"
+            + os.environ.get("GITHUB_REPOSITORY", "")
+            + ACTIONS_RUNS_PATH
+            + os.environ.get("GITHUB_RUN_ID", "")
+        )
         env = os.environ.get('TF_BD_ENVIRONMENT', 'dev')
         error_msg = format_error_for_comment(
             message="Terraform apply failed. The `terraform apply` command exited with an error after applying the plan.",
