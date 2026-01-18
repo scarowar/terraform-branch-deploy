@@ -70,9 +70,6 @@ jobs:
 !!! note "Single Job Architecture"
     All steps run in one job. Environment variables from trigger mode are available to subsequent steps automatically.
 
-!!! tip "Versioning"
-    Examples pin to `@v0.2.0`. To update all examples when a new version is released, run `scripts/update-version.sh` after updating `docs/includes/version.txt`.
-
 ## Step 3: Add Cloud Credentials
 
 Insert cloud credentials between the checkouts:
