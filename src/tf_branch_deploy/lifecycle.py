@@ -56,9 +56,9 @@ class LifecycleManager:
                 f"repos/{self.repo}/issues/comments/{comment_id}/reactions/{reaction_id}"
             ]
             self._run_gh(cmd)
-        except Exception:
-            # Ignore errors removing reactions
-            pass
+        except Exception as e:
+            # Ignore errors removing reactions, but log for debug
+            console.print(f"[dim]Ignored error removing reaction: {e}[/dim]")
 
     def add_reaction(self, comment_id: str, content: str) -> None:
         """Add a reaction to a comment."""
@@ -147,8 +147,8 @@ class LifecycleManager:
         try:
             cmd = ["gh", "api", "--method", "DELETE", f"repos/{self.repo}/git/refs/heads/{lock_ref}"]
             self._run_gh(cmd)
-        except Exception:
-            pass
+        except Exception as e:
+            console.print(f"[dim]Ignored error removing lock: {e}[/dim]")
 
     def _gh_api(self, method: str, endpoint: str, **kwargs: Any) -> Any:
         """Call gh api."""
