@@ -286,20 +286,16 @@ class TestCompleteLifecycleCommand:
 
     def test_success(self, monkeypatch) -> None:
         """Test successful execution with mocked environment."""
-        import os
         from unittest.mock import MagicMock, patch
 
-        # Mock environment variables
-        env_vars = {
-            "GITHUB_REPOSITORY": "org/repo",
-            "GITHUB_TOKEN": "token",
-            "TF_BD_DEPLOYMENT_ID": "123",
-            "TF_BD_ENVIRONMENT": "dev",
-            "TF_BD_COMMENT_ID": "456",
-            "TF_BD_INITIAL_REACTION_ID": "789",
-            "TF_BD_PR_NUMBER": "10",
-        }
-        monkeypatch.setattr(os, "environ", env_vars)
+        # Mock environment variables individually
+        monkeypatch.setenv("GITHUB_REPOSITORY", "org/repo")
+        monkeypatch.setenv("GITHUB_TOKEN", "token")
+        monkeypatch.setenv("TF_BD_DEPLOYMENT_ID", "123")
+        monkeypatch.setenv("TF_BD_ENVIRONMENT", "dev")
+        monkeypatch.setenv("TF_BD_COMMENT_ID", "456")
+        monkeypatch.setenv("TF_BD_INITIAL_REACTION_ID", "789")
+        monkeypatch.setenv("TF_BD_PR_NUMBER", "10")
 
         # Mock LifecycleManager
         with patch("tf_branch_deploy.lifecycle.LifecycleManager") as mock_manager_cls:

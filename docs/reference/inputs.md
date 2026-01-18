@@ -63,7 +63,7 @@ All action inputs for `scarowar/terraform-branch-deploy`.
 | `commit-verification` | `false` | Require verified commits |
 | `allow-forks` | `true` | Allow fork deployments |
 | `allow-non-default-target-branch` | `false` | Allow non-default target branch deployments |
-| `disable-naked-commands` | `true` | Require environment in commands |
+| `disable-naked-commands` | `false` | Require environment in commands |
 
 ---
 

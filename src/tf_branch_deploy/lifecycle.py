@@ -134,14 +134,15 @@ class LifecycleManager:
         lock_ref = f"{environment}-branch-deploy-lock"
         console.print("   🔓 Checking for non-sticky lock")
 
-        # 1. Get lock content
         try:
             content_json = self._gh_api_get_content(
                 f"repos/{self.repo}/contents/lock.json", ref=lock_ref
             )
             sticky = content_json.get("sticky", "false")
         except Exception:
-            sticky = "false"
+            # If we can't read the lock file, assume it's sticky to be safe
+            console.print("[yellow]   ⚠️  Could not read lock metadata - assuming sticky[/yellow]")
+            sticky = "true"
 
         if str(sticky).lower() == "true":
             console.print("   🔒 Lock is sticky - preserving")

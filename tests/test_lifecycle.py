@@ -22,9 +22,10 @@ class TestLifecycleManager:
 
         mock_run.assert_called_once()
         args = mock_run.call_args[0][0]
-        assert "gh" in args
-        assert "deployments/123/statuses" in args[4]
-        assert "state=success" in args[6]
+        args_str = " ".join(args)
+        assert "gh" in args_str
+        assert "deployments/123/statuses" in args_str
+        assert "state=success" in args_str
 
     @patch("tf_branch_deploy.lifecycle.subprocess.run")
     def test_remove_reaction(self, mock_run: MagicMock, manager: LifecycleManager) -> None:
@@ -33,8 +34,9 @@ class TestLifecycleManager:
 
         mock_run.assert_called_once()
         args = mock_run.call_args[0][0]
-        assert "DELETE" in args
-        assert "issues/comments/456/reactions/789" in args[4]
+        args_str = " ".join(args)
+        assert "DELETE" in args_str
+        assert "issues/comments/456/reactions/789" in args_str
 
     @patch("tf_branch_deploy.lifecycle.subprocess.run")
     def test_add_reaction(self, mock_run: MagicMock, manager: LifecycleManager) -> None:
@@ -43,9 +45,10 @@ class TestLifecycleManager:
 
         mock_run.assert_called_once()
         args = mock_run.call_args[0][0]
-        assert "POST" in args
-        assert "issues/comments/456/reactions" in args[4]
-        assert "content=rocket" in args[6]
+        args_str = " ".join(args)
+        assert "POST" in args_str
+        assert "issues/comments/456/reactions" in args_str
+        assert "content=rocket" in args_str
 
     @patch("tf_branch_deploy.lifecycle.subprocess.run")
     def test_post_result_comment(self, mock_run: MagicMock, manager: LifecycleManager) -> None:
@@ -54,8 +57,9 @@ class TestLifecycleManager:
 
         mock_run.assert_called_once()
         args = mock_run.call_args[0][0]
-        assert "issues/100/comments" in args[4]
-        assert "body=body" in args[6]
+        args_str = " ".join(args)
+        assert "issues/100/comments" in args_str
+        assert "body=body" in args_str
 
     def test_format_result_comment_success(self, manager: LifecycleManager) -> None:
         """Test formatting success comment."""

@@ -306,7 +306,7 @@ def complete_lifecycle(
 @app.command()
 def execute(
     environment: Annotated[str, typer.Option("--environment", "-e", help="Target environment")],
-    operation: Annotated[str, typer.Option("--operation", "-o", help="plan or apply")],
+    operation: Annotated[str, typer.Option("--operation", "-o", help="plan, apply, or rollback")],
     sha: Annotated[str, typer.Option("--sha", "-s", help="Git commit SHA")],
     config_path: Annotated[
         Path, typer.Option("--config", "-c", help="Path to .tf-branch-deploy.yml")
