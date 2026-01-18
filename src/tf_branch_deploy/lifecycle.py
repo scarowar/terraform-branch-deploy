@@ -195,9 +195,12 @@ class LifecycleManager:
             env["GITHUB_TOKEN"] = self.github_token
 
         if "GH_HOST" not in env and "GITHUB_SERVER_URL" in env:
+            from urllib.parse import urlparse
+
             server_url = env["GITHUB_SERVER_URL"]
-            host = server_url.replace("https://", "").replace("http://", "")
-            if host != "github.com":
+            host = urlparse(server_url).netloc
+
+            if host and host != "github.com":
                 env["GH_HOST"] = host
 
         try:
