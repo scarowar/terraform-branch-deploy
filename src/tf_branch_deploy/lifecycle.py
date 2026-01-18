@@ -189,10 +189,28 @@ class LifecycleManager:
             return {}
 
     def _run_gh(self, cmd: list[str], capture_output: bool = False) -> str | None:
-        """Run gh command."""
+        """Run gh command.
+
+        Supports:
+        - github.com (uses GITHUB_TOKEN)
+        - ghe.com subdomains (uses GH_TOKEN)
+        - Self-hosted GHE Server (uses GH_ENTERPRISE_TOKEN + GH_HOST)
+        """
         env = os.environ.copy()
         if self.github_token:
-            env["GITHUB_TOKEN"] = self.github_token
+            # Set all token variants for maximum compatibility
+            env["GITHUB_TOKEN"] = self.github_token  # github.com
+            env["GH_TOKEN"] = self.github_token  # ghe.com
+            env["GH_ENTERPRISE_TOKEN"] = self.github_token  # Self-hosted GHE
+
+        # Set GH_HOST for GHE (required for self-hosted GHE)
+        if "GITHUB_SERVER_URL" in env:
+            from urllib.parse import urlparse
+
+            server_url = env["GITHUB_SERVER_URL"]
+            host = urlparse(server_url).netloc
+            if host and host != "github.com":
+                env["GH_HOST"] = host
 
         try:
             result = subprocess.run(  # nosec B603

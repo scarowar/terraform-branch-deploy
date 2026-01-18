@@ -1,5 +1,7 @@
 """Tests for lifecycle module."""
 
+import os
+
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -13,7 +15,7 @@ class TestLifecycleManager:
     @pytest.fixture
     def manager(self) -> LifecycleManager:
         """Create a LifecycleManager instance."""
-        return LifecycleManager(repo="org/repo", github_token="token")
+        return LifecycleManager(repo="org/repo", github_token="test-token")
 
     @patch("tf_branch_deploy.lifecycle.subprocess.run")
     def test_update_deployment_status(self, mock_run: MagicMock, manager: LifecycleManager) -> None:
@@ -103,3 +105,57 @@ class TestLifecycleManager:
         body = manager.format_result_comment("success", env_vars)
 
         assert "**noop** deployed" in body
+
+    # GHE Support Tests
+
+    @patch("tf_branch_deploy.lifecycle.subprocess.run")
+    def test_run_gh_sets_all_token_variants(
+        self, mock_run: MagicMock, manager: LifecycleManager
+    ) -> None:
+        """Test that all token variants are set for maximum GHE compatibility."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_run.return_value = mock_result
+
+        with patch.dict(os.environ, {}, clear=True):
+            manager._run_gh(["gh", "version"])
+
+        call_env = mock_run.call_args[1]["env"]
+        # All three token variants should be set
+        assert call_env["GITHUB_TOKEN"] == "test-token"
+        assert call_env["GH_TOKEN"] == "test-token"
+        assert call_env["GH_ENTERPRISE_TOKEN"] == "test-token"
+
+    @patch("tf_branch_deploy.lifecycle.subprocess.run")
+    def test_run_gh_sets_gh_host_for_ghe(
+        self, mock_run: MagicMock, manager: LifecycleManager
+    ) -> None:
+        """Test that GH_HOST is set from GITHUB_SERVER_URL for self-hosted GHE."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_run.return_value = mock_result
+
+        ghe_env = {"GITHUB_SERVER_URL": "https://git.i.company.com"}
+
+        with patch.dict(os.environ, ghe_env, clear=True):
+            manager._run_gh(["gh", "api", "repos/org/repo/issues"])
+
+        call_env = mock_run.call_args[1]["env"]
+        assert call_env["GH_HOST"] == "git.i.company.com"
+
+    @patch("tf_branch_deploy.lifecycle.subprocess.run")
+    def test_run_gh_does_not_set_gh_host_for_github_com(
+        self, mock_run: MagicMock, manager: LifecycleManager
+    ) -> None:
+        """Test that GH_HOST is NOT set for github.com."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_run.return_value = mock_result
+
+        env = {"GITHUB_SERVER_URL": "https://github.com"}
+
+        with patch.dict(os.environ, env, clear=True):
+            manager._run_gh(["gh", "api", "repos/org/repo/issues"])
+
+        call_env = mock_run.call_args[1]["env"]
+        assert "GH_HOST" not in call_env

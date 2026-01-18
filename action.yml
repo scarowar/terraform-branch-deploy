@@ -531,6 +531,7 @@ runs:
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
+        GITHUB_SERVER_URL: ${{ github.server_url }}
         GH_REPO: ${{ github.repository }}
         STATUS: ${{ steps.tf-execute.outcome }}
         FAILURE_REASON: ${{ steps.tf-execute.outputs.failure_reason }}
