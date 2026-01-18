@@ -21,13 +21,11 @@
 
 ---
 
-## The Problem
+## Why
 
 Traditional CI/CD deploys after merging. If deployment fails, main is broken.
 
-## The Solution
-
-Branch Deploy inverts this: deploy from your PR branch first, then merge if successful. Main stays stable. To roll back, deploy main.
+**Branch Deploy inverts this:** deploy from your PR branch first, then merge if successful. Main stays stable. To roll back, deploy main.
 
 Terraform Branch Deploy applies this model to infrastructure:
 
@@ -93,8 +91,6 @@ jobs:
 
 **3. Comment on a PR:** `.plan to dev`
 
-> **Versioning**: Examples use `@v0` which always resolves to the latest `v0.x.x` release. For production, pin to a specific version like `@v0.2.0` or use a SHA.
-
 ---
 
 ## Commands
@@ -113,26 +109,23 @@ Pass extra arguments: `.plan to prod | -target=module.database`
 
 ## Documentation
 
-- [**Quickstart**](https://scarowar.github.io/terraform-branch-deploy/quickstart/) — First deployment in 5 minutes
-- [**Trigger and Execute**](https://scarowar.github.io/terraform-branch-deploy/concepts/modes/) — Two-mode architecture
-- [**Configuration**](https://scarowar.github.io/terraform-branch-deploy/configuration/) — Environment setup
-- [**Commands**](https://scarowar.github.io/terraform-branch-deploy/reference/commands/) — All PR commands
-- [**Security**](https://scarowar.github.io/terraform-branch-deploy/security/) — Access control
-- [**Troubleshooting**](https://scarowar.github.io/terraform-branch-deploy/troubleshooting/) — Common issues
-
----
-
-## Requirements
-
-- GitHub repository with Terraform configurations
-- GitHub Actions enabled
-- Cloud provider credentials (AWS, GCP, or Azure)
+| Resource | Description |
+|----------|-------------|
+| [Quickstart](https://scarowar.github.io/terraform-branch-deploy/quickstart/) | First deployment in 5 minutes |
+| [Configuration](https://scarowar.github.io/terraform-branch-deploy/configuration/) | Environment setup and inheritance |
+| [Commands](https://scarowar.github.io/terraform-branch-deploy/reference/commands/) | All PR comment commands |
+| [Security](https://scarowar.github.io/terraform-branch-deploy/security/) | Access control and guardrails |
+| [Troubleshooting](https://scarowar.github.io/terraform-branch-deploy/troubleshooting/) | Common issues |
 
 ---
 
 ## Contributing
 
-Contributions are welcome. Please open an issue first to discuss what you would like to change.
+We welcome contributions. Please read our guidelines before getting started:
+
+- **[Contributing Guide](CONTRIBUTING.md)** — How to submit issues, PRs, and code style
+- **[Code of Conduct](CODE_OF_CONDUCT.md)** — Community standards
+- **[Security Policy](SECURITY.md)** — How to report vulnerabilities
 
 ---
 
