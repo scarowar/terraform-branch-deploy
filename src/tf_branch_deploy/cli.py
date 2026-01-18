@@ -41,7 +41,6 @@ console = Console()
 class Mode(str, Enum):
     """Execution mode for action.yml."""
 
-
     TRIGGER = "trigger"  # Parse command, export TF_BD_* env vars, STOP
     EXECUTE = "execute"  # Run terraform with lifecycle completion
 

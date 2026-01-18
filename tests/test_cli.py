@@ -22,11 +22,9 @@ class TestConstants:
     """Tests for CLI constants."""
 
     def test_default_config_path_is_path(self) -> None:
-        """DEFAULT_CONFIG_PATH should be a Path object."""
         assert isinstance(DEFAULT_CONFIG_PATH, Path)
 
     def test_default_config_path_value(self) -> None:
-        """DEFAULT_CONFIG_PATH should be .tf-branch-deploy.yml."""
         assert str(DEFAULT_CONFIG_PATH) == ".tf-branch-deploy.yml"
 
 
@@ -34,32 +32,26 @@ class TestParseExtraArgs:
     """Tests for _parse_extra_args function."""
 
     def test_simple_args(self) -> None:
-        """Test parsing simple space-separated args."""
         result = _parse_extra_args("-refresh=false -parallelism=5")
         assert result == ["-refresh=false", "-parallelism=5"]
 
     def test_single_quoted_value(self) -> None:
-        """Test parsing single-quoted values."""
         result = _parse_extra_args("-var='msg=hello world'")
         assert result == ["-var=msg=hello world"]
 
     def test_double_quoted_value(self) -> None:
-        """Test parsing double-quoted values."""
         result = _parse_extra_args('-var="key=value"')
         assert result == ["-var=key=value"]
 
     def test_bracket_with_quotes(self) -> None:
-        """Test parsing terraform target with internal quotes."""
         result = _parse_extra_args('-target=module.test["key"]')
         assert result == ['-target=module.test["key"]']
 
     def test_mixed_args(self) -> None:
-        """Test parsing mixed argument styles."""
         result = _parse_extra_args("-var='x=1' -target=module.foo -refresh=false")
         assert result == ["-var=x=1", "-target=module.foo", "-refresh=false"]
 
     def test_empty_string(self) -> None:
-        """Test parsing empty string."""
         result = _parse_extra_args("")
         assert result == []
 

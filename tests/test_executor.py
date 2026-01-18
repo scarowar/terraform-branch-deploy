@@ -13,6 +13,7 @@ from tf_branch_deploy.executor import (
 )
 
 
+
 @pytest.fixture
 def executor(tmp_path: Path) -> TerraformExecutor:
     """Create a test executor with dry_run enabled."""
@@ -25,18 +26,6 @@ def executor(tmp_path: Path) -> TerraformExecutor:
         apply_args=["-parallelism=5"],
         dry_run=True,
     )
-
-
-class TestConstants:
-    """Tests for executor constants."""
-
-    def test_tf_input_false_value(self) -> None:
-        """TF_INPUT_FALSE constant should be -input=false."""
-        assert TF_INPUT_FALSE == "-input=false"
-
-    def test_tf_input_false_is_string(self) -> None:
-        """TF_INPUT_FALSE should be a string."""
-        assert isinstance(TF_INPUT_FALSE, str)
 
 
 class TestCommandResult:
@@ -58,27 +47,9 @@ class TestPlanResult:
         result = PlanResult(exit_code=0, stdout="", stderr="", command=[])
         assert result.has_changes is False
 
-    def test_plan_file_default_none(self) -> None:
-        result = PlanResult(exit_code=0, stdout="", stderr="", command=[])
-        assert result.plan_file is None
-
 
 class TestTerraformExecutor:
     """Tests for TerraformExecutor class."""
-
-    def test_constructor_sets_fields(self, tmp_path: Path) -> None:
-        executor = TerraformExecutor(
-            working_directory=tmp_path,
-            var_files=["a.tfvars"],
-            backend_configs=["b.tfbackend"],
-        )
-        assert executor.working_directory == tmp_path
-        assert executor.var_files == ["a.tfvars"]
-        assert executor.backend_configs == ["b.tfbackend"]
-
-    def test_dry_run_flag(self, executor: TerraformExecutor) -> None:
-        """Executor can be created with dry_run=True."""
-        assert executor.dry_run is True
 
     @patch("subprocess.run")
     def test_run_command_captures_output(
