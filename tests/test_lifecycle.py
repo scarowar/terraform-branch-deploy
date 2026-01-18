@@ -1,5 +1,7 @@
 """Tests for lifecycle module."""
 
+import os
+
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -103,3 +105,61 @@ class TestLifecycleManager:
         body = manager.format_result_comment("success", env_vars)
 
         assert "**noop** deployed" in body
+
+    @patch("tf_branch_deploy.lifecycle.subprocess.run")
+    def test_run_gh_injects_gh_host(self, mock_run: MagicMock, manager: LifecycleManager) -> None:
+        """Test that GH_HOST is injected derived from GITHUB_SERVER_URL."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_run.return_value = mock_result
+
+        # Mock environment with GHE URL
+        ghe_env = {
+            "GITHUB_SERVER_URL": "https://github.enterprise.com",
+        }
+        # Ensure GH_HOST is NOT set initially
+        if "GH_HOST" in os.environ:
+            del os.environ["GH_HOST"]
+
+        with patch.dict(os.environ, ghe_env, clear=True):
+            manager._run_gh(["gh", "version"])
+
+        mock_run.assert_called_once()
+        call_env = mock_run.call_args[1]["env"]
+        
+        assert call_env["GH_HOST"] == "github.enterprise.com"
+
+    @patch("tf_branch_deploy.lifecycle.subprocess.run")
+    def test_run_gh_respects_existing_gh_host(self, mock_run: MagicMock, manager: LifecycleManager) -> None:
+        """Test that existing GH_HOST is respected."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_run.return_value = mock_result
+
+        env_vars = {
+            "GITHUB_SERVER_URL": "https://github.enterprise.com",
+            "GH_HOST": "custom.host.com"
+        }
+
+        with patch.dict(os.environ, env_vars, clear=True):
+            manager._run_gh(["gh", "version"])
+
+        call_env = mock_run.call_args[1]["env"]
+        assert call_env["GH_HOST"] == "custom.host.com"
+
+    @patch("tf_branch_deploy.lifecycle.subprocess.run")
+    def test_run_gh_ignores_github_com(self, mock_run: MagicMock, manager: LifecycleManager) -> None:
+        """Test that we don't set GH_HOST for standard github.com."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_run.return_value = mock_result
+
+        env_vars = {
+            "GITHUB_SERVER_URL": "https://github.com"
+        }
+
+        with patch.dict(os.environ, env_vars, clear=True):
+            manager._run_gh(["gh", "version"])
+
+        call_env = mock_run.call_args[1]["env"]
+        assert "GH_HOST" not in call_env

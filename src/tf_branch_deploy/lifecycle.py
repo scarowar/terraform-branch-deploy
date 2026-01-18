@@ -194,6 +194,12 @@ class LifecycleManager:
         if self.github_token:
             env["GITHUB_TOKEN"] = self.github_token
 
+        if "GH_HOST" not in env and "GITHUB_SERVER_URL" in env:
+            server_url = env["GITHUB_SERVER_URL"]
+            host = server_url.replace("https://", "").replace("http://", "")
+            if host != "github.com":
+                env["GH_HOST"] = host
+
         try:
             result = subprocess.run(  # nosec B603
                 cmd, capture_output=True, text=True, env=env, check=False
