@@ -1,33 +1,39 @@
 # Terraform Branch Deploy
 
+![Terraform Branch Deploy](assets/images/cover-dark.png#only-dark)
+![Terraform Branch Deploy](assets/images/cover-light.png#only-light)
+
 Terraform integrated into the [Branch Deploy](https://github.com/github/branch-deploy) operating model.
 
 ---
 
-## The Model
+## The Problem
 
 Traditional CI/CD deploys after merging. If deployment fails, main is broken.
 
-Branch Deploy inverts this:
-
 ```mermaid
-flowchart LR
-    subgraph "Traditional CI/CD"
-        direction LR
-        A1[PR] --> A2[Merge] --> A3[Deploy]
-        A3 -->|fails| A4[Main broken]
-    end
-
-    subgraph "Branch Deploy"
-        direction LR
-        B1[PR] --> B2[Deploy branch] --> B3{Success?}
-        B3 -->|yes| B4[Merge]
-        B3 -->|no| B5[Fix & retry]
-        B4 --> B6[Main stable]
-    end
+flowchart TD
+    A[PR Approved] --> B[Merge to main]
+    B --> C[Deploy]
+    C --> D{Success?}
+    D -->|No| E[Main is broken]
+    D -->|Yes| F[Done]
 ```
 
-Terraform Branch Deploy extends this to infrastructure:
+## The Solution
+
+Branch Deploy inverts this: deploy from the PR branch first, then merge only if successful.
+
+```mermaid
+flowchart TD
+    A[PR Created] --> B[Deploy branch]
+    B --> C{Success?}
+    C -->|No| D[Fix and retry]
+    C -->|Yes| E[Merge to main]
+    E --> F[Main stays stable]
+```
+
+Terraform Branch Deploy applies this model to infrastructure:
 
 1. **Plan** from your pull request
 2. **Review** the changes
@@ -46,15 +52,16 @@ The plan is cached and checksummed. What you review is what gets applied.
 | `.apply main to <env>` | Rollback to stable main branch |
 | `.lock <env>` | Acquire environment lock |
 | `.unlock <env>` | Release lock |
-| `.help` | Show available commands |
 
 Pass extra arguments with a pipe: `.plan to prod | -target=module.database`
 
 ---
 
-## Quick Example
+## Quick Start
 
-```yaml title=".tf-branch-deploy.yml"
+Create `.tf-branch-deploy.yml`:
+
+```yaml
 default-environment: dev
 production-environments: [prod]
 
@@ -65,7 +72,9 @@ environments:
     working-directory: terraform/prod
 ```
 
-```yaml title=".github/workflows/deploy.yml"
+Create `.github/workflows/deploy.yml`:
+
+```yaml
 name: Deploy
 on:
   issue_comment:
@@ -100,7 +109,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-Then comment on a PR: `.plan to dev`
+Comment on a PR: `.plan to dev`
 
 ---
 

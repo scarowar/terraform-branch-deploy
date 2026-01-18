@@ -5,6 +5,9 @@
 site_name = "Terraform Branch Deploy"
 site_description = "Terraform integrated into the Branch Deploy operating model"
 site_url = "https://scarowar.github.io/terraform-branch-deploy/"
+repo_url = "https://github.com/scarowar/terraform-branch-deploy"
+repo_name = "scarowar/terraform-branch-deploy"
+edit_uri = "edit/main/docs/"
 
 nav = [
     {"Home" = "index.md"},
@@ -23,11 +26,6 @@ nav = [
     {"Troubleshooting" = "troubleshooting.md"}
 ]
 
-[project.repository]
-url = "https://github.com/scarowar/terraform-branch-deploy"
-name = "scarowar/terraform-branch-deploy"
-edit_uri = "edit/main/docs/"
-
 [project.theme]
 logo = "assets/git-pull-request.png"
 favicon = "assets/git-pull-request.png"
@@ -41,10 +39,15 @@ features = [
     "content.code.copy",
     "content.code.annotate",
     "content.tabs.link",
+    "content.action.edit",
+    "content.action.view",
     "search.highlight",
     "search.suggest",
     "toc.follow"
 ]
+
+[project.theme.icon]
+repo = "fontawesome/brands/github"
 
 [[project.theme.palette]]
 scheme = "slate"
