@@ -442,7 +442,7 @@ jobs:
     if: github.event.issue.pull_request
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: scarowar/terraform-branch-deploy@v0.2.0
         with:
@@ -469,7 +469,7 @@ jobs:
           enforced-deployment-order: "dev,staging,prod"
           sticky-locks: true
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: env.TF_BD_CONTINUE == 'true'
         with:
           ref: ${{ env.TF_BD_REF }}

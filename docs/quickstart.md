@@ -45,7 +45,7 @@ jobs:
 
     steps:
       # Checkout to read config file
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Parse command, acquire lock, export context
       - uses: scarowar/terraform-branch-deploy@v0.2.0
@@ -54,7 +54,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # Checkout PR branch for Terraform
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: env.TF_BD_CONTINUE == 'true'
         with:
           ref: ${{ env.TF_BD_REF }}
@@ -77,7 +77,7 @@ Insert cloud credentials between the checkouts:
 === "AWS"
 
     ```yaml
-    - uses: aws-actions/configure-aws-credentials@v4
+    - uses: aws-actions/configure-aws-credentials@v5
       if: env.TF_BD_CONTINUE == 'true'
       with:
         role-to-assume: arn:aws:iam::123456789012:role/terraform
@@ -87,7 +87,7 @@ Insert cloud credentials between the checkouts:
 === "GCP"
 
     ```yaml
-    - uses: google-github-actions/auth@v2
+    - uses: google-github-actions/auth@v3
       if: env.TF_BD_CONTINUE == 'true'
       with:
         workload_identity_provider: projects/123/locations/global/workloadIdentityPools/github/providers/github

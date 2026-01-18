@@ -28,7 +28,7 @@ Trigger mode exports environment variables prefixed with `TF_BD_` for use in sub
 Use `TF_BD_CONTINUE` to gate subsequent steps:
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@v6
   if: env.TF_BD_CONTINUE == 'true'
   with:
     ref: ${{ env.TF_BD_REF }}

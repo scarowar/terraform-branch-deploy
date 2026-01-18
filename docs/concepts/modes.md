@@ -87,7 +87,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Checkout to read config
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Parse command, acquire lock
       - uses: scarowar/terraform-branch-deploy@v0.2.0
@@ -96,13 +96,13 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # Checkout PR branch
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: env.TF_BD_CONTINUE == 'true'
         with:
           ref: ${{ env.TF_BD_REF }}
 
-      # Optional: Configure credentials
-      - uses: aws-actions/configure-aws-credentials@v4
+      # Add cloud credentials here (AWS/GCP/Azure)
+      - uses: aws-actions/configure-aws-credentials@v5
         if: env.TF_BD_CONTINUE == 'true'
         with:
           role-to-assume: arn:aws:iam::123456789:role/deploy
