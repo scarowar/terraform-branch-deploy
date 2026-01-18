@@ -5,7 +5,9 @@
 
 Terraform integrated into the [Branch Deploy](https://github.com/github/branch-deploy) operating model.
 
----
+<video controls width="100%">
+  <source src="assets/terraform-branch-deploy-demo.mp4" type="video/mp4">
+</video>
 
 ## The Problem
 

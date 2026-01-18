@@ -31,6 +31,19 @@ https://github.com/user-attachments/assets/7b9d1660-bf20-4fa1-8b07-34f0c0e9f334
 
 Traditional CI/CD deploys after merging. If deployment fails, main is broken.
 
+```mermaid
+flowchart LR
+    subgraph Traditional["Traditional CI/CD"]
+        A[Merge] --> B[Deploy] --> C{Success?}
+        C -->|No| D[Main broken]
+    end
+    subgraph BranchDeploy["Branch Deploy"]
+        E[Deploy PR] --> F{Success?}
+        F -->|Yes| G[Merge]
+        F -->|No| H[Fix & retry]
+    end
+```
+
 **Branch Deploy inverts this:** deploy from your PR branch first, then merge if successful. Main stays stable. To roll back, deploy main.
 
 Terraform Branch Deploy applies this model to infrastructure:
