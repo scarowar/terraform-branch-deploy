@@ -6,6 +6,23 @@ site_name = "Terraform Branch Deploy"
 site_description = "Terraform integrated into the Branch Deploy operating model"
 site_url = "https://scarowar.github.io/terraform-branch-deploy/"
 
+nav = [
+    {"Home" = "index.md"},
+    {"Quickstart" = "quickstart.md"},
+    {"Concepts" = [
+        {"Trigger and Execute" = "concepts/modes.md"}
+    ]},
+    {"Configuration" = "configuration/index.md"},
+    {"Reference" = [
+        {"Commands" = "reference/commands.md"},
+        {"Inputs" = "reference/inputs.md"},
+        {"Outputs" = "reference/outputs.md"},
+        {"Environment Variables" = "reference/environment-vars.md"}
+    ]},
+    {"Security" = "security.md"},
+    {"Troubleshooting" = "troubleshooting.md"}
+]
+
 [project.repository]
 url = "https://github.com/scarowar/terraform-branch-deploy"
 name = "scarowar/terraform-branch-deploy"
@@ -26,7 +43,7 @@ features = [
     "content.tabs.link",
     "search.highlight",
     "search.suggest",
-    "toc.follow",
+    "toc.follow"
 ]
 
 [[project.theme.palette]]
@@ -47,24 +64,6 @@ accent = "deep purple"
 icon = "material/brightness-7"
 name = "Switch to dark mode"
 
-[project.nav]
-nav = [
-    { "Home" = "index.md" },
-    { "Quickstart" = "quickstart.md" },
-    { "Concepts" = [
-        { "Trigger and Execute" = "concepts/modes.md" },
-    ]},
-    { "Configuration" = "configuration/index.md" },
-    { "Reference" = [
-        { "Commands" = "reference/commands.md" },
-        { "Inputs" = "reference/inputs.md" },
-        { "Outputs" = "reference/outputs.md" },
-        { "Environment Variables" = "reference/environment-vars.md" },
-    ]},
-    { "Security" = "security.md" },
-    { "Troubleshooting" = "troubleshooting.md" },
-]
-
 [project.markdown]
 extensions = [
     "admonition",
@@ -74,5 +73,5 @@ extensions = [
     "pymdownx.highlight",
     "pymdownx.inlinehilite",
     "pymdownx.superfences",
-    "pymdownx.tabbed",
+    "pymdownx.tabbed"
 ]
