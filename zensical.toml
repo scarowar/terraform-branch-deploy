@@ -1,0 +1,78 @@
+# Zensical Configuration
+# https://zensical.org/docs/setup/basics/
+
+[project]
+site_name = "Terraform Branch Deploy"
+site_description = "Terraform integrated into the Branch Deploy operating model"
+site_url = "https://scarowar.github.io/terraform-branch-deploy/"
+
+[project.repository]
+url = "https://github.com/scarowar/terraform-branch-deploy"
+name = "scarowar/terraform-branch-deploy"
+edit_uri = "edit/main/docs/"
+
+[project.theme]
+logo = "assets/git-pull-request.png"
+favicon = "assets/git-pull-request.png"
+features = [
+    "navigation.tabs",
+    "navigation.sections",
+    "navigation.indexes",
+    "navigation.path",
+    "navigation.top",
+    "navigation.footer",
+    "content.code.copy",
+    "content.code.annotate",
+    "content.tabs.link",
+    "search.highlight",
+    "search.suggest",
+    "toc.follow",
+]
+
+[[project.theme.palette]]
+scheme = "slate"
+primary = "deep purple"
+accent = "deep purple"
+
+[project.theme.palette.toggle]
+icon = "material/brightness-4"
+name = "Switch to light mode"
+
+[[project.theme.palette]]
+scheme = "default"
+primary = "deep purple"
+accent = "deep purple"
+
+[project.theme.palette.toggle]
+icon = "material/brightness-7"
+name = "Switch to dark mode"
+
+[project.nav]
+nav = [
+    { "Home" = "index.md" },
+    { "Quickstart" = "quickstart.md" },
+    { "Concepts" = [
+        { "Trigger and Execute" = "concepts/modes.md" },
+    ]},
+    { "Configuration" = "configuration/index.md" },
+    { "Reference" = [
+        { "Commands" = "reference/commands.md" },
+        { "Inputs" = "reference/inputs.md" },
+        { "Outputs" = "reference/outputs.md" },
+        { "Environment Variables" = "reference/environment-vars.md" },
+    ]},
+    { "Security" = "security.md" },
+    { "Troubleshooting" = "troubleshooting.md" },
+]
+
+[project.markdown]
+extensions = [
+    "admonition",
+    "attr_list",
+    "md_in_html",
+    "pymdownx.details",
+    "pymdownx.highlight",
+    "pymdownx.inlinehilite",
+    "pymdownx.superfences",
+    "pymdownx.tabbed",
+]

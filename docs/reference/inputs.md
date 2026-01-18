@@ -1,6 +1,8 @@
-# Inputs Reference
+# Inputs
 
 All action inputs for `scarowar/terraform-branch-deploy`.
+
+---
 
 ## Core Inputs
 
@@ -12,38 +14,9 @@ All action inputs for `scarowar/terraform-branch-deploy`.
 | `terraform-version` | No | `latest` | Terraform version to install |
 | `dry-run` | No | `false` | Print commands without executing |
 
-## Trigger Mode
+---
 
-Trigger mode parses PR comments and exports environment variables for execute mode.
-
-### Environment Variables Exported
-
-| Variable | Description |
-|----------|-------------|
-| `TF_BD_CONTINUE` | `'true'` if execute mode should run |
-| `TF_BD_ENVIRONMENT` | Target environment |
-| `TF_BD_OPERATION` | `plan`, `apply`, or `rollback` |
-| `TF_BD_IS_ROLLBACK` | `'true'` if rollback operation |
-| `TF_BD_SHA` | Commit SHA to deploy |
-| `TF_BD_REF` | Branch ref to deploy |
-| `TF_BD_ACTOR` | User who triggered deployment |
-| `TF_BD_PR_NUMBER` | PR number |
-| `TF_BD_PARAMS` | Extra parameters from command |
-| `TF_BD_DEPLOYMENT_ID` | GitHub deployment ID |
-| `TF_BD_COMMENT_ID` | Triggering comment ID |
-| `TF_BD_NOOP` | `'true'` for plan operations |
-
-## Execute Mode
-
-Execute mode runs terraform and completes the deployment lifecycle.
-
-Reads from `TF_BD_*` environment variables set by trigger mode.
-
-## Branch-Deploy Passthrough Inputs
-
-These inputs are passed to `github/branch-deploy` in trigger mode.
-
-### Command Triggers
+## Command Triggers
 
 | Input | Default | Description |
 |-------|---------|-------------|
@@ -55,7 +28,9 @@ These inputs are passed to `github/branch-deploy` in trigger mode.
 | `lock-info-alias` | `.wcid` | Lock info alias |
 | `param-separator` | `\|` | Parameter separator |
 
-### Environment Configuration
+---
+
+## Environment Configuration
 
 | Input | Default | Description |
 |-------|---------|-------------|
@@ -64,7 +39,9 @@ These inputs are passed to `github/branch-deploy` in trigger mode.
 | `environment-urls` | - | Environment URLs mapping |
 | `draft-permitted-targets` | - | Environments allowing draft PR deployments |
 
-### Branch & Rollback
+---
+
+## Branch & Rollback
 
 | Input | Default | Description |
 |-------|---------|-------------|
@@ -74,7 +51,9 @@ These inputs are passed to `github/branch-deploy` in trigger mode.
 | `allow-sha-deployments` | `false` | Allow deploying specific SHAs |
 | `enforced-deployment-order` | - | Required deployment order (e.g., `dev,staging,prod`) |
 
-### Permissions & Security
+---
+
+## Permissions & Security
 
 | Input | Default | Description |
 |-------|---------|-------------|
@@ -86,7 +65,9 @@ These inputs are passed to `github/branch-deploy` in trigger mode.
 | `allow-non-default-target-branch` | `false` | Allow non-default target branch deployments |
 | `disable-naked-commands` | `true` | Require environment in commands |
 
-### CI & Checks
+---
+
+## CI & Checks
 
 | Input | Default | Description |
 |-------|---------|-------------|
@@ -96,7 +77,9 @@ These inputs are passed to `github/branch-deploy` in trigger mode.
 | `skip-reviews` | - | Environments that skip reviews |
 | `required-contexts` | `false` | Manually required status contexts |
 
-### Locking
+---
+
+## Locking
 
 | Input | Default | Description |
 |-------|---------|-------------|
@@ -104,29 +87,3 @@ These inputs are passed to `github/branch-deploy` in trigger mode.
 | `sticky-locks-for-noop` | `false` | Keep locks for plan operations |
 | `global-lock-flag` | `--global` | Global lock flag |
 
----
-
-# Outputs Reference
-
-## Trigger Mode Outputs
-
-Exported as environment variables (not action outputs):
-
-| Variable | Description |
-|----------|-------------|
-| `TF_BD_CONTINUE` | `'true'` if deployment should proceed |
-| `TF_BD_ENVIRONMENT` | Target environment |
-| `TF_BD_OPERATION` | `plan`, `apply`, or `rollback` |
-| `TF_BD_SHA` | Commit SHA to deploy |
-| `TF_BD_REF` | Branch ref to checkout |
-
-## Execute Mode Outputs
-
-| Output | Description |
-|--------|-------------|
-| `working-directory` | Resolved Terraform working directory |
-| `var-files` | JSON array of var files |
-| `is-production` | `'true'` if production environment |
-| `plan-file` | Path to generated plan file |
-| `plan-checksum` | SHA256 of plan file |
-| `has-changes` | `'true'` if plan has changes |
