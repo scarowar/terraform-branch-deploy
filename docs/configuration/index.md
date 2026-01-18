@@ -72,7 +72,7 @@ environments:
 |-------|-------------|
 | `working-directory` | Path to Terraform root module (required) |
 | `var-files` | Variable files to pass to Terraform |
-| `backend-configs` | Backend configuration values for `terraform init -backend-config` |
+| `backend-configs` | Backend configuration file paths for `terraform init -backend-config` |
 | `plan-args` | Additional arguments for `terraform plan` |
 | `apply-args` | Additional arguments for `terraform apply` |
 | `init-args` | Additional arguments for `terraform init` |
@@ -132,13 +132,11 @@ Paths are relative to the environment's `working-directory`.
 ```yaml
 backend-configs:
   inherit: true
-  values:
-    bucket: "my-tf-state"
-    key: "dev/terraform.tfstate"
-    region: "us-east-1"
+  paths:
+    - backend.conf
 ```
 
-These are passed as `-backend-config=key=value` to `terraform init`.
+These files are passed as `-backend-config=path` to `terraform init`.
 
 ## Arguments Format
 
@@ -186,8 +184,8 @@ environments:
       paths:
         - dev.tfvars
     backend-configs:
-      values:
-        key: "dev/terraform.tfstate"
+      paths:
+        - ../backend/dev.conf
 
   staging:
     working-directory: terraform/environments/staging
@@ -196,8 +194,8 @@ environments:
       paths:
         - staging.tfvars
     backend-configs:
-      values:
-        key: "staging/terraform.tfstate"
+      paths:
+        - ../backend/staging.conf
 
   prod:
     working-directory: terraform/environments/prod
@@ -206,8 +204,8 @@ environments:
       paths:
         - prod.tfvars
     backend-configs:
-      values:
-        key: "prod/terraform.tfstate"
+      paths:
+        - ../backend/prod.conf
     plan-args:
       inherit: false
       args:
@@ -220,8 +218,8 @@ environments:
       paths:
         - prod-eu.tfvars
     backend-configs:
-      values:
-        key: "prod-eu/terraform.tfstate"
+      paths:
+        - ../backend/prod-eu.conf
 ```
 
 ## Schema Validation

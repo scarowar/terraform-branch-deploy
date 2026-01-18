@@ -1,0 +1,220 @@
+{
+  "$defs": {
+    "ArgsConfig": {
+      "additionalProperties": false,
+      "description": "Configuration for command-line arguments (plan-args, apply-args, init-args).",
+      "properties": {
+        "inherit": {
+          "default": true,
+          "title": "Inherit",
+          "type": "boolean"
+        },
+        "args": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Args",
+          "type": "array"
+        }
+      },
+      "title": "ArgsConfig",
+      "type": "object"
+    },
+    "DefaultsConfig": {
+      "additionalProperties": false,
+      "description": "Default configuration inherited by all environments.",
+      "properties": {
+        "var-files": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PathsConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "backend-configs": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PathsConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "plan-args": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArgsConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "apply-args": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArgsConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "init-args": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArgsConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "DefaultsConfig",
+      "type": "object"
+    },
+    "EnvironmentConfig": {
+      "additionalProperties": false,
+      "description": "Configuration for a single deployment environment.",
+      "properties": {
+        "working-directory": {
+          "default": ".",
+          "title": "Working-Directory",
+          "type": "string"
+        },
+        "var-files": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PathsConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "backend-configs": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PathsConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "plan-args": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArgsConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "apply-args": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArgsConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "init-args": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArgsConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "EnvironmentConfig",
+      "type": "object"
+    },
+    "PathsConfig": {
+      "additionalProperties": false,
+      "description": "Configuration for file paths (var-files, backend-configs).",
+      "properties": {
+        "inherit": {
+          "default": true,
+          "title": "Inherit",
+          "type": "boolean"
+        },
+        "paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Paths",
+          "type": "array"
+        }
+      },
+      "title": "PathsConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Root configuration schema for .tf-branch-deploy.yml.\n\nThis model validates the entire configuration file and provides\ntype-safe access to all configuration options.",
+  "properties": {
+    "default-environment": {
+      "title": "Default-Environment",
+      "type": "string"
+    },
+    "production-environments": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Production-Environments",
+      "type": "array"
+    },
+    "environments": {
+      "additionalProperties": {
+        "$ref": "#/$defs/EnvironmentConfig"
+      },
+      "title": "Environments",
+      "type": "object"
+    },
+    "defaults": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DefaultsConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "stable-branch": {
+      "default": "main",
+      "title": "Stable-Branch",
+      "type": "string"
+    }
+  },
+  "required": [
+    "default-environment",
+    "production-environments",
+    "environments"
+  ],
+  "title": "TerraformBranchDeployConfig",
+  "type": "object"
+}
