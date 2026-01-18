@@ -62,41 +62,42 @@ def set_github_output(name: str, value: str) -> None:
 
 
 def format_error_for_comment(
-    reason: str,
-    context: str,
-    fix_steps: list[str],
-    alternatives: list[str] | None = None,
+    message: str,
+    details: str | None = None,
+    suggestion: str | None = None,
+    logs_url: str | None = None,
 ) -> str:
     """Format a professional error message for GitHub comment.
     
-    Matches branch-deploy's quality standard:
-    - Clear explanation of what went wrong
-    - Contextual details about the failure
-    - Step-by-step fix instructions
-    - Valid alternatives when applicable
+    Matches branch-deploy's clean, seamless style:
+    - No subtitles or section headers
+    - Clear explanation in natural paragraph flow
+    - Optional details as bullet points or inline code
+    - Suggestion in blockquote format
+    - Logs link when applicable
     
     Args:
-        reason: One-line explanation of what went wrong
-        context: Details about the specific failure (SHA, env, etc.)
-        fix_steps: Ordered list of steps to resolve the issue
-        alternatives: Optional list of alternative actions
+        message: Main explanation paragraph
+        details: Optional additional details (can include markdown)
+        suggestion: Optional suggestion shown in blockquote
+        logs_url: Optional link to workflow logs
     
     Returns:
         Formatted markdown string for the comment
     """
-    lines = [reason, "", f"> {context}"]
+    lines = [message]
     
-    if fix_steps:
+    if details:
         lines.append("")
-        lines.append("**How to fix:**")
-        for i, step in enumerate(fix_steps, 1):
-            lines.append(f"{i}. {step}")
+        lines.append(details)
     
-    if alternatives:
+    if logs_url:
         lines.append("")
-        lines.append("**Alternatives:**")
-        for alt in alternatives:
-            lines.append(f"- {alt}")
+        lines.append(f"📋 [View workflow logs]({logs_url})")
+    
+    if suggestion:
+        lines.append("")
+        lines.append(f"> {suggestion}")
     
     return "\n".join(lines)
 
@@ -391,14 +392,11 @@ def _handle_plan(executor: "TerraformExecutor", environment: str, sha: str) -> N
         set_github_output("plan_checksum", result.checksum)
         set_github_output("has_changes", str(result.has_changes).lower())
     if not result.success:
+        logs_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com") + "/" + os.environ.get("GITHUB_REPOSITORY", "") + "/actions/runs/" + os.environ.get("GITHUB_RUN_ID", "")
         error_msg = format_error_for_comment(
-            reason="Terraform plan failed.",
-            context="The `terraform plan` command exited with an error. Review the logs above for details.",
-            fix_steps=[
-                "Review the Terraform error output in the workflow logs",
-                "Fix any configuration or syntax errors in your `.tf` files",
-                "Commit your fixes and run `.plan to " + environment + "` again",
-            ],
+            message="Terraform plan failed. The `terraform plan` command exited with an error.",
+            logs_url=logs_url,
+            suggestion=f"Fix any configuration errors and run `.plan to {environment}` again",
         )
         set_github_output("failure_reason", error_msg)
         raise typer.Exit(1)
@@ -421,14 +419,11 @@ def _handle_apply(
         )
         apply_result = executor.apply()
         if not apply_result.success:
+            logs_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com") + "/" + os.environ.get("GITHUB_REPOSITORY", "") + "/actions/runs/" + os.environ.get("GITHUB_RUN_ID", "")
             error_msg = format_error_for_comment(
-                reason="Rollback apply failed.",
-                context="Terraform encountered an error applying the stable branch state.",
-                fix_steps=[
-                    "Review the Terraform error output in the workflow logs",
-                    "Ensure the stable branch (`main`) has valid Terraform configuration",
-                    "Check that remote state is accessible and not locked",
-                ],
+                message="Rollback apply failed. Terraform encountered an error applying the stable branch state.",
+                logs_url=logs_url,
+                suggestion="Ensure the `main` branch has valid Terraform configuration and remote state is accessible",
             )
             set_github_output("failure_reason", error_msg)
             raise typer.Exit(1)
@@ -436,16 +431,9 @@ def _handle_apply(
     else:
         console.print(f"[red]❌ No plan file found for this SHA: {plan_file}[/red]")
         error_msg = format_error_for_comment(
-            reason="No plan file found for this commit.",
-            context=f"You attempted to apply changes, but no saved plan exists for commit `{sha[:8]}`.",
-            fix_steps=[
-                f"Run `.plan to {environment}` to create a plan for this commit",
-                "Review the plan output to verify the changes",
-                f"Run `.apply to {environment}` to apply the reviewed plan",
-            ],
-            alternatives=[
-                f"For rollback to stable: `.apply main to {environment}`",
-            ],
+            message=f"No plan file found for this commit. You attempted to apply changes, but no saved plan exists for commit `{sha[:8]}`.",
+            details=f"- Run `.plan to {environment}` to create a plan\n- For rollback to stable: `.apply main to {environment}`",
+            suggestion=f"Run `.plan to {environment}` first, then `.apply to {environment}`",
         )
         set_github_output("failure_reason", error_msg)
         console.print(
@@ -469,14 +457,10 @@ def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path) -> None:
             console.print(
                 "[red]❌ Plan file checksum mismatch! Plan may have been tampered with.[/red]"
             )
+            env = os.environ.get('TF_BD_ENVIRONMENT', 'dev')
             error_msg = format_error_for_comment(
-                reason="Security validation failed: Plan file checksum mismatch.",
-                context="The plan file's checksum does not match the expected value. This could indicate tampering or corruption.",
-                fix_steps=[
-                    "Create a fresh plan by running `.plan to " + os.environ.get('TF_BD_ENVIRONMENT', 'dev') + "`",
-                    "Ensure no processes are modifying the plan file between plan and apply",
-                    "If this persists, check for cache corruption or CI configuration issues",
-                ],
+                message="Security validation failed: Plan file checksum mismatch. The plan file's checksum does not match the expected value, which could indicate tampering or corruption.",
+                suggestion=f"Create a fresh plan by running `.plan to {env}`",
             )
             set_github_output("failure_reason", error_msg)
             raise typer.Exit(1)
@@ -484,14 +468,12 @@ def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path) -> None:
 
     apply_result = executor.apply(plan_file=Path(plan_file.name))
     if not apply_result.success:
+        logs_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com") + "/" + os.environ.get("GITHUB_REPOSITORY", "") + "/actions/runs/" + os.environ.get("GITHUB_RUN_ID", "")
+        env = os.environ.get('TF_BD_ENVIRONMENT', 'dev')
         error_msg = format_error_for_comment(
-            reason="Terraform apply failed.",
-            context="The `terraform apply` command exited with an error after applying the plan.",
-            fix_steps=[
-                "Review the Terraform error output in the workflow logs above",
-                "Identify and fix the root cause (permissions, resource conflicts, etc.)",
-                "Create a new plan with `.plan to " + os.environ.get('TF_BD_ENVIRONMENT', 'dev') + "` and try again",
-            ],
+            message="Terraform apply failed. The `terraform apply` command exited with an error after applying the plan.",
+            logs_url=logs_url,
+            suggestion=f"Identify the root cause and create a new plan with `.plan to {env}`",
         )
         set_github_output("failure_reason", error_msg)
         raise typer.Exit(1)
