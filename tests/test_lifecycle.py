@@ -126,11 +126,13 @@ class TestLifecycleManager:
 
         mock_run.assert_called_once()
         call_env = mock_run.call_args[1]["env"]
-        
+
         assert call_env["GH_HOST"] == "github.enterprise.com"
 
     @patch("tf_branch_deploy.lifecycle.subprocess.run")
-    def test_run_gh_respects_existing_gh_host(self, mock_run: MagicMock, manager: LifecycleManager) -> None:
+    def test_run_gh_respects_existing_gh_host(
+        self, mock_run: MagicMock, manager: LifecycleManager
+    ) -> None:
         """Test that existing GH_HOST is respected."""
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -138,7 +140,7 @@ class TestLifecycleManager:
 
         env_vars = {
             "GITHUB_SERVER_URL": "https://github.enterprise.com",
-            "GH_HOST": "custom.host.com"
+            "GH_HOST": "custom.host.com",
         }
 
         with patch.dict(os.environ, env_vars, clear=True):
@@ -148,15 +150,15 @@ class TestLifecycleManager:
         assert call_env["GH_HOST"] == "custom.host.com"
 
     @patch("tf_branch_deploy.lifecycle.subprocess.run")
-    def test_run_gh_ignores_github_com(self, mock_run: MagicMock, manager: LifecycleManager) -> None:
+    def test_run_gh_ignores_github_com(
+        self, mock_run: MagicMock, manager: LifecycleManager
+    ) -> None:
         """Test that we don't set GH_HOST for standard github.com."""
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_run.return_value = mock_result
 
-        env_vars = {
-            "GITHUB_SERVER_URL": "https://github.com"
-        }
+        env_vars = {"GITHUB_SERVER_URL": "https://github.com"}
 
         with patch.dict(os.environ, env_vars, clear=True):
             manager._run_gh(["gh", "version"])
