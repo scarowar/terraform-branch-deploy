@@ -70,6 +70,9 @@ jobs:
 !!! note "Single Job Architecture"
     All steps run in one job. Environment variables from trigger mode are available to subsequent steps automatically.
 
+!!! tip "Versioning"
+    Examples use `@v0` which always resolves to the latest `v0.x.x` release. For production, consider pinning to a specific version like `@v0.2.0` or using a SHA for maximum reproducibility.
+
 ## Step 3: Add Cloud Credentials
 
 Insert cloud credentials between the checkouts:

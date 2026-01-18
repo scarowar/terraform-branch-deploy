@@ -93,6 +93,8 @@ jobs:
 
 **3. Comment on a PR:** `.plan to dev`
 
+> **Versioning**: Examples use `@v0` which always resolves to the latest `v0.x.x` release. For production, pin to a specific version like `@v0.2.0` or use a SHA.
+
 ---
 
 ## Commands
