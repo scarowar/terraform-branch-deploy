@@ -1,7 +1,7 @@
 [project]
 name = "tf-branch-deploy"
 version = "0.2.0"
-description = "ChatOps for Terraform infrastructure deployments via GitHub PRs."
+description = "Terraform integrated into the Branch Deploy operating model. Plan, review, and apply infrastructure changes within Pull Requests to ensure the main branch remains stable."
 readme = "README.md"
 authors = [{ name = "scarowar", email = "skanthavar@live.com" }]
 requires-python = ">=3.12"
@@ -30,6 +30,9 @@ dev = [
     "mypy>=1.6",
     "types-PyYAML>=6.0",
     "zensical>=0.0.15",
+    "bandit>=1.9.2",
+    "pytest-cov>=7.0.0",
+    "semgrep>=1.86.0",
 ]
 
 [tool.ruff]

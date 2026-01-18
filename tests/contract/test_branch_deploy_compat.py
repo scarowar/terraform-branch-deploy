@@ -117,7 +117,8 @@ class TestActionYmlValidity:
         mode_input = our_action["inputs"].get("mode", {})
         description = mode_input.get("description", "")
 
-        assert "dispatch" in description.lower() or "execute" in description.lower()
+        # v0.2.0: trigger/execute modes (dispatch removed)
+        assert "trigger" in description.lower() or "execute" in description.lower()
 
     def test_github_token_is_required(self, our_action: dict) -> None:
         """Verify github-token is marked as required."""

@@ -9,7 +9,7 @@ flowchart TD
     B -->|Yes| D{branch-deploy responded?}
     D -->|No| E[Check permissions & triggers]
     D -->|Yes| F{Terraform ran?}
-    F -->|No| G[Check pre-terraform-hook]
+    F -->|No| G[Check mode: execute]
     F -->|Yes| H{Plan/Apply succeeded?}
     H -->|No| I[Check Terraform error]
     H -->|Yes| J[Check PR comment output]
@@ -185,32 +185,6 @@ permissions:
   deployments: write    # For deployment status
   checks: read          # If using checks validation
   statuses: read        # If using required contexts
-```
-
----
-
-### Pre-Terraform Hook Fails
-
-**Cause:** Hook script exited with non-zero code.
-
-**Fix:**
-
-1. Check the workflow logs for the error
-2. Use `set -e` to fail on first error:
-
-```yaml
-pre-terraform-hook: |
-  set -e
-  ./scripts/build.sh
-```
-
-3. Test your hook locally:
-
-```bash
-export TF_BD_ENVIRONMENT=dev
-export TF_BD_SHA=$(git rev-parse HEAD)
-export TF_BD_OPERATION=plan
-./your-hook.sh
 ```
 
 ---

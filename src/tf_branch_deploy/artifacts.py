@@ -2,7 +2,6 @@
 Plan artifact management.
 
 Handles storage, retrieval, and verification of Terraform plan binaries.
-This is one of the THREE things we add on top of branch-deploy.
 """
 
 from __future__ import annotations

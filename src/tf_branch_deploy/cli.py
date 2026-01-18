@@ -3,10 +3,9 @@ Terraform Branch Deploy CLI.
 
 Typer-based CLI for Terraform infrastructure deployments via GitHub PRs.
 
-Three modes:
-- parse: Just read config, no branch-deploy, no terraform
-- dispatch: [For action.yml] Full flow with branch-deploy
-- execute: Just run terraform, no branch-deploy
+Two modes:
+- trigger: [For action.yml] Parse command, export TF_BD_* env vars, STOP
+- execute: [For action.yml] Run terraform with lifecycle completion
 """
 
 from __future__ import annotations
@@ -28,8 +27,9 @@ from rich.table import Table
 
 from .config import load_config
 
-# Constants
 DEFAULT_CONFIG_PATH = Path(".tf-branch-deploy.yml")
+GITHUB_URL_DEFAULT = "https://github.com"
+ACTIONS_RUNS_PATH = "/actions/runs/"
 
 app = typer.Typer(
     name="tf-branch-deploy",
@@ -42,9 +42,8 @@ console = Console()
 class Mode(str, Enum):
     """Execution mode for action.yml."""
 
-    PARSE = "parse"  # Just read config, output settings
-    DISPATCH = "dispatch"  # Full flow: branch-deploy + terraform (default in action.yml)
-    EXECUTE = "execute"  # Run terraform only (use after your own branch-deploy call)
+    TRIGGER = "trigger"  # Parse command, export TF_BD_* env vars, STOP
+    EXECUTE = "execute"  # Run terraform with lifecycle completion
 
 
 def set_github_output(name: str, value: str) -> None:
@@ -60,6 +59,47 @@ def set_github_output(name: str, value: str) -> None:
             else:
                 f.write(f"{name}={value}\n")
     console.print(f"[dim]Output: {name}={value[:50]}{'...' if len(value) > 50 else ''}[/dim]")
+
+
+def format_error_for_comment(
+    message: str,
+    details: str | None = None,
+    suggestion: str | None = None,
+    logs_url: str | None = None,
+) -> str:
+    """Format a professional error message for GitHub comment.
+
+    Matches branch-deploy's clean, seamless style:
+    - No subtitles or section headers
+    - Clear explanation in natural paragraph flow
+    - Optional details as bullet points or inline code
+    - Suggestion in blockquote format
+    - Logs link when applicable
+
+    Args:
+        message: Main explanation paragraph
+        details: Optional additional details (can include markdown)
+        suggestion: Optional suggestion shown in blockquote
+        logs_url: Optional link to workflow logs
+
+    Returns:
+        Formatted markdown string for the comment
+    """
+    lines = [message]
+
+    if details:
+        lines.append("")
+        lines.append(details)
+
+    if logs_url:
+        lines.append("")
+        lines.append(f"📋 [View workflow logs]({logs_url})")
+
+    if suggestion:
+        lines.append("")
+        lines.append(f"> {suggestion}")
+
+    return "\n".join(lines)
 
 
 def _parse_extra_args(raw: str) -> list[str]:
@@ -141,73 +181,20 @@ def _strip_shell_quotes(arg: str) -> str:
         -var='msg=hello world' -> -var=msg=hello world
         -target=module.test["key"] -> -target=module.test["key"] (preserve inner quotes)
     """
-    # Find the first = to split flag from value
     eq_pos = arg.find("=")
     if eq_pos == -1:
-        return arg  # No value part (e.g., just a flag)
+        return arg
 
-    flag = arg[: eq_pos + 1]  # e.g., "-var="
-    value = arg[eq_pos + 1 :]  # e.g., "'key=value'"
+    flag = arg[: eq_pos + 1]
+    value = arg[eq_pos + 1 :]
 
-    # Strip outer quotes from value if present
-    if len(value) >= 2:
-        if (value.startswith("'") and value.endswith("'")) or (
-            value.startswith('"') and value.endswith('"')
-        ):
-            value = value[1:-1]
+    if len(value) >= 2 and (
+        (value.startswith("'") and value.endswith("'"))
+        or (value.startswith('"') and value.endswith('"'))
+    ):
+        value = value[1:-1]
 
     return flag + value
-
-
-@app.command()
-def parse(
-    environment: Annotated[str, typer.Option("--environment", "-e", help="Target environment")],
-    config_path: Annotated[
-        Path, typer.Option("--config", "-c", help="Path to .tf-branch-deploy.yml")
-    ] = DEFAULT_CONFIG_PATH,
-) -> None:
-    """
-    Parse config and output settings for an environment.
-
-    This mode does NOT call branch-deploy or run terraform.
-    Use this when you need config info before calling branch-deploy yourself.
-    """
-    console.print(
-        Panel.fit("[bold blue]Terraform Branch Deploy[/bold blue] v0.2.0", subtitle="Parse Mode")
-    )
-
-    try:
-        config = load_config(config_path)
-    except FileNotFoundError:
-        console.print(f"[red]Error:[/red] Config file not found: {config_path}")
-        raise typer.Exit(1) from None
-    except Exception as e:
-        console.print(f"[red]Error:[/red] Invalid config: {e}")
-        raise typer.Exit(1) from None
-
-    if environment not in config.environments:
-        console.print(f"[red]Error:[/red] Environment '{environment}' not found")
-        raise typer.Exit(1)
-
-    env_config = config.get_environment(environment)
-
-    # Resolve all settings
-    var_files = config.resolve_var_files(environment)
-    backend_configs = config.resolve_backend_configs(environment)
-    init_args = config.resolve_args(environment, "init_args")
-    plan_args = config.resolve_args(environment, "plan_args")
-    apply_args = config.resolve_args(environment, "apply_args")
-
-    # Set outputs
-    set_github_output("working_directory", env_config.working_directory)
-    set_github_output("var_files", json.dumps(var_files))
-    set_github_output("backend_configs", json.dumps(backend_configs))
-    set_github_output("init_args", json.dumps(init_args))
-    set_github_output("plan_args", json.dumps(plan_args))
-    set_github_output("apply_args", json.dumps(apply_args))
-    set_github_output("is_production", str(config.is_production(environment)).lower())
-
-    console.print(f"[green]✅ Parsed config for environment: {environment}[/green]")
 
 
 def _load_and_validate_config(
@@ -230,10 +217,96 @@ def _load_and_validate_config(
     return config, config.get_environment(environment)
 
 
+@app.command(name="get-config")
+def get_config(
+    key: Annotated[
+        str,
+        typer.Argument(
+            help="Config key to retrieve (default-environment or production-environments)"
+        ),
+    ],
+    config_path: Annotated[
+        Path, typer.Option("--config", "-c", help="Path to .tf-branch-deploy.yml")
+    ] = DEFAULT_CONFIG_PATH,
+) -> None:
+    """
+    Retrieve a value from the configuration file.
+
+    Replaces yq usage in action.yml for robust, dependency-free config parsing.
+    """
+    try:
+        config = load_config(config_path)
+    except FileNotFoundError:
+        console.print(f"[red]Error:[/red] Config file not found: {config_path}")
+        raise typer.Exit(1) from None
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Invalid config: {e}")
+        raise typer.Exit(1) from None
+
+    if key == "default-environment":
+        print(config.default_environment)
+    elif key == "production-environments":
+        print(",".join(config.production_environments))
+    else:
+        console.print(f"[red]Error:[/red] Unsupported key: {key}")
+        raise typer.Exit(1)
+
+
+@app.command(name="complete-lifecycle")
+def complete_lifecycle(
+    status: Annotated[str, typer.Option(help="Execution status (success/failure)")],
+    failure_reason: Annotated[
+        str | None, typer.Option(help="Reason for failure if status is failure")
+    ] = None,
+) -> None:
+    """Complete the deployment lifecycle (update status, reactions, comments)."""
+    from .lifecycle import LifecycleManager
+
+    # Gather context from env vars
+    env_vars = dict(os.environ)
+    repo = env_vars.get("GH_REPO") or env_vars.get("GITHUB_REPOSITORY")
+    token = env_vars.get("GITHUB_TOKEN")
+
+    if not repo or not token:
+        console.print("[red]Error:[/red] GH_REPO/GITHUB_REPOSITORY or GITHUB_TOKEN not set")
+        raise typer.Exit(1)
+
+    manager = LifecycleManager(repo=repo, github_token=token)
+
+    # 1. Update deployment status
+    deployment_id = env_vars.get("TF_BD_DEPLOYMENT_ID")
+    environment = env_vars.get("TF_BD_ENVIRONMENT")
+    if deployment_id and environment:
+        manager.update_deployment_status(deployment_id, status, environment)
+
+    # 2. Remove initial reaction
+    comment_id = env_vars.get("TF_BD_COMMENT_ID")
+    reaction_id = env_vars.get("TF_BD_INITIAL_REACTION_ID")
+    if comment_id and reaction_id:
+        manager.remove_reaction(comment_id, reaction_id)
+
+    # 3. Add result reaction
+    reaction = "rocket" if status == "success" else "-1"
+    if comment_id:
+        manager.add_reaction(comment_id, reaction)
+
+    # 4. Post result comment
+    pr_number = env_vars.get("TF_BD_PR_NUMBER")
+    if pr_number:
+        body = manager.format_result_comment(status, env_vars, failure_reason)
+        manager.post_result_comment(pr_number, body)
+
+    # 5. Remove non-sticky lock
+    if environment:
+        manager.remove_non_sticky_lock(environment)
+
+    console.print("\n[green]✅ Lifecycle complete[/green]")
+
+
 @app.command()
 def execute(
     environment: Annotated[str, typer.Option("--environment", "-e", help="Target environment")],
-    operation: Annotated[str, typer.Option("--operation", "-o", help="plan or apply")],
+    operation: Annotated[str, typer.Option("--operation", "-o", help="plan, apply, or rollback")],
     sha: Annotated[str, typer.Option("--sha", "-s", help="Git commit SHA")],
     config_path: Annotated[
         Path, typer.Option("--config", "-c", help="Path to .tf-branch-deploy.yml")
@@ -267,18 +340,13 @@ def execute(
     config, env_config = _load_and_validate_config(config_path, environment)
     resolved_working_dir = Path(working_dir or env_config.working_directory)
 
-    # Parse extra args - check env var first (set by action.yml), then CLI option
-    # Using env var avoids shell escaping issues with complex args like -var='key=value'
     raw_extra_args = extra_args or os.environ.get("TF_BD_EXTRA_ARGS")
     parsed_extra_args = []
 
     if raw_extra_args:
-        # Custom parser that splits on unquoted spaces but preserves quotes in values
-        # This handles -target=module.test["key"] and -var='key=value' correctly
         parsed_extra_args = _parse_extra_args(raw_extra_args)
         console.print(f"[cyan]📝 Extra args from command:[/cyan] {parsed_extra_args}")
 
-    # Display info
     table = Table(title="Terraform Execution")
     table.add_column("Setting", style="cyan")
     table.add_column("Value", style="green")
@@ -291,14 +359,12 @@ def execute(
         table.add_row("Extra Args", " ".join(parsed_extra_args))
     console.print(table)
 
-    # Resolve args from config
     var_files = config.resolve_var_files(environment)
     backend_configs = config.resolve_backend_configs(environment)
     init_args = config.resolve_args(environment, "init_args")
     plan_args = config.resolve_args(environment, "plan_args") + parsed_extra_args
     apply_args = config.resolve_args(environment, "apply_args") + parsed_extra_args
 
-    # Set outputs for any downstream steps
     set_github_output("working_directory", str(resolved_working_dir))
     set_github_output("var_files", json.dumps(var_files))
     set_github_output("is_production", str(config.is_production(environment)).lower())
@@ -313,10 +379,8 @@ def execute(
             console.print(f"  terraform apply {' '.join(apply_args)}")
         return
 
-    # Actually execute terraform
     from .executor import TerraformExecutor
 
-    # Parse PR number defensively (could be empty or non-numeric)
     pr_number_str = os.environ.get("TF_BD_PR_NUMBER", "")
     try:
         pr_number = int(pr_number_str) if pr_number_str else None
@@ -336,19 +400,22 @@ def execute(
         pr_number=pr_number,
     )
 
-    # Init
     init_result = executor.init()
     if not init_result.success:
         console.print("[red]Terraform init failed[/red]")
+        set_github_output(
+            "failure_reason", "Terraform initialization failed. Check logs for details."
+        )
         raise typer.Exit(1)
 
-    # Plan or Apply
     if operation == "plan":
         _handle_plan(executor, environment, sha)
-    elif operation == "apply":
+    elif operation == "apply" or operation == "rollback":
         _handle_apply(executor, environment, sha, resolved_working_dir)
     else:
-        console.print(f"[red]Unknown operation: {operation}[/red]")
+        msg = f"Unknown operation: {operation}"
+        console.print(f"[red]{msg}[/red]")
+        set_github_output("failure_reason", msg)
         raise typer.Exit(1)
 
     console.print("\n[green]✅ Terraform execution complete[/green]")
@@ -364,6 +431,19 @@ def _handle_plan(executor: "TerraformExecutor", environment: str, sha: str) -> N
         set_github_output("plan_checksum", result.checksum)
         set_github_output("has_changes", str(result.has_changes).lower())
     if not result.success:
+        logs_url = (
+            os.environ.get("GITHUB_SERVER_URL", GITHUB_URL_DEFAULT)
+            + "/"
+            + os.environ.get("GITHUB_REPOSITORY", "")
+            + ACTIONS_RUNS_PATH
+            + os.environ.get("GITHUB_RUN_ID", "")
+        )
+        error_msg = format_error_for_comment(
+            message="Terraform plan failed. The `terraform plan` command exited with an error.",
+            logs_url=logs_url,
+            suggestion=f"Fix any configuration errors and run `.plan to {environment}` again",
+        )
+        set_github_output("failure_reason", error_msg)
         raise typer.Exit(1)
 
 
@@ -384,10 +464,29 @@ def _handle_apply(
         )
         apply_result = executor.apply()
         if not apply_result.success:
+            logs_url = (
+                os.environ.get("GITHUB_SERVER_URL", GITHUB_URL_DEFAULT)
+                + "/"
+                + os.environ.get("GITHUB_REPOSITORY", "")
+                + ACTIONS_RUNS_PATH
+                + os.environ.get("GITHUB_RUN_ID", "")
+            )
+            error_msg = format_error_for_comment(
+                message="Rollback apply failed. Terraform encountered an error applying the stable branch state.",
+                logs_url=logs_url,
+                suggestion="Ensure the `main` branch has valid Terraform configuration and remote state is accessible",
+            )
+            set_github_output("failure_reason", error_msg)
             raise typer.Exit(1)
         console.print("[dim]📋 Rollback applied directly (no plan file)[/dim]")
     else:
         console.print(f"[red]❌ No plan file found for this SHA: {plan_file}[/red]")
+        error_msg = format_error_for_comment(
+            message=f"No plan file found for this commit. You attempted to apply changes, but no saved plan exists for commit `{sha[:8]}`.",
+            details=f"- Run `.plan to {environment}` to create a plan\n- For rollback to stable: `.apply main to {environment}`",
+            suggestion=f"Run `.plan to {environment}` first, then `.apply to {environment}`",
+        )
+        set_github_output("failure_reason", error_msg)
         console.print(
             f"[yellow]💡 You must run '.plan to {environment}' before '.apply to {environment}'[/yellow]"
         )
@@ -409,11 +508,31 @@ def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path) -> None:
             console.print(
                 "[red]❌ Plan file checksum mismatch! Plan may have been tampered with.[/red]"
             )
+            env = os.environ.get("TF_BD_ENVIRONMENT", "dev")
+            error_msg = format_error_for_comment(
+                message="Security validation failed: Plan file checksum mismatch. The plan file's checksum does not match the expected value, which could indicate tampering or corruption.",
+                suggestion=f"Create a fresh plan by running `.plan to {env}`",
+            )
+            set_github_output("failure_reason", error_msg)
             raise typer.Exit(1)
         console.print("[green]✅ Plan checksum verified[/green]")
 
     apply_result = executor.apply(plan_file=Path(plan_file.name))
     if not apply_result.success:
+        logs_url = (
+            os.environ.get("GITHUB_SERVER_URL", GITHUB_URL_DEFAULT)
+            + "/"
+            + os.environ.get("GITHUB_REPOSITORY", "")
+            + ACTIONS_RUNS_PATH
+            + os.environ.get("GITHUB_RUN_ID", "")
+        )
+        env = os.environ.get("TF_BD_ENVIRONMENT", "dev")
+        error_msg = format_error_for_comment(
+            message="Terraform apply failed. The `terraform apply` command exited with an error after applying the plan.",
+            logs_url=logs_url,
+            suggestion=f"Identify the root cause and create a new plan with `.plan to {env}`",
+        )
+        set_github_output("failure_reason", error_msg)
         raise typer.Exit(1)
 
 

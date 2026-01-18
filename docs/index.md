@@ -1,92 +1,126 @@
 # Terraform Branch Deploy
 
-![Terraform Branch Deploy Cover](assets/images/cover-dark.png#only-dark)
-![Terraform Branch Deploy Cover](assets/images/cover-light.png#only-light)
+![Terraform Branch Deploy](assets/images/cover-dark.png#only-dark)
+![Terraform Branch Deploy](assets/images/cover-light.png#only-light)
 
-ChatOps for Terraform infrastructure deployments via GitHub PRs.
+Terraform integrated into the [Branch Deploy](https://github.com/github/branch-deploy) operating model.
 
-## Usage
+<video controls width="100%">
+  <source src="assets/terraform-branch-deploy-demo.mp4" type="video/mp4">
+</video>
 
-```yaml
-- uses: scarowar/terraform-branch-deploy@v0.2.0
-  with:
-    github-token: ${{ secrets.GITHUB_TOKEN }}
+## The Problem
+
+Traditional CI/CD deploys after merging. If deployment fails, main is broken.
+
+```mermaid
+flowchart TD
+    A[PR Approved] --> B[Merge to main]
+    B --> C[Deploy]
+    C --> D{Success?}
+    D -->|No| E[Main is broken]
+    D -->|Yes| F[Done]
 ```
 
-## Features
+## The Solution
 
-| Feature | Description |
-|---------|-------------|
-| **PR-driven** | Trigger deployments from PR comments with `.plan` and `.apply` |
-| **Multi-environment** | Define dev, staging, prod with per-environment configuration |
-| **Plan safety** | Requires `.plan` before `.apply` with SHA verification |
-| **Environment locking** | Prevents concurrent deployments to the same environment |
-| **Dynamic args** | Pass terraform arguments: `.plan to dev \| -target=module.api` |
-| **Pre-terraform hooks** | Build lambdas, fetch secrets, run migrations before TF |
-| **GHES compatible** | Works with GitHub Enterprise Server |
+Branch Deploy inverts this: deploy from the PR branch first, then merge only if successful.
+
+```mermaid
+flowchart TD
+    A[PR Created] --> B[Deploy branch]
+    B --> C{Success?}
+    C -->|No| D[Fix and retry]
+    C -->|Yes| E[Merge to main]
+    E --> F[Main stays stable]
+```
+
+Terraform Branch Deploy applies this model to infrastructure:
+
+1. **Plan** from your pull request
+2. **Review** the changes
+3. **Apply** that exact plan
+
+The plan is cached and checksummed. What you review is what gets applied.
+
+---
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `.plan to dev` | Preview changes |
-| `.apply to dev` | Deploy changes |
-| `.lock dev` | Lock environment |
-| `.unlock dev` | Unlock environment |
-| `.wcid` | Who's deploying? |
-| `.apply main to prod` | Rollback to main |
+| Command | Effect |
+|---------|--------|
+| `.plan to <env>` | Preview infrastructure changes |
+| `.apply to <env>` | Apply the reviewed plan |
+| `.apply main to <env>` | Rollback to stable main branch |
+| `.lock <env>` | Acquire environment lock |
+| `.unlock <env>` | Release lock |
 
-## PR Comment Examples
+Pass extra arguments with a pipe: `.plan to prod | -target=module.database`
 
-=== "Plan"
+---
 
-    ![Plan Command](assets/images/plan-command.png)
+## Quick Start
 
-    ![Plan Output](assets/images/plan-output.png)
+Create `.tf-branch-deploy.yml`:
 
-=== "Apply"
+```yaml
+default-environment: dev
+production-environments: [prod]
 
-    ![Apply Command](assets/images/apply-command.png)
+environments:
+  dev:
+    working-directory: terraform/dev
+  prod:
+    working-directory: terraform/prod
+```
 
-    ![Apply Output](assets/images/apply-output.png)
+Create `.github/workflows/deploy.yml`:
 
-=== "Locking"
+```yaml
+name: Deploy
+on:
+  issue_comment:
+    types: [created]
 
-    ![Lock](assets/images/lock.png)
+permissions:
+  contents: write
+  pull-requests: write
+  deployments: write
 
-    ![Who's deploying](assets/images/wcid.png)
+jobs:
+  deploy:
+    if: github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-    ![Unlock](assets/images/unlock.png)
+      - uses: scarowar/terraform-branch-deploy@v0.2.0
+        with:
+          mode: trigger
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
-## Inputs
+      - uses: actions/checkout@v4
+        if: env.TF_BD_CONTINUE == 'true'
+        with:
+          ref: ${{ env.TF_BD_REF }}
 
-| Input | Required | Description |
-|-------|----------|-------------|
-| `github-token` | Yes | GitHub token with PR write access |
-| `mode` | No | `dispatch` (default) or `execute` |
-| `config-path` | No | Path to `.tf-branch-deploy.yml` |
-| `pre-terraform-hook` | No | Shell commands before TF runs |
+      - uses: scarowar/terraform-branch-deploy@v0.2.0
+        if: env.TF_BD_CONTINUE == 'true'
+        with:
+          mode: execute
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+```
 
-[View all inputs →](reference/inputs.md)
+Comment on a PR: `.plan to dev`
 
-## Outputs
-
-| Output | Description |
-|--------|-------------|
-| `working-directory` | Resolved working directory |
-| `is-production` | Whether target is production |
-| `has-changes` | Whether plan detected changes |
-| `plan-checksum` | SHA256 of plan file |
+---
 
 ## Documentation
 
-| Page | Description |
-|------|-------------|
-| [Getting Started](getting-started/index.md) | First deployment in 5 minutes |
-| [Configuration](guides/configuration.md) | `.tf-branch-deploy.yml` reference |
-| [Modes](guides/modes.md) | Dispatch vs Execute |
-| [Pre-Terraform Hooks](guides/hooks.md) | Custom pre-deploy logic |
-| [Guardrails & Security](guides/guardrails.md) | Enterprise governance features |
-| [Reference](reference/inputs.md) | All inputs & outputs |
-| [Examples](examples/index.md) | Workflow snippets |
-| [Troubleshooting](troubleshooting.md) | Common issues |
+- [Quickstart](quickstart.md) — First deployment in 5 minutes
+- [Trigger and Execute](concepts/modes.md) — How the two-mode architecture works
+- [Configuration](configuration/index.md) — Environment setup and inheritance
+- [Commands](reference/commands.md) — All PR comment commands
+- [Inputs](reference/inputs.md) — Workflow configuration
+- [Security](security.md) — Access control and guardrails
+- [Troubleshooting](troubleshooting.md) — Common issues

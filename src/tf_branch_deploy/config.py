@@ -90,12 +90,9 @@ class TerraformBranchDeployConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    # Required fields
     default_environment: str = Field(..., alias="default-environment")
     production_environments: list[str] = Field(..., alias="production-environments")
     environments: dict[str, EnvironmentConfig]
-
-    # Optional fields
     defaults: DefaultsConfig | None = None
     stable_branch: str = Field(default="main", alias="stable-branch")
 
@@ -111,14 +108,11 @@ class TerraformBranchDeployConfig(BaseModel):
         """Ensure all referenced environments exist."""
         env_names = set(self.environments.keys())
 
-        # Validate default-environment exists
         if self.default_environment not in env_names:
             raise ValueError(
                 f"default-environment '{self.default_environment}' is not defined in environments. "
                 f"Available environments: {sorted(env_names)}"
             )
-
-        # Validate production-environments exist
         for prod_env in self.production_environments:
             if prod_env not in env_names:
                 raise ValueError(
@@ -146,16 +140,13 @@ class TerraformBranchDeployConfig(BaseModel):
         env_config = self.get_environment(environment)
         result: list[str] = []
 
-        # Check if we should inherit from defaults
         should_inherit = True
         if env_config.var_files is not None:
             should_inherit = env_config.var_files.inherit
 
-        # Add defaults if inheriting
         if should_inherit and self.defaults and self.defaults.var_files:
             result.extend(self.defaults.var_files.paths)
 
-        # Add environment-specific paths
         if env_config.var_files:
             result.extend(env_config.var_files.paths)
 

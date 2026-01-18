@@ -1,77 +1,81 @@
+<div align="center">
+
+# Terraform Branch Deploy
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/images/cover-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/images/cover-light.png">
-  <img alt="Terraform Branch Deploy" src="docs/assets/images/cover-light.png">
+  <img alt="Terraform Branch Deploy" src="docs/assets/images/cover-light.png" width="600">
 </picture>
 
-<p align="center">
-  <a href="https://github.com/scarowar/terraform-branch-deploy/actions/workflows/ci.yml"><img src="https://github.com/scarowar/terraform-branch-deploy/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/scarowar/terraform-branch-deploy/actions/workflows/codeql.yml"><img src="https://github.com/scarowar/terraform-branch-deploy/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
-  <a href="https://api.scorecard.dev/projects/github.com/scarowar/terraform-branch-deploy"><img src="https://api.scorecard.dev/projects/github.com/scarowar/terraform-branch-deploy/badge" alt="OpenSSF Scorecard"></a>
-  <a href="https://github.com/scarowar/terraform-branch-deploy/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT License"></a>
-</p>
+**Terraform integrated into the [Branch Deploy](https://github.com/github/branch-deploy) operating model.**
+**Plan, review, and apply infrastructure changes within Pull Requests to ensure the main branch remains stable.**
 
-<p align="center">
-  <a href="https://scarowar.github.io/terraform-branch-deploy/">Documentation</a> •
-  <a href="https://scarowar.github.io/terraform-branch-deploy/getting-started/">Getting Started</a> •
-  <a href="https://scarowar.github.io/terraform-branch-deploy/examples/">Examples</a>
-</p>
+[![GitHub release](https://img.shields.io/github/v/release/scarowar/terraform-branch-deploy?style=flat-square)](https://github.com/scarowar/terraform-branch-deploy/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/scarowar/terraform-branch-deploy/ci.yml?style=flat-square&label=CI)](https://github.com/scarowar/terraform-branch-deploy/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/scarowar/terraform-branch-deploy?style=flat-square&label=scorecard)](https://securityscorecards.dev/viewer/?uri=github.com/scarowar/terraform-branch-deploy)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
+
+[**Documentation**](https://scarowar.github.io/terraform-branch-deploy/) · [**Quickstart**](https://scarowar.github.io/terraform-branch-deploy/quickstart/) · [**Configuration**](https://scarowar.github.io/terraform-branch-deploy/configuration/)
+
+</div>
 
 ---
 
-A GitHub Action that enables Terraform deployments via PR comments. Built on top of [github/branch-deploy](https://github.com/github/branch-deploy), it adds Terraform-specific features like plan caching, environment configuration, and pre-terraform hooks.
+## See It in Action
 
 https://github.com/user-attachments/assets/7b9d1660-bf20-4fa1-8b07-34f0c0e9f334
 
-## Why This Action?
+---
 
-| Without terraform-branch-deploy | With terraform-branch-deploy |
-|--------------------------------|------------------------------|
-| Multiple workflows for plan/apply | Single workflow handles everything |
-| Manual plan file management | Automatic plan caching with SHA verification |
-| Environment config scattered in workflows | Centralized `.tf-branch-deploy.yml` |
-| No enforcement of plan-before-apply | Built-in safety: apply requires matching plan |
-| Custom locking implementation | Environment locking via branch-deploy |
+## Why
 
-## Commands
+Traditional CI/CD deploys after merging. If deployment fails, main is broken.
 
-```text
-.plan to dev              # Preview changes
-.apply to dev             # Deploy changes
-.lock dev                 # Lock environment
-.unlock dev               # Release lock
-.wcid                     # Who's deploying?
-.apply main to prod       # Emergency rollback
+```mermaid
+flowchart LR
+    subgraph Traditional["Traditional CI/CD"]
+        A[Merge] --> B[Deploy] --> C{Success?}
+        C -->|No| D[Main broken]
+    end
+    subgraph BranchDeploy["Branch Deploy"]
+        E[Deploy PR] --> F{Success?}
+        F -->|Yes| G[Merge]
+        F -->|No| H[Fix & retry]
+    end
 ```
 
-> **Note**: `dev` and `prod` are example environment names. Define your own environments in `.tf-branch-deploy.yml`.
+**Branch Deploy inverts this:** deploy from your PR branch first, then merge if successful. Main stays stable. To roll back, deploy main.
 
-## Features
+Terraform Branch Deploy applies this model to infrastructure:
 
-- **PR Comment Commands**: Run `.plan to dev` or `.apply to prod` directly from pull request comments. The action parses commands, manages deployments, and posts results back to the PR.
+1. **Plan** from your pull request
+2. **Review** the changes
+3. **Apply** that exact plan
 
-- **Plan-Before-Apply Safety**: Apply operations require a matching plan file for the same commit SHA. This prevents applying stale plans after new commits and ensures you review exactly what will be deployed.
+The plan is cached and checksummed. What you review is what gets applied.
 
-- **Environment Locking**: Prevents concurrent deployments to the same environment. Use `.lock dev` to reserve an environment and `.unlock dev` to release it. Locks can optionally persist across deploys (`sticky-locks`).
-
-- **Multi-Environment Config**: Define per-environment settings in `.tf-branch-deploy.yml`—working directories, var files, backend configs, and terraform arguments. Environments can inherit from shared defaults.
-
-- **Deployment Order Enforcement**: Optionally require deployments to follow a specific order (e.g., `dev → staging → prod`). The action blocks production deploys if lower environments haven't been deployed first.
-
-- **Pre-Terraform Hooks**: Run shell commands after checkout but before terraform—useful for building Lambda packages, fetching secrets, or running database migrations.
-
-- **Rollback Support**: Use `.apply main to prod` to deploy the stable branch code directly, bypassing the plan requirement for emergency rollbacks.
-
-## Requirements
-
-- **Python 3.12+**: GitHub-hosted runners have Python pre-installed. Self-hosted or CodeBuild runners must have Python 3.12 or higher available.
+---
 
 ## Quick Start
 
-**1. Create workflow** (`.github/workflows/deploy.yml`)
+**1. Create `.tf-branch-deploy.yml`:**
 
 ```yaml
-name: Terraform Deploy
+default-environment: dev
+production-environments: [prod]
+
+environments:
+  dev:
+    working-directory: terraform/dev
+  prod:
+    working-directory: terraform/prod
+```
+
+**2. Create `.github/workflows/deploy.yml`:**
+
+```yaml
+name: Deploy
 on:
   issue_comment:
     types: [created]
@@ -87,82 +91,64 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: scarowar/terraform-branch-deploy@v0.2.0
         with:
+          mode: trigger
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/checkout@v4
+        if: env.TF_BD_CONTINUE == 'true'
+        with:
+          ref: ${{ env.TF_BD_REF }}
+
+      - uses: scarowar/terraform-branch-deploy@v0.2.0
+        if: env.TF_BD_CONTINUE == 'true'
+        with:
+          mode: execute
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-**2. Create config** (`.tf-branch-deploy.yml`)
+**3. Comment on a PR:** `.plan to dev`
 
-```yaml
-default-environment: dev
-production-environments: [prod]
+---
 
-environments:
-  dev:
-    working-directory: terraform/dev
-  prod:
-    working-directory: terraform/prod
-```
+## Commands
 
-**3. Comment on a PR**: `.plan to dev`
+| Command | Effect |
+|---------|--------|
+| `.plan to <env>` | Preview infrastructure changes |
+| `.apply to <env>` | Apply the reviewed plan |
+| `.apply main to <env>` | Rollback to main branch |
+| `.lock <env>` | Acquire environment lock |
+| `.unlock <env>` | Release lock |
 
-## How It Works
+Pass extra arguments: `.plan to prod | -target=module.database`
 
-```mermaid
-flowchart LR
-    A[PR Comment] --> B{terraform-branch-deploy}
-    B --> C[branch-deploy]
-    C --> D[Parse Command]
-    D --> E[Lock Environment]
-    E --> F[Run Terraform]
-    F --> G[Post Results]
-    G --> H[Unlock]
-```
-
-**Dispatch Mode** (default): The action handles everything—command parsing, locking, terraform execution, and status updates.
-
-**Execute Mode**: You manage `github/branch-deploy` yourself and use this action only for terraform execution. Useful for policy gates between parsing and execution.
-
-## Inputs
-
-| Input | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `github-token` | Yes | | GitHub token with PR write access |
-| `mode` | No | `dispatch` | `dispatch` or `execute` |
-| `config-path` | No | `.tf-branch-deploy.yml` | Path to config file |
-| `terraform-version` | No | `latest` | Terraform version to install |
-| `pre-terraform-hook` | No | | Shell commands before TF runs |
-| `dry-run` | No | `false` | Print commands without executing |
-
-[View all inputs →](https://scarowar.github.io/terraform-branch-deploy/reference/inputs/)
-
-## Outputs
-
-| Output | Description |
-|--------|-------------|
-| `working-directory` | Resolved Terraform working directory |
-| `is-production` | `true` if deploying to production environment |
-| `has-changes` | `true` if plan detected infrastructure changes |
-| `plan-file` | Path to generated plan file |
-| `plan-checksum` | SHA256 checksum of plan file |
+---
 
 ## Documentation
 
-| Guide | Description |
-|-------|-------------|
-| [Getting Started](https://scarowar.github.io/terraform-branch-deploy/getting-started/) | First deployment in 5 minutes |
-| [Configuration](https://scarowar.github.io/terraform-branch-deploy/guides/configuration/) | `.tf-branch-deploy.yml` reference |
-| [Modes](https://scarowar.github.io/terraform-branch-deploy/guides/modes/) | Dispatch vs Execute |
-| [Pre-Terraform Hooks](https://scarowar.github.io/terraform-branch-deploy/guides/hooks/) | Custom pre-deploy logic |
-| [Guardrails & Security](https://scarowar.github.io/terraform-branch-deploy/guides/guardrails/) | Enterprise governance features |
-| [Examples](https://scarowar.github.io/terraform-branch-deploy/examples/) | Workflow snippets |
+| Resource | Description |
+|----------|-------------|
+| [Quickstart](https://scarowar.github.io/terraform-branch-deploy/quickstart/) | First deployment in 5 minutes |
+| [Configuration](https://scarowar.github.io/terraform-branch-deploy/configuration/) | Environment setup and inheritance |
+| [Commands](https://scarowar.github.io/terraform-branch-deploy/reference/commands/) | All PR comment commands |
+| [Security](https://scarowar.github.io/terraform-branch-deploy/security/) | Access control and guardrails |
 | [Troubleshooting](https://scarowar.github.io/terraform-branch-deploy/troubleshooting/) | Common issues |
+
+---
 
 ## Contributing
 
-Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions. Please read our guidelines before getting started:
+
+- **[Contributing Guide](CONTRIBUTING.md)** — How to submit issues, PRs, and code style
+- **[Code of Conduct](CODE_OF_CONDUCT.md)** — Community standards
+- **[Security Policy](SECURITY.md)** — How to report vulnerabilities
+
+---
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+[MIT](LICENSE)

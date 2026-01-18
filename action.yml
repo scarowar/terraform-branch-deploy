@@ -1,5 +1,5 @@
 name: terraform-branch-deploy
-description: ChatOps for Terraform deployments via GitHub PRs - perfect integration with branch-deploy
+description: Terraform integrated into the Branch Deploy operating model. Plan, review, and apply infrastructure changes within Pull Requests to ensure the main branch remains stable.
 
 author: Sourab Kanthavar <@scarowar>
 
@@ -11,54 +11,32 @@ inputs:
   # === MODE SELECTION ===
   mode:
     description: |
-      dispatch = Parse command via branch-deploy + run terraform (default, one-step)
-      execute = Run terraform only (use after your own branch-deploy call)
-    default: "dispatch"
+      trigger = Parse command via branch-deploy, export TF_BD_* to GITHUB_ENV, STOP
+      execute = Run terraform with lifecycle completion (reads TF_BD_* from GITHUB_ENV)
 
-  # === TF-BRANCH-DEPLOY SPECIFIC ===
+      Use both modes as CONDITIONAL STEPS in a SINGLE JOB:
+      - Trigger mode exports env vars
+      - Custom steps (credentials) can access env vars
+      - Execute mode picks up env vars automatically
+    required: true
+
+  # === REQUIRED ===
   github-token:
     description: "GitHub token with pull-requests:write, deployments:write, contents:write"
     required: true
+
+  # === TF-BRANCH-DEPLOY SPECIFIC ===
   config-path:
     description: "Path to .tf-branch-deploy.yml"
     default: ".tf-branch-deploy.yml"
   terraform-version:
     description: "Terraform version to install"
     default: "latest"
-
-  # === FOR EXECUTE MODE (passed from your branch-deploy call) ===
-  environment:
-    description: "[execute mode] Target environment from branch-deploy outputs"
-    default: ""
-  operation:
-    description: "[execute mode] plan or apply"
-    default: ""
-  sha:
-    description: "[execute mode] Commit SHA from branch-deploy outputs"
-    default: ""
-  deployment-id:
-    description: "[execute mode] Deployment ID from branch-deploy (for status updates)"
-    default: ""
-  pr-number:
-    description: "[execute mode] PR number for comments"
-    default: ""
   dry-run:
     description: "Print commands without running"
     default: "false"
-  pre-terraform-hook:
-    description: |
-      Shell commands to run AFTER branch-deploy but BEFORE terraform.
-      Use this for: building lambdas, fetching secrets, running migrations.
-      Environment variables available: TF_BD_ENVIRONMENT, TF_BD_SHA, TF_BD_OPERATION
-    default: ""
-  is-rollback:
-    description: "[execute mode] Set to 'true' for rollback - allows apply without plan"
-    default: "false"
-  extra-args:
-    description: "[execute mode] Extra terraform args"
-    default: ""
 
-  # === BRANCH-DEPLOY PASSTHROUGH (dispatch mode only) ===
+  # === BRANCH-DEPLOY PASSTHROUGH (trigger mode only) ===
   trigger:
     description: "Deploy command trigger"
     default: ".apply"
@@ -99,56 +77,56 @@ inputs:
     description: "How to handle outdated branches: disabled|warn|force"
     default: "warn"
   outdated-mode:
-    description: "Branch freshness check: strict|pr_base|default_branch"
+    description: "How to handle outdated branches"
     default: "strict"
   allow-sha-deployments:
-    description: "Allow deploying specific SHAs"
+    description: "Allow deployments by SHA"
     default: "false"
   enforced-deployment-order:
-    description: "Required deployment order (e.g., dev,staging,prod)"
+    description: "Required deployment order"
     default: ""
   checks:
-    description: "CI check requirements: all|required|<check-names>"
+    description: "Which checks must pass before deployment"
     default: "all"
   ignored-checks:
     description: "Checks to ignore"
     default: ""
   skip-ci:
-    description: "Environments that skip CI"
+    description: "CI pattern to skip"
     default: ""
   skip-reviews:
-    description: "Environments that skip reviews"
+    description: "Skip PR review requirement"
     default: ""
   required-contexts:
-    description: "Manually required status contexts"
-    default: "false"
+    description: "Required status contexts"
+    default: ""
   permissions:
-    description: "Required GitHub permissions"
+    description: "Required permissions"
     default: "write,admin"
   admins:
     description: "Admin users/teams"
     default: "false"
   admins-pat:
-    description: "PAT for admin team lookups"
+    description: "Admin PAT for checks"
     default: "false"
   commit-verification:
     description: "Require verified commits"
     default: "false"
   disable-naked-commands:
-    description: "Require environment in commands"
-    default: "true"
+    description: "Require 'to <env>' in commands"
+    default: "false"
   allow-forks:
     description: "Allow fork deployments"
     default: "true"
   allow-non-default-target-branch:
-    description: "Allow non-default target branch deployments"
+    description: "Allow non-default target branches"
     default: "false"
   deployment-confirmation:
     description: "Require deployment confirmation"
     default: "false"
   deployment-confirmation-timeout:
-    description: "Confirmation timeout in seconds"
-    default: "60"
+    description: "Confirmation timeout seconds"
+    default: "300"
   global-lock-flag:
     description: "Global lock flag"
     default: "--global"
@@ -156,47 +134,47 @@ inputs:
     description: "Keep locks after deployment"
     default: "false"
   sticky-locks-for-noop:
-    description: "Keep locks for plan operations"
+    description: "Keep locks for noop"
     default: "false"
   successful-deploy-labels:
     description: "Labels for successful deploy"
     default: ""
   successful-noop-labels:
-    description: "Labels for successful plan"
+    description: "Labels for successful noop"
     default: ""
   failed-deploy-labels:
     description: "Labels for failed deploy"
     default: ""
   failed-noop-labels:
-    description: "Labels for failed plan"
+    description: "Labels for failed noop"
     default: ""
   skip-successful-noop-labels-if-approved:
-    description: "Skip noop labels if PR is approved"
+    description: "Skip noop labels if approved"
     default: "false"
   skip-successful-deploy-labels-if-approved:
-    description: "Skip deploy labels if PR is approved"
+    description: "Skip deploy labels if approved"
     default: "false"
   use-security-warnings:
-    description: "Show security warnings in logs"
+    description: "Show security warnings"
     default: "true"
   merge-deploy-mode:
-    description: "Enable merge deploy mode"
+    description: "Merge deploy mode"
     default: "false"
   unlock-on-merge-mode:
-    description: "Unlock environments on PR merge"
+    description: "Unlock on merge"
     default: "false"
   environment-url-in-comment:
-    description: "Append environment URL to success comment"
+    description: "Show env URL in comment"
     default: "true"
   deploy-message-path:
-    description: "Custom deployment message template"
-    default: ".github/deployment_message.md"
+    description: "Path to deploy message file"
+    default: ""
   reaction:
-    description: "Reaction emoji for trigger detection"
+    description: "Initial reaction to command"
     default: "eyes"
 
 outputs:
-  # From branch-deploy (dispatch mode)
+  # === STATE (from trigger mode) ===
   continue:
     description: "'true' if deployment should proceed"
     value: ${{ steps.branch-deploy.outputs.continue }}
@@ -206,11 +184,17 @@ outputs:
   environment:
     description: "Target environment"
     value: ${{ steps.branch-deploy.outputs.environment }}
+  operation:
+    description: "plan, apply, or rollback"
+    value: ${{ steps.derive-operation.outputs.operation }}
+  is-rollback:
+    description: "'true' if rollback operation"
+    value: ${{ steps.derive-operation.outputs.is_rollback }}
   sha:
     description: "Commit SHA to deploy"
     value: ${{ steps.branch-deploy.outputs.sha }}
   ref:
-    description: "Branch ref to deploy"
+    description: "Branch ref to checkout (stable branch for rollbacks)"
     value: ${{ steps.branch-deploy.outputs.ref }}
   noop:
     description: "'true' for plan operations"
@@ -227,6 +211,9 @@ outputs:
   deployment-id:
     description: "GitHub deployment ID"
     value: ${{ steps.branch-deploy.outputs.deployment_id }}
+  initial-reaction-id:
+    description: "Initial reaction ID for cleanup"
+    value: ${{ steps.branch-deploy.outputs.initial_reaction_id }}
   type:
     description: "Command type (deploy, lock, unlock, etc.)"
     value: ${{ steps.branch-deploy.outputs.type }}
@@ -234,7 +221,7 @@ outputs:
     description: "PR/Issue number"
     value: ${{ steps.branch-deploy.outputs.issue_number }}
 
-  # Terraform-specific
+  # Terraform-specific (from execute mode)
   working-directory:
     description: "Terraform working directory"
     value: ${{ steps.tf-execute.outputs.working_directory }}
@@ -257,34 +244,26 @@ outputs:
 runs:
   using: composite
   steps:
-    # === SETUP (both modes) ===
+    # ╔══════════════════════════════════════════════════════════════════════════╗
+    # ║                              SETUP (both modes)                          ║
+    # ╚══════════════════════════════════════════════════════════════════════════╝
     - name: Verify Python Requirements
       shell: bash
       run: |
         set +e
-
-        # Check if Python 3 is available
         if ! command -v python3 &> /dev/null; then
           echo "::error::Python 3 is not installed or not in PATH"
-          echo "::error::tf-branch-deploy requires Python 3.12 or higher"
-          echo "::error::GitHub-hosted runners have Python pre-installed. If using a self-hosted runner, please install Python 3.12+."
           exit 1
         fi
-
-        # Check Python version requirement
+        # Enforce version requirement from pyproject.toml
         python3 - <<'EOF'
         import sys
         if sys.version_info < (3, 12):
-            print("::error::tf-branch-deploy requires Python 3.12 or higher")
-            print(f"::error::Current version: {sys.version}")
-            print("::error::GitHub-hosted runners provide Python 3.12+. Consider using a newer runner image or upgrading Python.")
+            print("::error::tf-branch-deploy requires Python 3.12+")
+            print(f"::error::Current version: {sys.version.split()[0]}")
             sys.exit(1)
-        print(f"Using Python {sys.version.split()[0]}")
+        print(f"✅ Python {sys.version.split()[0]}")
         EOF
-
-        if [[ $? -ne 0 ]]; then
-          exit 1
-        fi
 
     - name: Setup UV
       uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867
@@ -292,12 +271,9 @@ runs:
     - name: Install tf-branch-deploy
       shell: bash
       run: |
-        # Create virtual environment and install package
         uv venv "${{ runner.temp }}/tf-bd-venv"
         . "${{ runner.temp }}/tf-bd-venv/bin/activate"
         uv pip install "${{ github.action_path }}"
-
-        # Export venv bin to PATH for subsequent steps
         echo "${{ runner.temp }}/tf-bd-venv/bin" >> $GITHUB_PATH
 
     - name: Setup Terraform
@@ -312,22 +288,22 @@ runs:
         TFCMT_VERSION="v4.14.0"
         curl -fsSL "https://github.com/suzuki-shunsuke/tfcmt/releases/download/${TFCMT_VERSION}/tfcmt_linux_amd64.tar.gz" | tar xz -C /usr/local/bin tfcmt
         chmod +x /usr/local/bin/tfcmt
-        tfcmt --version
 
-    # === DISPATCH MODE: Run branch-deploy + terraform ===
-    - name: Detect environments from config
+    # ╔══════════════════════════════════════════════════════════════════════════╗
+    # ║                           TRIGGER MODE                                    ║
+    # ║   Parse command → Export TF_BD_* env vars → STOP (no terraform)          ║
+    # ╚══════════════════════════════════════════════════════════════════════════╝
+    - name: "[Trigger] Detect Environments from Config"
       id: detect-envs
-      if: inputs.mode == 'dispatch'
+      if: inputs.mode == 'trigger'
       shell: bash
       env:
-        # Use env vars to safely pass inputs (prevents shell injection)
         INPUT_ENVIRONMENT_TARGETS: ${{ inputs.environment-targets }}
         INPUT_PRODUCTION_ENVIRONMENTS: ${{ inputs.production-environments }}
         INPUT_CONFIG_PATH: ${{ inputs.config-path }}
       run: |
         if [ -n "$INPUT_ENVIRONMENT_TARGETS" ]; then
           echo "targets=$INPUT_ENVIRONMENT_TARGETS" >> $GITHUB_OUTPUT
-          # Use first environment from targets as default (inputs.environment is empty in dispatch mode)
           default_env=$(echo "$INPUT_ENVIRONMENT_TARGETS" | cut -d',' -f1)
           echo "default=${default_env}" >> $GITHUB_OUTPUT
           echo "production=$INPUT_PRODUCTION_ENVIRONMENTS" >> $GITHUB_OUTPUT
@@ -335,8 +311,8 @@ runs:
           config_path="$INPUT_CONFIG_PATH"
           if [ -f "$config_path" ]; then
             targets=$(tf-branch-deploy environments --config "$config_path" 2>/dev/null || echo "production")
-            default=$(yq -r '.["default-environment"] // "production"' "$config_path" 2>/dev/null || echo "production")
-            production=$(yq -r '.["production-environments"] | join(",")' "$config_path" 2>/dev/null || echo "production")
+            default=$(tf-branch-deploy get-config default-environment --config "$config_path" 2>/dev/null || echo "production")
+            production=$(tf-branch-deploy get-config production-environments --config "$config_path" 2>/dev/null || echo "production")
           else
             targets="production"
             default="production"
@@ -347,12 +323,14 @@ runs:
           echo "production=$production" >> $GITHUB_OUTPUT
         fi
 
-    - name: IssueOps Command Dispatcher
+    - name: "[Trigger] IssueOps Command Dispatcher"
       id: branch-deploy
-      if: inputs.mode == 'dispatch'
+      if: inputs.mode == 'trigger'
       uses: github/branch-deploy@v11
       with:
         github_token: ${{ inputs.github-token }}
+        # CRITICAL: We handle lifecycle completion in execute mode
+        skip_completing: "true"
         trigger: ${{ inputs.trigger }}
         noop_trigger: ${{ inputs.noop-trigger }}
         lock_trigger: ${{ inputs.lock-trigger }}
@@ -399,79 +377,137 @@ runs:
         environment_url_in_comment: ${{ inputs.environment-url-in-comment }}
         deploy_message_path: ${{ inputs.deploy-message-path }}
         reaction: ${{ inputs.reaction }}
-        # NOTE: We do NOT set skip_completing - branch-deploy handles cleanup automatically
-        # This means branch-deploy will: update deployment status, remove locks, add reactions, post comments
 
-    # === PERSISTENCE: Cache Plan Files ===
-    # This allows the 'Apply' run to find the plan generated by the 'Plan' run
-    # Runs AFTER branch-deploy so we have the environment/sha outputs available
-    - name: Cache Plan File
-      uses: actions/cache@v5
-      if: |
-        (inputs.mode == 'dispatch' && steps.branch-deploy.outputs.continue == 'true') ||
-        (inputs.mode == 'execute')
-      with:
-        path: |
-          **/*.tfplan
-        # Key format: tfplan-{env}-{sha}
-        key: tfplan-${{ inputs.mode == 'dispatch' && steps.branch-deploy.outputs.environment || inputs.environment }}-${{ inputs.mode == 'dispatch' && steps.branch-deploy.outputs.sha || inputs.sha }}
-
-    # === PRE-TERRAFORM HOOK (for prep work like building lambdas, fetching secrets) ===
-    - name: Run Pre-Terraform Hook
-      id: pre-hook
-      if: |
-        inputs.pre-terraform-hook != '' &&
-        ((inputs.mode == 'dispatch' && steps.branch-deploy.outputs.continue == 'true') ||
-         (inputs.mode == 'execute'))
+    - name: "[Trigger] Derive Operation and Rollback"
+      id: derive-operation
+      if: inputs.mode == 'trigger' && steps.branch-deploy.outputs.triggered == 'true'
       shell: bash
       env:
-        TF_BD_ENVIRONMENT: ${{ inputs.mode == 'dispatch' && steps.branch-deploy.outputs.environment || inputs.environment }}
-        TF_BD_SHA: ${{ inputs.mode == 'dispatch' && steps.branch-deploy.outputs.sha || inputs.sha }}
-        TF_BD_OPERATION: ${{ inputs.mode == 'dispatch' && (steps.branch-deploy.outputs.noop == 'true' && 'plan' || 'apply') || inputs.operation }}
-        TF_BD_IS_NOOP: ${{ inputs.mode == 'dispatch' && steps.branch-deploy.outputs.noop || (inputs.operation == 'plan' && 'true' || 'false') }}
-        GITHUB_TOKEN: ${{ inputs.github-token }}
+        BD_NOOP: ${{ steps.branch-deploy.outputs.noop }}
+        BD_REF: ${{ steps.branch-deploy.outputs.ref }}
+        STABLE_BRANCH: ${{ inputs.stable-branch }}
       run: |
-        echo "🔧 Running pre-terraform hook for environment: $TF_BD_ENVIRONMENT"
-        ${{ inputs.pre-terraform-hook }}
+        # Derive operation: plan, apply, or rollback
+        if [[ "$BD_NOOP" == "true" ]]; then
+          OPERATION="plan"
+          IS_ROLLBACK="false"
+        elif [[ "$BD_REF" == "$STABLE_BRANCH" ]]; then
+          # Ref is stable branch = rollback (.apply main to dev)
+          OPERATION="rollback"
+          IS_ROLLBACK="true"
+        else
+          OPERATION="apply"
+          IS_ROLLBACK="false"
+        fi
 
-    # === EXECUTE TERRAFORM ===
-    - name: Execute Terraform
-      id: tf-execute
-      if: |
-        (inputs.mode == 'dispatch' && steps.branch-deploy.outputs.continue == 'true') ||
-        (inputs.mode == 'execute')
+        echo "operation=${OPERATION}" >> $GITHUB_OUTPUT
+        echo "is_rollback=${IS_ROLLBACK}" >> $GITHUB_OUTPUT
+        echo "✅ Operation: ${OPERATION}, Is Rollback: ${IS_ROLLBACK}"
+
+    - name: "[Trigger] Export State to GITHUB_ENV"
+      if: inputs.mode == 'trigger' && steps.branch-deploy.outputs.triggered == 'true'
       shell: bash
       env:
-        GITHUB_TOKEN: ${{ inputs.github-token }}
-        TF_BD_PR_NUMBER: ${{ inputs.mode == 'dispatch' && steps.branch-deploy.outputs.issue_number || inputs.pr-number }}
-        # Rollback detection: .apply main to dev (ref is stable branch, not PR branch)
-        TF_BD_IS_ROLLBACK: ${{ inputs.mode == 'dispatch' && steps.branch-deploy.outputs.ref == inputs.stable-branch || inputs.is-rollback }}
-        # CRITICAL: Set extra args directly as env var to bypass shell entirely!
-        # Shell quoting is broken for nested quotes like -var='key=value' or -target=module.test["key"]
-        # By setting here, GitHub Actions passes the raw value directly without shell interpretation
-        TF_BD_EXTRA_ARGS: ${{ inputs.mode == 'dispatch' && steps.branch-deploy.outputs.params || inputs.extra-args }}
-        # Also set other dispatch-mode values via env to avoid shell quoting issues
-        TF_BD_DISPATCH_ENV: ${{ steps.branch-deploy.outputs.environment }}
-        TF_BD_DISPATCH_SHA: ${{ steps.branch-deploy.outputs.sha }}
-        TF_BD_DISPATCH_OPERATION: ${{ steps.branch-deploy.outputs.noop == 'true' && 'plan' || 'apply' }}
+        BD_CONTINUE: ${{ steps.branch-deploy.outputs.continue }}
+        BD_ENVIRONMENT: ${{ steps.branch-deploy.outputs.environment }}
+        BD_SHA: ${{ steps.branch-deploy.outputs.sha }}
+        BD_REF: ${{ steps.branch-deploy.outputs.ref }}
+        BD_ACTOR: ${{ steps.branch-deploy.outputs.actor }}
+        BD_PARAMS: ${{ steps.branch-deploy.outputs.params }}
+        BD_DEPLOYMENT_ID: ${{ steps.branch-deploy.outputs.deployment_id }}
+        BD_COMMENT_ID: ${{ steps.branch-deploy.outputs.comment_id }}
+        BD_INITIAL_REACTION_ID: ${{ steps.branch-deploy.outputs.initial_reaction_id }}
+        BD_ISSUE_NUMBER: ${{ steps.branch-deploy.outputs.issue_number }}
+        BD_NOOP: ${{ steps.branch-deploy.outputs.noop }}
+        BD_TYPE: ${{ steps.branch-deploy.outputs.type }}
+        DERIVED_OPERATION: ${{ steps.derive-operation.outputs.operation }}
+        DERIVED_IS_ROLLBACK: ${{ steps.derive-operation.outputs.is_rollback }}
       run: |
-        # Verify tf-branch-deploy is available (installed in venv, PATH set via GITHUB_PATH)
-        if ! command -v tf-branch-deploy &> /dev/null; then
-          echo "::error::tf-branch-deploy command not found"
-          echo "::error::Current PATH: $PATH"
-          echo "::error::This may indicate an installation issue. Please report this at https://github.com/scarowar/terraform-branch-deploy/issues"
+        # Write all TF_BD_* variables to GITHUB_ENV for execute mode
+        echo "TF_BD_CONTINUE=${BD_CONTINUE}" >> $GITHUB_ENV
+        echo "TF_BD_ENVIRONMENT=${BD_ENVIRONMENT}" >> $GITHUB_ENV
+        echo "TF_BD_OPERATION=${DERIVED_OPERATION}" >> $GITHUB_ENV
+        echo "TF_BD_IS_ROLLBACK=${DERIVED_IS_ROLLBACK}" >> $GITHUB_ENV
+        echo "TF_BD_SHA=${BD_SHA}" >> $GITHUB_ENV
+        echo "TF_BD_REF=${BD_REF}" >> $GITHUB_ENV
+        echo "TF_BD_ACTOR=${BD_ACTOR}" >> $GITHUB_ENV
+        echo "TF_BD_PR_NUMBER=${BD_ISSUE_NUMBER}" >> $GITHUB_ENV
+        echo "TF_BD_PARAMS=${BD_PARAMS}" >> $GITHUB_ENV
+        echo "TF_BD_DEPLOYMENT_ID=${BD_DEPLOYMENT_ID}" >> $GITHUB_ENV
+        echo "TF_BD_COMMENT_ID=${BD_COMMENT_ID}" >> $GITHUB_ENV
+        echo "TF_BD_INITIAL_REACTION_ID=${BD_INITIAL_REACTION_ID}" >> $GITHUB_ENV
+        echo "TF_BD_NOOP=${BD_NOOP}" >> $GITHUB_ENV
+        echo "TF_BD_TYPE=${BD_TYPE}" >> $GITHUB_ENV
+
+        echo ""
+        echo "═══════════════════════════════════════════════════════════════════"
+        echo "                    🚀 TRIGGER MODE COMPLETE"
+        echo "═══════════════════════════════════════════════════════════════════"
+        echo "Environment:  ${BD_ENVIRONMENT}"
+        echo "Operation:    ${DERIVED_OPERATION}"
+        echo "Is Rollback:  ${DERIVED_IS_ROLLBACK}"
+        echo "Ref:          ${BD_REF}  (use this for checkout)"
+        echo "SHA:          ${BD_SHA}"
+        echo "═══════════════════════════════════════════════════════════════════"
+        echo ""
+        echo "Next steps:"
+        echo "  1. Checkout: actions/checkout with ref: \${TF_BD_REF}"
+        echo "  2. Configure cloud credentials using TF_BD_ENVIRONMENT"
+        echo "  3. Run execute mode"
+
+    # ╔══════════════════════════════════════════════════════════════════════════╗
+    # ║                           EXECUTE MODE                                    ║
+    # ║   Validate state → Hooks → Terraform → Lifecycle completion              ║
+    # ╚══════════════════════════════════════════════════════════════════════════╝
+    - name: "[Execute] Validate State"
+      if: inputs.mode == 'execute'
+      shell: bash
+      run: |
+        ERROR_COUNT=0
+
+        if [[ -z "${TF_BD_ENVIRONMENT}" ]]; then
+          echo "::error::TF_BD_ENVIRONMENT is not set"
+          ERROR_COUNT=$((ERROR_COUNT + 1))
+        fi
+
+        if [[ -z "${TF_BD_OPERATION}" ]]; then
+          echo "::error::TF_BD_OPERATION is not set"
+          ERROR_COUNT=$((ERROR_COUNT + 1))
+        fi
+
+        if [[ -z "${TF_BD_SHA}" ]]; then
+          echo "::error::TF_BD_SHA is not set"
+          ERROR_COUNT=$((ERROR_COUNT + 1))
+        fi
+
+        if [[ $ERROR_COUNT -gt 0 ]]; then
+          echo ""
+          echo "::error::Did you run mode: trigger first?"
+          echo "::error::Execute mode requires TF_BD_* environment variables from trigger mode."
           exit 1
         fi
 
-        # Determine values based on mode
-        if [ "${{ inputs.mode }}" == "dispatch" ]; then
-          ENV="$TF_BD_DISPATCH_ENV"
-          SHA="$TF_BD_DISPATCH_SHA"
-          OPERATION="$TF_BD_DISPATCH_OPERATION"
-        else
-          ENV="${{ inputs.environment }}"
-          SHA="${{ inputs.sha }}"
-          OPERATION="${{ inputs.operation }}"
+        echo "✅ State validated: ${TF_BD_ENVIRONMENT} / ${TF_BD_OPERATION}"
+
+    - name: "[Execute] Cache Plan File"
+      uses: actions/cache@v5
+      if: inputs.mode == 'execute'
+      with:
+        path: |
+          **/*.tfplan
+        key: tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}
+
+    - name: "[Execute] Run Terraform"
+      id: tf-execute
+      if: inputs.mode == 'execute'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        TF_BD_EXTRA_ARGS: ${{ env.TF_BD_PARAMS }}
+      run: |
+        if ! command -v tf-branch-deploy &> /dev/null; then
+          echo "::error::tf-branch-deploy command not found"
+          exit 1
         fi
 
         DRY_RUN_FLAG=""
@@ -479,15 +515,32 @@ runs:
           DRY_RUN_FLAG="--dry-run"
         fi
 
-        # Log extra args if present (TF_BD_EXTRA_ARGS is set at env level above)
         if [ -n "$TF_BD_EXTRA_ARGS" ]; then
-          echo "📝 Extra terraform args from command: $TF_BD_EXTRA_ARGS"
+          echo "📝 Extra terraform args: $TF_BD_EXTRA_ARGS"
         fi
 
-        # Execute command - TF_BD_EXTRA_ARGS is already set as env var
         tf-branch-deploy execute \
-          --environment "$ENV" \
-          --operation "$OPERATION" \
-          --sha "$SHA" \
+          --environment "${TF_BD_ENVIRONMENT}" \
+          --operation "${TF_BD_OPERATION}" \
+          --sha "${TF_BD_SHA}" \
           --config "${{ inputs.config-path }}" \
           $DRY_RUN_FLAG
+
+    - name: "[Execute] Complete Deployment Lifecycle"
+      if: inputs.mode == 'execute' && always()
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        GH_REPO: ${{ github.repository }}
+        STATUS: ${{ steps.tf-execute.outcome }}
+        FAILURE_REASON: ${{ steps.tf-execute.outputs.failure_reason }}
+      run: |
+        if [[ "${STATUS}" == "success" ]]; then
+          FINAL_STATUS="success"
+        else
+          FINAL_STATUS="failure"
+        fi
+
+        tf-branch-deploy complete-lifecycle \
+          --status "${FINAL_STATUS}" \
+          --failure-reason "${FAILURE_REASON}"

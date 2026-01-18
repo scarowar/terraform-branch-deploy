@@ -22,11 +22,9 @@ class TestConstants:
     """Tests for CLI constants."""
 
     def test_default_config_path_is_path(self) -> None:
-        """DEFAULT_CONFIG_PATH should be a Path object."""
         assert isinstance(DEFAULT_CONFIG_PATH, Path)
 
     def test_default_config_path_value(self) -> None:
-        """DEFAULT_CONFIG_PATH should be .tf-branch-deploy.yml."""
         assert str(DEFAULT_CONFIG_PATH) == ".tf-branch-deploy.yml"
 
 
@@ -34,32 +32,26 @@ class TestParseExtraArgs:
     """Tests for _parse_extra_args function."""
 
     def test_simple_args(self) -> None:
-        """Test parsing simple space-separated args."""
         result = _parse_extra_args("-refresh=false -parallelism=5")
         assert result == ["-refresh=false", "-parallelism=5"]
 
     def test_single_quoted_value(self) -> None:
-        """Test parsing single-quoted values."""
         result = _parse_extra_args("-var='msg=hello world'")
         assert result == ["-var=msg=hello world"]
 
     def test_double_quoted_value(self) -> None:
-        """Test parsing double-quoted values."""
         result = _parse_extra_args('-var="key=value"')
         assert result == ["-var=key=value"]
 
     def test_bracket_with_quotes(self) -> None:
-        """Test parsing terraform target with internal quotes."""
         result = _parse_extra_args('-target=module.test["key"]')
         assert result == ['-target=module.test["key"]']
 
     def test_mixed_args(self) -> None:
-        """Test parsing mixed argument styles."""
         result = _parse_extra_args("-var='x=1' -target=module.foo -refresh=false")
         assert result == ["-var=x=1", "-target=module.foo", "-refresh=false"]
 
     def test_empty_string(self) -> None:
-        """Test parsing empty string."""
         result = _parse_extra_args("")
         assert result == []
 
@@ -237,3 +229,87 @@ class TestSchemaCommand:
         # Output should be parseable JSON
         schema = json.loads(result.stdout)
         assert "properties" in schema
+
+
+class TestGetConfigCommand:
+    """Tests for get-config command."""
+
+    def test_get_default_environment(self, tmp_path: Path) -> None:
+        """Test getting default environment."""
+        config_file = tmp_path / ".tf-branch-deploy.yml"
+        config_file.write_text(
+            "default-environment: dev\nproduction-environments: [prod]\nenvironments: {dev: {}, prod: {}}"
+        )
+
+        result = runner.invoke(
+            app, ["get-config", "default-environment", "--config", str(config_file)]
+        )
+
+        assert result.exit_code == 0
+        assert "dev" in result.stdout
+
+    def test_get_production_environments(self, tmp_path: Path) -> None:
+        """Test getting production environments."""
+        config_file = tmp_path / ".tf-branch-deploy.yml"
+        config_file.write_text(
+            "default-environment: dev\nproduction-environments: [prod, stage]\nenvironments: {dev: {}, prod: {}, stage: {}}"
+        )
+
+        result = runner.invoke(
+            app, ["get-config", "production-environments", "--config", str(config_file)]
+        )
+
+        assert result.exit_code == 0
+        assert "prod,stage" in result.stdout
+
+    def test_invalid_key(self, tmp_path: Path) -> None:
+        """Test getting invalid key."""
+        config_file = tmp_path / ".tf-branch-deploy.yml"
+        config_file.write_text(
+            "default-environment: dev\nproduction-environments: [prod]\nenvironments: {dev: {}, prod: {}}"
+        )
+
+        result = runner.invoke(app, ["get-config", "invalid-key", "--config", str(config_file)])
+
+        assert result.exit_code == 1
+        assert "Unsupported key" in result.stdout
+
+
+class TestCompleteLifecycleCommand:
+    """Tests for complete-lifecycle command."""
+
+    def test_missing_env_vars(self) -> None:
+        """Test error when required env vars are missing."""
+        result = runner.invoke(app, ["complete-lifecycle", "--status", "success"])
+        assert result.exit_code == 1
+        assert "GH_REPO/GITHUB_REPOSITORY or GITHUB_TOKEN not set" in result.stdout
+
+    def test_success(self, monkeypatch) -> None:
+        """Test successful execution with mocked environment."""
+        from unittest.mock import MagicMock, patch
+
+        # Mock environment variables individually
+        monkeypatch.setenv("GITHUB_REPOSITORY", "org/repo")
+        monkeypatch.setenv("GITHUB_TOKEN", "token")
+        monkeypatch.setenv("TF_BD_DEPLOYMENT_ID", "123")
+        monkeypatch.setenv("TF_BD_ENVIRONMENT", "dev")
+        monkeypatch.setenv("TF_BD_COMMENT_ID", "456")
+        monkeypatch.setenv("TF_BD_INITIAL_REACTION_ID", "789")
+        monkeypatch.setenv("TF_BD_PR_NUMBER", "10")
+
+        # Mock LifecycleManager
+        with patch("tf_branch_deploy.lifecycle.LifecycleManager") as mock_manager_cls:
+            mock_manager = MagicMock()
+            mock_manager_cls.return_value = mock_manager
+
+            result = runner.invoke(app, ["complete-lifecycle", "--status", "success"])
+
+            assert result.exit_code == 0
+            assert "Lifecycle complete" in result.stdout
+
+            # Verify manager calls
+            mock_manager.update_deployment_status.assert_called_with("123", "success", "dev")
+            mock_manager.remove_reaction.assert_called_with("456", "789")
+            mock_manager.add_reaction.assert_called_with("456", "rocket")
+            mock_manager.post_result_comment.assert_called()
+            mock_manager.remove_non_sticky_lock.assert_called_with("dev")
