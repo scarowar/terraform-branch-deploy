@@ -21,6 +21,12 @@
 
 ---
 
+## See It in Action
+
+https://github.com/user-attachments/assets/7b9d1660-bf20-4fa1-8b07-34f0c0e9f334
+
+---
+
 ## Why
 
 Traditional CI/CD deploys after merging. If deployment fails, main is broken.
