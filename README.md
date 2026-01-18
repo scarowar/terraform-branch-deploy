@@ -1,52 +1,36 @@
 # Terraform Branch Deploy
 
-Terraform Branch Deploy brings Terraform into the [Branch Deploy](https://github.com/github/branch-deploy) operating model. It is not a standalone Terraform action—it is Terraform integrated into a deployment workflow designed around stability and reviewability.
+[![GitHub release](https://img.shields.io/github/v/release/scarowar/terraform-branch-deploy)](https://github.com/scarowar/terraform-branch-deploy/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Documentation](https://img.shields.io/badge/docs-zensical-purple)](https://scarowar.github.io/terraform-branch-deploy/)
+
+Terraform integrated into the [Branch Deploy](https://github.com/github/branch-deploy) operating model.
+
+**[Documentation](https://scarowar.github.io/terraform-branch-deploy/)** · **[Quickstart](https://scarowar.github.io/terraform-branch-deploy/quickstart/)** · **[Configuration](https://scarowar.github.io/terraform-branch-deploy/configuration/)**
 
 ---
 
-## The Foundation: Branch Deploy and IssueOps
+## The Problem
 
-Branch Deploy is built on a simple principle: **the main branch should always be deployable**.
+Traditional CI/CD deploys after merging. If deployment fails, main is broken.
 
-Traditional CI/CD follows a merge → deploy model: code lands on main, then gets deployed. If the deployment fails, main is now broken. You have merged code that does not work in production. Rollback requires reverting, getting CI green again, and redeploying.
+## The Solution
 
-Branch Deploy inverts this. You deploy from the pull request branch *before* merging. If the deployment succeeds, you merge. If it fails, main remains untouched. To roll back, you simply deploy main—it is always in a known-good state.
+Branch Deploy inverts this: deploy from your PR branch first, then merge if successful. Main stays stable. To roll back, deploy main.
 
-This model is called **IssueOps**: using GitHub issues and pull requests as the control plane for operations. Instead of pushing buttons in a console or running scripts locally, you post a comment—`.deploy`—and the system handles the rest. The pull request becomes the audit log, the approval gate, and the deployment trigger all in one.
+Terraform Branch Deploy applies this model to infrastructure:
 
-Branch Deploy implements this for application deployments. Terraform Branch Deploy extends it to infrastructure.
+1. **Plan** from your pull request
+2. **Review** the changes
+3. **Apply** that exact plan
 
----
-
-## Why Terraform Needs This
-
-Terraform has a unique challenge: the plan-apply lifecycle.
-
-A Terraform plan shows what *will* change. An apply executes those changes. The problem is that plans can go stale. If you plan on Monday, approve on Tuesday, and apply on Wednesday, the infrastructure may have drifted. The plan you approved no longer reflects reality.
-
-Most Terraform CI/CD solves this by running `terraform apply -auto-approve` on merge—accepting whatever the current state happens to be. This abandons the core value of Terraform: knowing what will change before it changes.
-
-Terraform Branch Deploy preserves that value. You plan. You review. You apply *that exact plan*. If the branch changes, you re-plan. The plan file is cached, checksummed, and tied to a specific commit. Nothing is applied without explicit approval, and what you approve is what gets applied.
+The plan is cached and checksummed. What you review is what gets applied.
 
 ---
 
-## How It Works
+## Quick Start
 
-The workflow mirrors Branch Deploy, extended for Terraform's two-phase lifecycle.
-
-**Plan**: Post `.plan to dev` on a pull request. The system checks out your branch, runs `terraform plan`, and posts the result as a comment. The plan file is cached.
-
-**Apply**: Post `.apply to dev`. The system retrieves the cached plan, verifies it matches the current commit, and runs `terraform apply` against that exact plan. Results are reported back to the pull request.
-
-**Rollback**: If something goes wrong, post `.apply main to dev`. This deploys the stable main branch directly, bypassing the plan requirement. It is an emergency latch—a fast path back to known-good state.
-
-Environment locking ensures only one deployment runs at a time. No concurrent applies. No state corruption.
-
----
-
-## Configuration
-
-Create `.tf-branch-deploy.yml` in your repository:
+**1. Create `.tf-branch-deploy.yml`:**
 
 ```yaml
 default-environment: dev
@@ -54,57 +38,41 @@ production-environments: [prod]
 
 environments:
   dev:
-    working-directory: terraform/environments/dev
+    working-directory: terraform/dev
   prod:
-    working-directory: terraform/environments/prod
+    working-directory: terraform/prod
 ```
 
----
-
-## Workflow
-
-The action runs in two phases: **trigger** and **execute**.
+**2. Create `.github/workflows/deploy.yml`:**
 
 ```yaml
-name: deploy
+name: Deploy
 on:
   issue_comment:
     types: [created]
 
 permissions:
-  pull-requests: write
   contents: write
+  pull-requests: write
   deployments: write
-  id-token: write
 
 jobs:
   deploy:
     if: github.event.issue.pull_request
     runs-on: ubuntu-latest
     steps:
-      # Checkout to read config
       - uses: actions/checkout@v4
 
-      # Parse command, acquire lock, export context
       - uses: scarowar/terraform-branch-deploy@v0
         with:
           mode: trigger
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Checkout the PR branch
       - uses: actions/checkout@v4
         if: env.TF_BD_CONTINUE == 'true'
         with:
           ref: ${{ env.TF_BD_REF }}
 
-      # Configure cloud credentials
-      - uses: aws-actions/configure-aws-credentials@v4
-        if: env.TF_BD_CONTINUE == 'true'
-        with:
-          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/deploy-${{ env.TF_BD_ENVIRONMENT }}
-          aws-region: us-east-1
-
-      # Run Terraform
       - uses: scarowar/terraform-branch-deploy@v0
         if: env.TF_BD_CONTINUE == 'true'
         with:
@@ -112,7 +80,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-Trigger mode parses the command, validates permissions, and acquires the environment lock. Execute mode runs Terraform and reports results. Between them, you control checkout, credentials, and any custom steps.
+**3. Comment on a PR:** `.plan to dev`
 
 ---
 
@@ -120,28 +88,42 @@ Trigger mode parses the command, validates permissions, and acquires the environ
 
 | Command | Effect |
 |---------|--------|
-| `.plan to <env>` | Run `terraform plan`, cache the result |
-| `.apply to <env>` | Apply the cached plan |
-| `.apply main to <env>` | Deploy main branch directly (rollback) |
+| `.plan to <env>` | Preview infrastructure changes |
+| `.apply to <env>` | Apply the reviewed plan |
+| `.apply main to <env>` | Rollback to main branch |
 | `.lock <env>` | Acquire environment lock |
-| `.unlock <env>` | Release environment lock |
-| `.help` | Show available commands |
+| `.unlock <env>` | Release lock |
 
-Pass extra arguments with a pipe: `.plan to prod | -target=module.database`
+Pass extra arguments: `.plan to prod | -target=module.database`
 
 ---
 
 ## Documentation
 
-| Document | Purpose |
-|----------|---------|
-| [Getting Started](docs/getting-started/index.md) | First deployment walkthrough |
-| [Configuration](docs/reference/configuration.md) | Full schema reference |
-| [Inputs](docs/reference/inputs.md) | Action inputs and defaults |
-| [Troubleshooting](docs/troubleshooting.md) | Common issues |
+- **[Quickstart](https://scarowar.github.io/terraform-branch-deploy/quickstart/)** — First deployment in 5 minutes
+- **[Trigger and Execute](https://scarowar.github.io/terraform-branch-deploy/concepts/modes/)** — Two-mode architecture
+- **[Configuration](https://scarowar.github.io/terraform-branch-deploy/configuration/)** — Environment setup and inheritance
+- **[Commands Reference](https://scarowar.github.io/terraform-branch-deploy/reference/commands/)** — All PR comment commands
+- **[Inputs Reference](https://scarowar.github.io/terraform-branch-deploy/reference/inputs/)** — Workflow configuration
+- **[Security](https://scarowar.github.io/terraform-branch-deploy/security/)** — Access control and guardrails
+- **[Troubleshooting](https://scarowar.github.io/terraform-branch-deploy/troubleshooting/)** — Common issues
+
+---
+
+## Requirements
+
+- GitHub repository with Terraform configurations
+- GitHub Actions enabled
+- Cloud provider credentials (AWS, GCP, or Azure)
+
+---
+
+## Contributing
+
+Contributions are welcome. Please open an issue first to discuss what you would like to change.
 
 ---
 
 ## License
 
-MIT
+[MIT](LICENSE)
