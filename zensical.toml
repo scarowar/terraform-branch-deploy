@@ -83,4 +83,3 @@ extensions = [
 [project.markdown.extension_configs."pymdownx.snippets"]
 base_path = ["docs/includes"]
 check_paths = true
-

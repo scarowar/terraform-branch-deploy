@@ -27,11 +27,13 @@ fi
 echo "Updating all references to version: $VERSION"
 
 # Update all markdown files
-find "$ROOT_DIR" -name "*.md" -type f | while read -r file; do
+# Update all markdown files
+while read -r file; do
     if grep -q "terraform-branch-deploy@" "$file"; then
-        sed -i "s|terraform-branch-deploy@[v0-9.]*|terraform-branch-deploy@$VERSION|g" "$file"
+        # Use more permissive regex for versions/SHAs
+        sed -i "s|terraform-branch-deploy@[a-zA-Z0-9.-]*|terraform-branch-deploy@$VERSION|g" "$file"
         echo "  Updated: $file"
     fi
-done
+done < <(find "$ROOT_DIR" -name "*.md" -type f)
 
 echo "Done. All references now use @$VERSION"

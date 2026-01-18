@@ -13,10 +13,10 @@ inputs:
     description: |
       trigger = Parse command via branch-deploy, export TF_BD_* to GITHUB_ENV, STOP
       execute = Run terraform with lifecycle completion (reads TF_BD_* from GITHUB_ENV)
-      
+
       Use both modes as CONDITIONAL STEPS in a SINGLE JOB:
       - Trigger mode exports env vars
-      - Custom steps (credentials) can access env vars  
+      - Custom steps (credentials) can access env vars
       - Execute mode picks up env vars automatically
     required: true
 
@@ -255,10 +255,12 @@ runs:
           echo "::error::Python 3 is not installed or not in PATH"
           exit 1
         fi
+        # Enforce version requirement from pyproject.toml
         python3 - <<'EOF'
         import sys
         if sys.version_info < (3, 12):
-            print("::error::tf-branch-deploy requires Python 3.12 or higher")
+            print("::error::tf-branch-deploy requires Python 3.12+")
+            print(f"::error::Current version: {sys.version.split()[0]}")
             sys.exit(1)
         print(f"✅ Python {sys.version.split()[0]}")
         EOF
@@ -397,7 +399,7 @@ runs:
           OPERATION="apply"
           IS_ROLLBACK="false"
         fi
-        
+
         echo "operation=${OPERATION}" >> $GITHUB_OUTPUT
         echo "is_rollback=${IS_ROLLBACK}" >> $GITHUB_OUTPUT
         echo "✅ Operation: ${OPERATION}, Is Rollback: ${IS_ROLLBACK}"
@@ -436,7 +438,7 @@ runs:
         echo "TF_BD_INITIAL_REACTION_ID=${BD_INITIAL_REACTION_ID}" >> $GITHUB_ENV
         echo "TF_BD_NOOP=${BD_NOOP}" >> $GITHUB_ENV
         echo "TF_BD_TYPE=${BD_TYPE}" >> $GITHUB_ENV
-        
+
         echo ""
         echo "═══════════════════════════════════════════════════════════════════"
         echo "                    🚀 TRIGGER MODE COMPLETE"
@@ -462,29 +464,29 @@ runs:
       shell: bash
       run: |
         ERROR_COUNT=0
-        
+
         if [[ -z "${TF_BD_ENVIRONMENT}" ]]; then
           echo "::error::TF_BD_ENVIRONMENT is not set"
           ERROR_COUNT=$((ERROR_COUNT + 1))
         fi
-        
+
         if [[ -z "${TF_BD_OPERATION}" ]]; then
           echo "::error::TF_BD_OPERATION is not set"
           ERROR_COUNT=$((ERROR_COUNT + 1))
         fi
-        
+
         if [[ -z "${TF_BD_SHA}" ]]; then
           echo "::error::TF_BD_SHA is not set"
           ERROR_COUNT=$((ERROR_COUNT + 1))
         fi
-        
+
         if [[ $ERROR_COUNT -gt 0 ]]; then
           echo ""
           echo "::error::Did you run mode: trigger first?"
           echo "::error::Execute mode requires TF_BD_* environment variables from trigger mode."
           exit 1
         fi
-        
+
         echo "✅ State validated: ${TF_BD_ENVIRONMENT} / ${TF_BD_OPERATION}"
 
     - name: "[Execute] Cache Plan File"
@@ -507,16 +509,16 @@ runs:
           echo "::error::tf-branch-deploy command not found"
           exit 1
         fi
-        
+
         DRY_RUN_FLAG=""
         if [ "${{ inputs.dry-run }}" == "true" ]; then
           DRY_RUN_FLAG="--dry-run"
         fi
-        
+
         if [ -n "$TF_BD_EXTRA_ARGS" ]; then
           echo "📝 Extra terraform args: $TF_BD_EXTRA_ARGS"
         fi
-        
+
         tf-branch-deploy execute \
           --environment "${TF_BD_ENVIRONMENT}" \
           --operation "${TF_BD_OPERATION}" \
@@ -538,8 +540,7 @@ runs:
         else
           FINAL_STATUS="failure"
         fi
-        
+
         tf-branch-deploy complete-lifecycle \
           --status "${FINAL_STATUS}" \
           --failure-reason "${FAILURE_REASON}"
-

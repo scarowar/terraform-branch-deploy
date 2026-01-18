@@ -8,7 +8,7 @@ All commands are posted as comments on pull requests.
 
 Preview infrastructure changes.
 
-```
+```bash
 .plan to <env>
 ```
 
@@ -29,7 +29,7 @@ The plan output is posted as a PR comment:
 
 Apply the reviewed plan.
 
-```
+```bash
 .apply to <env>
 ```
 
@@ -48,7 +48,7 @@ The apply result is posted as a PR comment:
 
 Deploy the main branch directly.
 
-```
+```bash
 .apply main to <env>
 ```
 
@@ -60,7 +60,7 @@ This bypasses the plan requirement and applies the stable main branch immediatel
 
 Acquire an exclusive lock on an environment.
 
-```
+```bash
 .lock <env>
 ```
 
@@ -74,7 +74,7 @@ Use this for maintenance windows or to prevent deployments during incidents.
 
 Release the lock on an environment.
 
-```
+```bash
 .unlock <env>
 ```
 
@@ -88,7 +88,7 @@ Locks are automatically released when deployments complete. Manual unlock is onl
 
 Check who is currently deploying.
 
-```
+```bash
 .wcid
 ```
 
@@ -102,7 +102,7 @@ Shows the current lock status for all environments.
 
 Display available commands.
 
-```
+```bash
 .help
 ```
 
@@ -112,7 +112,7 @@ Display available commands.
 
 Pass additional arguments to Terraform using a pipe separator:
 
-```
+```bash
 .plan to prod | -target=module.database
 ```
 

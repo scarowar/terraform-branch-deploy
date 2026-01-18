@@ -1,6 +1,5 @@
 """Tests for lifecycle module."""
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -67,9 +66,9 @@ class TestLifecycleManager:
             "TF_BD_SHA": "abc1234",
             "TF_BD_NOOP": "false",
         }
-        
+
         body = manager.format_result_comment("success", env_vars)
-        
+
         assert "Deployment Results ✅" in body
         assert "**user** successfully deployed branch `main` to **prod**" in body
         assert "Details" in body
@@ -82,9 +81,9 @@ class TestLifecycleManager:
             "TF_BD_REF": "feature",
             "TF_BD_ENVIRONMENT": "dev",
         }
-        
+
         body = manager.format_result_comment("failure", env_vars, failure_reason="Terraform failed")
-        
+
         assert "⚠️ Cannot proceed with deployment" in body
         assert "Terraform failed" in body
 
@@ -96,7 +95,7 @@ class TestLifecycleManager:
             "TF_BD_ENVIRONMENT": "prod",
             "TF_BD_NOOP": "true",
         }
-        
+
         body = manager.format_result_comment("success", env_vars)
-        
+
         assert "**noop** deployed" in body

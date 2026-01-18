@@ -28,9 +28,7 @@ class LifecycleManager:
     repo: str
     github_token: str | None = None
 
-    def update_deployment_status(
-        self, deployment_id: str, state: str, environment: str
-    ) -> None:
+    def update_deployment_status(self, deployment_id: str, state: str, environment: str) -> None:
         """Update GitHub deployment status."""
         if not deployment_id:
             return
@@ -52,8 +50,11 @@ class LifecycleManager:
         # Removing reaction uses DELETE method
         try:
             cmd = [
-                "gh", "api", "--method", "DELETE",
-                f"repos/{self.repo}/issues/comments/{comment_id}/reactions/{reaction_id}"
+                "gh",
+                "api",
+                "--method",
+                "DELETE",
+                f"repos/{self.repo}/issues/comments/{comment_id}/reactions/{reaction_id}",
             ]
             self._run_gh(cmd)
         except Exception as e:
@@ -72,9 +73,7 @@ class LifecycleManager:
             content=content,
         )
 
-    def post_result_comment(
-        self, pr_number: str, body: str
-    ) -> None:
+    def post_result_comment(self, pr_number: str, body: str) -> None:
         """Post a comment to the PR."""
         if not pr_number:
             return
@@ -97,18 +96,21 @@ class LifecycleManager:
         ref = env_vars.get("TF_BD_REF", "unknown")
         env = env_vars.get("TF_BD_ENVIRONMENT", "unknown")
         noop = env_vars.get("TF_BD_NOOP", "false").lower() == "true"
-        
+
         deploy_type = "**noop** deployed" if noop else "deployed"
-        
+
         if status == "success":
             header = "### Deployment Results ✅"
             msg = f"**{actor}** successfully {deploy_type} branch `{ref}` to **{env}**"
         else:
             header = "### ⚠️ Cannot proceed with deployment"
-            msg = failure_reason or "An unexpected error occurred. Please review the workflow logs for details."
+            msg = (
+                failure_reason
+                or "An unexpected error occurred. Please review the workflow logs for details."
+            )
 
         metadata = self._generate_metadata(env_vars)
-        
+
         return f"{header}\n\n{msg}\n\n<details><summary>Details</summary>\n\n```json\n{json.dumps(metadata, indent=2)}\n```\n\n</details>"
 
     def _generate_metadata(self, env_vars: dict[str, str]) -> dict[str, Any]:
@@ -134,7 +136,9 @@ class LifecycleManager:
 
         # 1. Get lock content
         try:
-            content_json = self._gh_api_get_content(f"repos/{self.repo}/contents/lock.json", ref=lock_ref)
+            content_json = self._gh_api_get_content(
+                f"repos/{self.repo}/contents/lock.json", ref=lock_ref
+            )
             sticky = content_json.get("sticky", "false")
         except Exception:
             sticky = "false"
@@ -145,7 +149,13 @@ class LifecycleManager:
 
         console.print("   🗑️  Removing non-sticky lock")
         try:
-            cmd = ["gh", "api", "--method", "DELETE", f"repos/{self.repo}/git/refs/heads/{lock_ref}"]
+            cmd = [
+                "gh",
+                "api",
+                "--method",
+                "DELETE",
+                f"repos/{self.repo}/git/refs/heads/{lock_ref}",
+            ]
             self._run_gh(cmd)
         except Exception as e:
             console.print(f"[dim]Ignored error removing lock: {e}[/dim]")
@@ -155,7 +165,7 @@ class LifecycleManager:
         args = ["gh", "api", "--method", method, endpoint]
         for k, v in kwargs.items():
             args.extend(["-f", f"{k}={v}"])
-        
+
         return self._run_gh(args)
 
     def _gh_api_get_content(self, endpoint: str, ref: str) -> dict[str, Any]:
@@ -165,12 +175,12 @@ class LifecycleManager:
         # Can we rely on python's json/base64?
         # Let's use `gh api ... --jq .content` and decode in python.
         import base64
-        
+
         cmd = ["gh", "api", endpoint, "-f", f"ref={ref}", "--jq", ".content"]
         result = self._run_gh(cmd, capture_output=True)
         if not result:
             return {}
-            
+
         try:
             decoded = base64.b64decode(result).decode("utf-8")
             return json.loads(decoded)
@@ -182,14 +192,10 @@ class LifecycleManager:
         env = os.environ.copy()
         if self.github_token:
             env["GITHUB_TOKEN"] = self.github_token
-            
+
         try:
             result = subprocess.run(  # nosec B603
-                cmd,
-                capture_output=True,
-                text=True,
-                env=env,
-                check=False 
+                cmd, capture_output=True, text=True, env=env, check=False
             )
             if result.returncode != 0:
                 if not capture_output:

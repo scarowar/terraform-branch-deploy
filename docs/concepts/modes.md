@@ -137,4 +137,3 @@ Execute mode automatically handles:
 | Env var export | ✅ Yes | ❌ No |
 | Terraform execution | ❌ No | ✅ Yes |
 | Lifecycle completion | ❌ No | ✅ Yes |
-

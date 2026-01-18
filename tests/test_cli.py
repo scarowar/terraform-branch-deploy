@@ -230,15 +230,20 @@ class TestSchemaCommand:
         schema = json.loads(result.stdout)
         assert "properties" in schema
 
+
 class TestGetConfigCommand:
     """Tests for get-config command."""
 
     def test_get_default_environment(self, tmp_path: Path) -> None:
         """Test getting default environment."""
         config_file = tmp_path / ".tf-branch-deploy.yml"
-        config_file.write_text("default-environment: dev\nproduction-environments: [prod]\nenvironments: {dev: {}, prod: {}}")
+        config_file.write_text(
+            "default-environment: dev\nproduction-environments: [prod]\nenvironments: {dev: {}, prod: {}}"
+        )
 
-        result = runner.invoke(app, ["get-config", "default-environment", "--config", str(config_file)])
+        result = runner.invoke(
+            app, ["get-config", "default-environment", "--config", str(config_file)]
+        )
 
         assert result.exit_code == 0
         assert "dev" in result.stdout
@@ -246,9 +251,13 @@ class TestGetConfigCommand:
     def test_get_production_environments(self, tmp_path: Path) -> None:
         """Test getting production environments."""
         config_file = tmp_path / ".tf-branch-deploy.yml"
-        config_file.write_text("default-environment: dev\nproduction-environments: [prod, stage]\nenvironments: {dev: {}, prod: {}, stage: {}}")
+        config_file.write_text(
+            "default-environment: dev\nproduction-environments: [prod, stage]\nenvironments: {dev: {}, prod: {}, stage: {}}"
+        )
 
-        result = runner.invoke(app, ["get-config", "production-environments", "--config", str(config_file)])
+        result = runner.invoke(
+            app, ["get-config", "production-environments", "--config", str(config_file)]
+        )
 
         assert result.exit_code == 0
         assert "prod,stage" in result.stdout
@@ -256,7 +265,9 @@ class TestGetConfigCommand:
     def test_invalid_key(self, tmp_path: Path) -> None:
         """Test getting invalid key."""
         config_file = tmp_path / ".tf-branch-deploy.yml"
-        config_file.write_text("default-environment: dev\nproduction-environments: [prod]\nenvironments: {dev: {}, prod: {}}")
+        config_file.write_text(
+            "default-environment: dev\nproduction-environments: [prod]\nenvironments: {dev: {}, prod: {}}"
+        )
 
         result = runner.invoke(app, ["get-config", "invalid-key", "--config", str(config_file)])
 
@@ -266,9 +277,43 @@ class TestGetConfigCommand:
 
 class TestCompleteLifecycleCommand:
     """Tests for complete-lifecycle command."""
-    
+
     def test_missing_env_vars(self) -> None:
         """Test error when required env vars are missing."""
         result = runner.invoke(app, ["complete-lifecycle", "--status", "success"])
         assert result.exit_code == 1
-        assert "GITHUB_REPOSITORY or GITHUB_TOKEN not set" in result.stdout
+        assert "GH_REPO/GITHUB_REPOSITORY or GITHUB_TOKEN not set" in result.stdout
+
+    def test_success(self, monkeypatch) -> None:
+        """Test successful execution with mocked environment."""
+        import os
+        from unittest.mock import MagicMock, patch
+
+        # Mock environment variables
+        env_vars = {
+            "GITHUB_REPOSITORY": "org/repo",
+            "GITHUB_TOKEN": "token",
+            "TF_BD_DEPLOYMENT_ID": "123",
+            "TF_BD_ENVIRONMENT": "dev",
+            "TF_BD_COMMENT_ID": "456",
+            "TF_BD_INITIAL_REACTION_ID": "789",
+            "TF_BD_PR_NUMBER": "10",
+        }
+        monkeypatch.setattr(os, "environ", env_vars)
+
+        # Mock LifecycleManager
+        with patch("tf_branch_deploy.lifecycle.LifecycleManager") as mock_manager_cls:
+            mock_manager = MagicMock()
+            mock_manager_cls.return_value = mock_manager
+
+            result = runner.invoke(app, ["complete-lifecycle", "--status", "success"])
+
+            assert result.exit_code == 0
+            assert "Lifecycle complete" in result.stdout
+
+            # Verify manager calls
+            mock_manager.update_deployment_status.assert_called_with("123", "success", "dev")
+            mock_manager.remove_reaction.assert_called_with("456", "789")
+            mock_manager.add_reaction.assert_called_with("456", "rocket")
+            mock_manager.post_result_comment.assert_called()
+            mock_manager.remove_non_sticky_lock.assert_called_with("dev")

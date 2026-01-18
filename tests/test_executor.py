@@ -9,9 +9,7 @@ from tf_branch_deploy.executor import (
     CommandResult,
     PlanResult,
     TerraformExecutor,
-    TF_INPUT_FALSE,
 )
-
 
 
 @pytest.fixture

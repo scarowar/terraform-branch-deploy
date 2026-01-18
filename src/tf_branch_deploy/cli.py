@@ -3,8 +3,7 @@ Terraform Branch Deploy CLI.
 
 Typer-based CLI for Terraform infrastructure deployments via GitHub PRs.
 
-Three modes:
-- parse: Read config, output environment settings
+Two modes:
 - trigger: [For action.yml] Parse command, export TF_BD_* env vars, STOP
 - execute: [For action.yml] Run terraform with lifecycle completion
 """
@@ -69,37 +68,37 @@ def format_error_for_comment(
     logs_url: str | None = None,
 ) -> str:
     """Format a professional error message for GitHub comment.
-    
+
     Matches branch-deploy's clean, seamless style:
     - No subtitles or section headers
     - Clear explanation in natural paragraph flow
     - Optional details as bullet points or inline code
     - Suggestion in blockquote format
     - Logs link when applicable
-    
+
     Args:
         message: Main explanation paragraph
         details: Optional additional details (can include markdown)
         suggestion: Optional suggestion shown in blockquote
         logs_url: Optional link to workflow logs
-    
+
     Returns:
         Formatted markdown string for the comment
     """
     lines = [message]
-    
+
     if details:
         lines.append("")
         lines.append(details)
-    
+
     if logs_url:
         lines.append("")
         lines.append(f"📋 [View workflow logs]({logs_url})")
-    
+
     if suggestion:
         lines.append("")
         lines.append(f"> {suggestion}")
-    
+
     return "\n".join(lines)
 
 
@@ -198,9 +197,6 @@ def _strip_shell_quotes(arg: str) -> str:
     return flag + value
 
 
-
-
-
 def _load_and_validate_config(
     config_path: Path, environment: str
 ) -> tuple["TerraformBranchDeployConfig", "EnvironmentConfig"]:
@@ -223,14 +219,19 @@ def _load_and_validate_config(
 
 @app.command(name="get-config")
 def get_config(
-    key: Annotated[str, typer.Argument(help="Config key to retrieve (default-environment or production-environments)")],
+    key: Annotated[
+        str,
+        typer.Argument(
+            help="Config key to retrieve (default-environment or production-environments)"
+        ),
+    ],
     config_path: Annotated[
         Path, typer.Option("--config", "-c", help="Path to .tf-branch-deploy.yml")
     ] = DEFAULT_CONFIG_PATH,
 ) -> None:
     """
     Retrieve a value from the configuration file.
-    
+
     Replaces yq usage in action.yml for robust, dependency-free config parsing.
     """
     try:
@@ -254,7 +255,9 @@ def get_config(
 @app.command(name="complete-lifecycle")
 def complete_lifecycle(
     status: Annotated[str, typer.Option(help="Execution status (success/failure)")],
-    failure_reason: Annotated[str | None, typer.Option(help="Reason for failure if status is failure")] = None,
+    failure_reason: Annotated[
+        str | None, typer.Option(help="Reason for failure if status is failure")
+    ] = None,
 ) -> None:
     """Complete the deployment lifecycle (update status, reactions, comments)."""
     from .lifecycle import LifecycleManager
@@ -263,9 +266,9 @@ def complete_lifecycle(
     env_vars = dict(os.environ)
     repo = env_vars.get("GH_REPO") or env_vars.get("GITHUB_REPOSITORY")
     token = env_vars.get("GITHUB_TOKEN")
-    
+
     if not repo or not token:
-        console.print("[red]Error:[/red] GITHUB_REPOSITORY or GITHUB_TOKEN not set")
+        console.print("[red]Error:[/red] GH_REPO/GITHUB_REPOSITORY or GITHUB_TOKEN not set")
         raise typer.Exit(1)
 
     manager = LifecycleManager(repo=repo, github_token=token)
@@ -292,11 +295,11 @@ def complete_lifecycle(
     if pr_number:
         body = manager.format_result_comment(status, env_vars, failure_reason)
         manager.post_result_comment(pr_number, body)
-    
+
     # 5. Remove non-sticky lock
     if environment:
         manager.remove_non_sticky_lock(environment)
-    
+
     console.print("\n[green]✅ Lifecycle complete[/green]")
 
 
@@ -400,7 +403,9 @@ def execute(
     init_result = executor.init()
     if not init_result.success:
         console.print("[red]Terraform init failed[/red]")
-        set_github_output("failure_reason", "Terraform initialization failed. Check logs for details.")
+        set_github_output(
+            "failure_reason", "Terraform initialization failed. Check logs for details."
+        )
         raise typer.Exit(1)
 
     if operation == "plan":
@@ -503,7 +508,7 @@ def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path) -> None:
             console.print(
                 "[red]❌ Plan file checksum mismatch! Plan may have been tampered with.[/red]"
             )
-            env = os.environ.get('TF_BD_ENVIRONMENT', 'dev')
+            env = os.environ.get("TF_BD_ENVIRONMENT", "dev")
             error_msg = format_error_for_comment(
                 message="Security validation failed: Plan file checksum mismatch. The plan file's checksum does not match the expected value, which could indicate tampering or corruption.",
                 suggestion=f"Create a fresh plan by running `.plan to {env}`",
@@ -521,7 +526,7 @@ def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path) -> None:
             + ACTIONS_RUNS_PATH
             + os.environ.get("GITHUB_RUN_ID", "")
         )
-        env = os.environ.get('TF_BD_ENVIRONMENT', 'dev')
+        env = os.environ.get("TF_BD_ENVIRONMENT", "dev")
         error_msg = format_error_for_comment(
             message="Terraform apply failed. The `terraform apply` command exited with an error after applying the plan.",
             logs_url=logs_url,

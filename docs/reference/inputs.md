@@ -86,4 +86,3 @@ All action inputs for `scarowar/terraform-branch-deploy`.
 | `sticky-locks` | `false` | Keep locks after deployment |
 | `sticky-locks-for-noop` | `false` | Keep locks for plan operations |
 | `global-lock-flag` | `--global` | Global lock flag |
-
