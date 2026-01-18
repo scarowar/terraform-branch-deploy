@@ -237,3 +237,46 @@ class TestSchemaCommand:
         # Output should be parseable JSON
         schema = json.loads(result.stdout)
         assert "properties" in schema
+
+class TestGetConfigCommand:
+    """Tests for get-config command."""
+
+    def test_get_default_environment(self, tmp_path: Path) -> None:
+        """Test getting default environment."""
+        config_file = tmp_path / ".tf-branch-deploy.yml"
+        config_file.write_text("default-environment: dev\nproduction-environments: [prod]\nenvironments: {dev: {}, prod: {}}")
+
+        result = runner.invoke(app, ["get-config", "default-environment", "--config", str(config_file)])
+
+        assert result.exit_code == 0
+        assert "dev" in result.stdout
+
+    def test_get_production_environments(self, tmp_path: Path) -> None:
+        """Test getting production environments."""
+        config_file = tmp_path / ".tf-branch-deploy.yml"
+        config_file.write_text("default-environment: dev\nproduction-environments: [prod, stage]\nenvironments: {dev: {}, prod: {}, stage: {}}")
+
+        result = runner.invoke(app, ["get-config", "production-environments", "--config", str(config_file)])
+
+        assert result.exit_code == 0
+        assert "prod,stage" in result.stdout
+
+    def test_invalid_key(self, tmp_path: Path) -> None:
+        """Test getting invalid key."""
+        config_file = tmp_path / ".tf-branch-deploy.yml"
+        config_file.write_text("default-environment: dev\nproduction-environments: [prod]\nenvironments: {dev: {}, prod: {}}")
+
+        result = runner.invoke(app, ["get-config", "invalid-key", "--config", str(config_file)])
+
+        assert result.exit_code == 1
+        assert "Unsupported key" in result.stdout
+
+
+class TestCompleteLifecycleCommand:
+    """Tests for complete-lifecycle command."""
+    
+    def test_missing_env_vars(self) -> None:
+        """Test error when required env vars are missing."""
+        result = runner.invoke(app, ["complete-lifecycle", "--status", "success"])
+        assert result.exit_code == 1
+        assert "GITHUB_REPOSITORY or GITHUB_TOKEN not set" in result.stdout
