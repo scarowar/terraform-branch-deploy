@@ -72,7 +72,7 @@ environments:
 2. Or specify a custom path:
 
 ```yaml
-- uses: scarowar/terraform-branch-deploy@v0.2.0
+- uses: scarowar/terraform-branch-deploy@v0
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     config-path: terraform/.tf-branch-deploy.yml

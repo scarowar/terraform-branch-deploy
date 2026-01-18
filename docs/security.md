@@ -1,6 +1,6 @@
-# Guardrails & Best Practices
+# Security
 
-This guide covers all the security and governance features available in terraform-branch-deploy to protect your infrastructure from accidental or unauthorized changes.
+Security and governance features to protect your infrastructure from accidental or unauthorized changes.
 
 ## Quick Setup by Team Size
 
@@ -438,11 +438,13 @@ permissions:
   statuses: read
 
 jobs:
-  trigger:
+  deploy:
     if: github.event.issue.pull_request
     runs-on: ubuntu-latest
     steps:
-      - uses: scarowar/terraform-branch-deploy@v0.2.0
+      - uses: actions/checkout@v4
+
+      - uses: scarowar/terraform-branch-deploy@v0
         with:
           mode: trigger
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -467,16 +469,13 @@ jobs:
           enforced-deployment-order: "dev,staging,prod"
           sticky-locks: true
 
-  execute:
-    needs: trigger
-    if: env.TF_BD_CONTINUE == 'true'
-    runs-on: ubuntu-latest
-    steps:
       - uses: actions/checkout@v4
+        if: env.TF_BD_CONTINUE == 'true'
         with:
           ref: ${{ env.TF_BD_REF }}
 
-      - uses: scarowar/terraform-branch-deploy@v0.2.0
+      - uses: scarowar/terraform-branch-deploy@v0
+        if: env.TF_BD_CONTINUE == 'true'
         with:
           mode: execute
           github-token: ${{ secrets.GITHUB_TOKEN }}
