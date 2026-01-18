@@ -2,6 +2,27 @@
 
 Terraform Branch Deploy uses a **two-mode architecture**: **trigger** and **execute**.
 
+```mermaid
+sequenceDiagram
+    participant PR as PR Comment
+    participant T as Trigger Mode
+    participant C as Cloud Auth
+    participant E as Execute Mode
+    participant TF as Terraform
+
+    PR->>T: .plan to dev
+    T->>T: Parse command
+    T->>T: Acquire lock
+    T->>T: Export TF_BD_* vars
+    T-->>C: TF_BD_CONTINUE=true
+    C->>C: Configure credentials
+    C-->>E: Credentials ready
+    E->>TF: terraform plan
+    TF-->>E: Plan output
+    E->>PR: Post plan comment
+    E->>E: Release lock
+```
+
 ---
 
 ## Overview

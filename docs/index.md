@@ -6,9 +6,26 @@ Terraform integrated into the [Branch Deploy](https://github.com/github/branch-d
 
 ## The Model
 
-Traditional CI/CD deploys after merging. If the deployment fails, main is broken.
+Traditional CI/CD deploys after merging. If deployment fails, main is broken.
 
-Branch Deploy inverts this: deploy from the PR branch first, then merge if successful. Main stays stable. To roll back, deploy main.
+Branch Deploy inverts this:
+
+```mermaid
+flowchart LR
+    subgraph "Traditional CI/CD"
+        direction LR
+        A1[PR] --> A2[Merge] --> A3[Deploy]
+        A3 -->|fails| A4[Main broken]
+    end
+
+    subgraph "Branch Deploy"
+        direction LR
+        B1[PR] --> B2[Deploy branch] --> B3{Success?}
+        B3 -->|yes| B4[Merge]
+        B3 -->|no| B5[Fix & retry]
+        B4 --> B6[Main stable]
+    end
+```
 
 Terraform Branch Deploy extends this to infrastructure:
 

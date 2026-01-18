@@ -41,6 +41,9 @@ When `TF_BD_CONTINUE` is `false`:
 - The environment is locked by another user
 - An error occurred during parsing
 
+!!! warning "Always Gate on TF_BD_CONTINUE"
+    Every step after trigger mode should check `if: env.TF_BD_CONTINUE == 'true'`. Without this gate, subsequent steps will run even when the command was invalid or unauthorized.
+
 ---
 
 ## Environment-Specific Logic

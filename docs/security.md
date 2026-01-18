@@ -7,7 +7,7 @@ Security and governance features to protect your infrastructure from accidental 
 === "Solo / Small Team"
 
     ```yaml
-    - uses: scarowar/terraform-branch-deploy@v0.2.0
+    - uses: scarowar/terraform-branch-deploy@v0
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         # Minimal guardrails - fast iteration
@@ -18,7 +18,7 @@ Security and governance features to protect your infrastructure from accidental 
 === "Team (5-20 people)"
 
     ```yaml
-    - uses: scarowar/terraform-branch-deploy@v0.2.0
+    - uses: scarowar/terraform-branch-deploy@v0
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         # Standard guardrails
@@ -32,7 +32,7 @@ Security and governance features to protect your infrastructure from accidental 
 === "Enterprise"
 
     ```yaml
-    - uses: scarowar/terraform-branch-deploy@v0.2.0
+    - uses: scarowar/terraform-branch-deploy@v0
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         # Maximum guardrails
