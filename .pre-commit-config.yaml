@@ -55,3 +55,7 @@ repos:
     rev: v0.19.1
     hooks:
       - id: gitlint
+  - repo: https://github.com/jumanjihouse/pre-commit-hooks
+    rev: 3.0.0
+    hooks:
+      - id: shellcheck
