@@ -31,7 +31,7 @@ dev = [
     "types-PyYAML>=6.0",
     "zensical>=0.0.15",
     "bandit>=1.9.2",
-    "pytest-cov>=7.0.0",
+    "pytest-cov>=7.1.0",
     "semgrep>=1.86.0",
 ]
 
