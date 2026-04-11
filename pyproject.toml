@@ -30,7 +30,7 @@ dev = [
     "mypy>=1.6",
     "types-PyYAML>=6.0",
     "zensical>=0.0.15",
-    "bandit>=1.9.2",
+    "bandit>=1.9.4",
     "pytest-cov>=7.0.0",
     "semgrep>=1.86.0",
 ]
