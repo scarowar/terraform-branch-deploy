@@ -32,6 +32,13 @@ inputs:
   terraform-version:
     description: "Terraform version to install"
     default: "latest"
+  uv-version:
+    description: |
+      Version constraint for uv to install. Use 'latest' to fetch from GitHub API (requires valid github.com token on GHEC).
+      Default: '>=0.7.0' (pinned version, avoids API call on Enterprise Cloud).
+      Examples: 'latest', '0.8.0', '>=0.7.0'
+    required: false
+    default: ">=0.7.0"
   dry-run:
     description: "Print commands without running"
     default: "false"
@@ -267,11 +274,13 @@ runs:
 
     - name: Setup UV
       uses: astral-sh/setup-uv@803947b9bd8e9f986429fa0c5a41c367cd732b41
+      with:
+        version: ${{ inputs.uv-version }}
 
     - name: Install tf-branch-deploy
       shell: bash
       run: |
-        uv venv "${{ runner.temp }}/tf-bd-venv"
+        uv venv --clear "${{ runner.temp }}/tf-bd-venv"
         . "${{ runner.temp }}/tf-bd-venv/bin/activate"
         uv pip install "${{ github.action_path }}"
         echo "${{ runner.temp }}/tf-bd-venv/bin" >> $GITHUB_PATH
