@@ -147,6 +147,10 @@ class TerraformExecutor:
         if out_file is None:
             out_file = self.working_directory / "tfplan.bin"
 
+        # Resolve relative paths against working_directory so .exists()
+        # checks the correct location (terraform writes relative to cwd).
+        resolved_out = out_file if out_file.is_absolute() else self.working_directory / out_file
+
         args = ["terraform", "plan", TF_INPUT_FALSE, "-detailed-exitcode"]
 
         for var_file in self.var_files:
@@ -174,12 +178,12 @@ class TerraformExecutor:
             console.print("[red]❌ Plan failed[/red]")
             console.print(result.stderr)
 
-        # Calculate checksum
+        # Calculate checksum using resolved path
         checksum = None
-        if out_file.exists():
+        if resolved_out.exists():
             from .artifacts import calculate_checksum
 
-            checksum = calculate_checksum(out_file)
+            checksum = calculate_checksum(resolved_out)
 
         return PlanResult(
             exit_code=0 if success else result.exit_code,
@@ -187,7 +191,7 @@ class TerraformExecutor:
             stderr=result.stderr,
             command=result.command,
             has_changes=has_changes,
-            plan_file=out_file if out_file.exists() else None,
+            plan_file=resolved_out if resolved_out.exists() else None,
             checksum=checksum,
         )
 
