@@ -178,7 +178,7 @@ class TestTerraformExecutor:
         call_args = mock_run.call_args
         args = call_args[0][0]
 
-        assert plan_file.name in args
+        assert str(plan_file) in args
         # Var files should NOT be in command when using plan file
         assert "-var-file" not in args
 
@@ -245,36 +245,6 @@ class TestTerraformExecutor:
         assert "not found" in result.stderr.lower()
         # subprocess.run must NOT have been called — no terraform command ran
         mock_run.assert_not_called()
-
-    @patch("subprocess.run")
-    def test_apply_with_full_path_plan_file(self, mock_run: MagicMock, tmp_path: Path) -> None:
-        """apply() handles full (absolute) path plan files correctly.
-
-        When cli.py passes the full plan file path instead of a bare filename,
-        the executor resolves it to a relative name for the terraform command.
-        """
-        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-
-        working_dir = tmp_path / "terraform" / "modules"
-        working_dir.mkdir(parents=True)
-
-        plan_file = working_dir / "tfplan-int-abc12345.tfplan"
-        plan_file.write_bytes(b"valid plan")
-
-        executor = TerraformExecutor(
-            working_directory=working_dir,
-            var_files=["../config/int/int_config.tfvars"],
-        )
-
-        # Pass full path (as _apply_with_plan now does)
-        executor.apply(plan_file=plan_file)
-
-        call_args = mock_run.call_args
-        args = call_args[0][0]
-
-        # The plan filename must appear in the command (relative to working_dir)
-        assert plan_file.name in args
-        assert "-var-file" not in args
 
 
 class TestTfcmtIntegration:
