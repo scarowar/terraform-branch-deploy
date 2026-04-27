@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess  # nosec B404 - subprocess is required to run terraform
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,7 +18,17 @@ from rich.console import Console
 
 TF_INPUT_FALSE = "-input=false"
 
+_VAR_REDACT_RE = re.compile(r"(-var=\S+?=)(\S+)")
+
 console = Console()
+
+
+def _redact_args(args: list[str]) -> str:
+    """Join args for display, redacting -var= values."""
+    redacted = []
+    for arg in args:
+        redacted.append(_VAR_REDACT_RE.sub(r"\1***", arg))
+    return " ".join(redacted)
 
 
 @dataclass
@@ -94,7 +105,7 @@ class TerraformExecutor:
         if env:
             full_env.update(env)
 
-        console.print(f"[dim]$ {' '.join(args)}[/dim]")
+        console.print(f"[dim]$ {_redact_args(args)}[/dim]")
 
         result = subprocess.run(  # nosec B603 B607 - args from validated config, terraform via PATH is expected
             args,
