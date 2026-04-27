@@ -24,10 +24,9 @@ class TestLifecycleManager:
 
         mock_run.assert_called_once()
         args = mock_run.call_args[0][0]
-        args_str = " ".join(args)
-        assert "gh" in args_str
-        assert "deployments/123/statuses" in args_str
-        assert "state=success" in args_str
+        assert "gh" in args
+        assert any("deployments/123/statuses" in a for a in args)
+        assert "state=success" in args
 
     @patch("tf_branch_deploy.lifecycle.subprocess.run")
     def test_remove_reaction(self, mock_run: MagicMock, manager: LifecycleManager) -> None:
@@ -36,9 +35,8 @@ class TestLifecycleManager:
 
         mock_run.assert_called_once()
         args = mock_run.call_args[0][0]
-        args_str = " ".join(args)
-        assert "DELETE" in args_str
-        assert "issues/comments/456/reactions/789" in args_str
+        assert "DELETE" in args
+        assert any("issues/comments/456/reactions/789" in a for a in args)
 
     @patch("tf_branch_deploy.lifecycle.subprocess.run")
     def test_add_reaction(self, mock_run: MagicMock, manager: LifecycleManager) -> None:
@@ -47,10 +45,9 @@ class TestLifecycleManager:
 
         mock_run.assert_called_once()
         args = mock_run.call_args[0][0]
-        args_str = " ".join(args)
-        assert "POST" in args_str
-        assert "issues/comments/456/reactions" in args_str
-        assert "content=rocket" in args_str
+        assert "POST" in args
+        assert any("issues/comments/456/reactions" in a for a in args)
+        assert "content=rocket" in args
 
     @patch("tf_branch_deploy.lifecycle.subprocess.run")
     def test_post_result_comment(self, mock_run: MagicMock, manager: LifecycleManager) -> None:
@@ -59,9 +56,8 @@ class TestLifecycleManager:
 
         mock_run.assert_called_once()
         args = mock_run.call_args[0][0]
-        args_str = " ".join(args)
-        assert "issues/100/comments" in args_str
-        assert "body=body" in args_str
+        assert any("issues/100/comments" in a for a in args)
+        assert "body=body" in args
 
     def test_format_result_comment_success(self, manager: LifecycleManager) -> None:
         """Test formatting success comment."""

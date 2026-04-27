@@ -58,8 +58,10 @@ class LifecycleManager:
             ]
             self._run_gh(cmd)
         except Exception as e:
-            # Ignore errors removing reactions, but log for debug
-            console.print(f"[dim]Ignored error removing reaction: {e}[/dim]")
+            console.print(
+                f"[yellow]⚠️  Non-critical: failed to remove reaction "
+                f"(comment={comment_id}, reaction={reaction_id}): {e}[/yellow]"
+            )
 
     def add_reaction(self, comment_id: str, content: str) -> None:
         """Add a reaction to a comment."""
@@ -139,9 +141,11 @@ class LifecycleManager:
                 f"repos/{self.repo}/contents/lock.json", ref=lock_ref
             )
             sticky = content_json.get("sticky", "false")
-        except Exception:
-            # If we can't read the lock file, assume it's sticky to be safe
-            console.print("[yellow]   ⚠️  Could not read lock metadata - assuming sticky[/yellow]")
+        except Exception as e:
+            console.print(
+                f"[yellow]⚠️  Non-critical: could not read lock metadata "
+                f"(environment={environment}): {e} — assuming sticky[/yellow]"
+            )
             sticky = "true"
 
         if str(sticky).lower() == "true":
@@ -159,7 +163,10 @@ class LifecycleManager:
             ]
             self._run_gh(cmd)
         except Exception as e:
-            console.print(f"[dim]Ignored error removing lock: {e}[/dim]")
+            console.print(
+                f"[yellow]⚠️  Non-critical: failed to remove lock "
+                f"(environment={environment}): {e}[/yellow]"
+            )
 
     def _gh_api(self, method: str, endpoint: str, **kwargs: Any) -> Any:
         """Call gh api."""
@@ -170,23 +177,19 @@ class LifecycleManager:
         return self._run_gh(args)
 
     def _gh_api_get_content(self, endpoint: str, ref: str) -> dict[str, Any]:
-        """Get file content from GitHub API."""
-        # Using gh api to get raw content is tricky with base64 decoding.
-        # Use jq to extract content and decode.
-        # Can we rely on python's json/base64?
-        # Let's use `gh api ... --jq .content` and decode in python.
+        """Get file content from GitHub API.
+
+        Raises on any failure so callers can handle it explicitly.
+        """
         import base64
 
         cmd = ["gh", "api", endpoint, "-f", f"ref={ref}", "--jq", ".content"]
         result = self._run_gh(cmd, capture_output=True)
         if not result:
-            return {}
+            raise RuntimeError("gh api returned empty response")
 
-        try:
-            decoded = base64.b64decode(result).decode("utf-8")
-            return json.loads(decoded)
-        except Exception:
-            return {}
+        decoded = base64.b64decode(result).decode("utf-8")
+        return json.loads(decoded)
 
     def _run_gh(self, cmd: list[str], capture_output: bool = False) -> str | None:
         """Run gh command.
@@ -218,7 +221,10 @@ class LifecycleManager:
             )
             if result.returncode != 0:
                 if not capture_output:
-                    console.print(f"[dim]gh command failed: {result.stderr}[/dim]")
+                    console.print(
+                        f"[yellow]⚠️  gh command failed (exit {result.returncode}): "
+                        f"{result.stderr.strip()}[/yellow]"
+                    )
                 return None
             return result.stdout.strip()
         except Exception as e:
