@@ -455,12 +455,13 @@ def _handle_apply(
     plan_file = working_dir / plan_filename
     is_rollback = os.environ.get("TF_BD_IS_ROLLBACK", "false").lower() == "true"
 
-    if plan_file.exists():
-        _apply_with_plan(executor, plan_file)
-        console.print(f"[dim]📋 Plan applied: {plan_filename}[/dim]")
-    elif is_rollback:
+    if is_rollback:
         console.print(
             "[yellow]⚡ Rollback detected - applying directly from stable branch[/yellow]"
+        )
+        console.print(
+            "[yellow]⚠️  WARNING: Rollback applies the full stable-branch state without a reviewed plan. "
+            "Ensure the stable branch configuration is correct before proceeding.[/yellow]"
         )
         apply_result = executor.apply()
         if not apply_result.success:
@@ -479,6 +480,9 @@ def _handle_apply(
             set_github_output("failure_reason", error_msg)
             raise typer.Exit(1)
         console.print("[dim]📋 Rollback applied directly (no plan file)[/dim]")
+    elif plan_file.exists():
+        _apply_with_plan(executor, plan_file)
+        console.print(f"[dim]📋 Plan applied: {plan_filename}[/dim]")
     else:
         console.print(f"[red]❌ No plan file found for this SHA: {plan_file}[/red]")
         error_msg = format_error_for_comment(
@@ -517,7 +521,7 @@ def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path) -> None:
             raise typer.Exit(1)
         console.print("[green]✅ Plan checksum verified[/green]")
 
-    apply_result = executor.apply(plan_file=Path(plan_file.name))
+    apply_result = executor.apply(plan_file=plan_file)
     if not apply_result.success:
         logs_url = (
             os.environ.get("GITHUB_SERVER_URL", GITHUB_URL_DEFAULT)
