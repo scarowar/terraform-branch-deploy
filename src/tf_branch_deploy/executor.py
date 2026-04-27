@@ -189,9 +189,33 @@ class TerraformExecutor:
 
         args = ["terraform", "apply", TF_INPUT_FALSE, "-auto-approve"]
 
-        if plan_file and plan_file.exists():
+        # Resolve plan_file relative to working_directory since subprocess
+        # runs with cwd=working_directory but Path.exists() checks from
+        # the Python process CWD (which may be different).
+        resolved_plan = (
+            (self.working_directory / plan_file)
+            if plan_file and not plan_file.is_absolute()
+            else plan_file
+        )
+        if resolved_plan and resolved_plan.exists():
             args.append(str(plan_file))
+        elif plan_file is not None:
+            # A plan file was explicitly requested but not found — abort.
+            # Never silently fall through to an untargeted apply.
+            msg = (
+                f"Plan file '{plan_file}' not found "
+                f"(resolved: '{resolved_plan}'). "
+                "Refusing to run untargeted apply."
+            )
+            console.print(f"[red]❌ {msg}[/red]")
+            return ApplyResult(
+                exit_code=1,
+                stdout="",
+                stderr=msg,
+                command=["terraform", "apply", "(aborted)"],
+            )
         else:
+            # No plan file requested (e.g. rollback) — apply with var-files
             for var_file in self.var_files:
                 args.extend(["-var-file", var_file])
             args.extend(self.apply_args)
