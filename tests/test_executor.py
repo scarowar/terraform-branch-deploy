@@ -417,3 +417,38 @@ class TestRedactArgs:
         """-var at end of args (no value following) is left as-is."""
         args = ["terraform", "plan", "-var"]
         assert _redact_args(args) == "terraform plan -var"
+
+
+class TestTimeout:
+    """Tests for subprocess timeout handling."""
+
+    def test_executor_default_timeout(self, tmp_path: Path) -> None:
+        """Executor has a default timeout of 3600s."""
+        executor = TerraformExecutor(working_directory=tmp_path)
+        assert executor.timeout == 3600
+
+    def test_executor_custom_timeout(self, tmp_path: Path) -> None:
+        """Executor accepts a custom timeout."""
+        executor = TerraformExecutor(working_directory=tmp_path, timeout=600)
+        assert executor.timeout == 600
+
+    @patch("tf_branch_deploy.executor.subprocess.run")
+    def test_timeout_returns_exit_124(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        """Timeout produces exit code 124 and descriptive stderr."""
+        import subprocess as sp
+
+        mock_run.side_effect = sp.TimeoutExpired(cmd=["terraform", "plan"], timeout=60)
+        executor = TerraformExecutor(working_directory=tmp_path, timeout=60, dry_run=False)
+        result = executor._run_command(["terraform", "plan"])
+        assert result.exit_code == 124
+        assert "timed out" in result.stderr
+        assert not result.success
+
+    @patch("tf_branch_deploy.executor.subprocess.run")
+    def test_timeout_passed_to_subprocess(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        """The timeout value is passed to subprocess.run."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        executor = TerraformExecutor(working_directory=tmp_path, timeout=900, dry_run=False)
+        executor._run_command(["terraform", "version"])
+        _, kwargs = mock_run.call_args
+        assert kwargs["timeout"] == 900

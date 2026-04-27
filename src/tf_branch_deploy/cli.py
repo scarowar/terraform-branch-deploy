@@ -462,6 +462,7 @@ def execute(
         github_token=os.environ.get("GITHUB_TOKEN"),
         repo=os.environ.get("GITHUB_REPOSITORY"),
         pr_number=pr_number,
+        timeout=env_config.timeout,
     )
 
     init_result = executor.init()

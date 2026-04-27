@@ -295,8 +295,14 @@ runs:
       shell: bash
       run: |
         TFCMT_VERSION="v4.14.0"
-        curl -fsSL "https://github.com/suzuki-shunsuke/tfcmt/releases/download/${TFCMT_VERSION}/tfcmt_linux_amd64.tar.gz" | tar xz -C /usr/local/bin tfcmt
+        TFCMT_SHA256="bf0c82a40839647b20629289c9f72faa6dee931f45db26842e0818192c706309"
+        TFCMT_URL="https://github.com/suzuki-shunsuke/tfcmt/releases/download/${TFCMT_VERSION}/tfcmt_linux_amd64.tar.gz"
+
+        curl -fsSL "${TFCMT_URL}" -o /tmp/tfcmt.tar.gz
+        echo "${TFCMT_SHA256}  /tmp/tfcmt.tar.gz" | sha256sum -c --strict -
+        tar xz -C /usr/local/bin tfcmt < /tmp/tfcmt.tar.gz
         chmod +x /usr/local/bin/tfcmt
+        rm -f /tmp/tfcmt.tar.gz
 
     # ╔══════════════════════════════════════════════════════════════════════════╗
     # ║                           TRIGGER MODE                                    ║
@@ -495,6 +501,17 @@ runs:
           echo "::error::Execute mode requires TF_BD_* environment variables from trigger mode."
           exit 1
         fi
+
+        # Cross-validate TF_BD_ENVIRONMENT against config file
+        CONFIG_PATH="${{ inputs.config-path }}"
+        if [[ ! -f "${CONFIG_PATH}" ]]; then
+          echo "::error::Config file '${CONFIG_PATH}' not found in execute mode."
+          echo "::error::The config file is required to validate the target environment."
+          exit 1
+        fi
+
+        # Use Python + PyYAML (available in runner) for reliable YAML parsing
+        python3 "${{ github.action_path }}/scripts/validate_env.py" "${CONFIG_PATH}" "${TF_BD_ENVIRONMENT}"
 
         echo "✅ State validated: ${TF_BD_ENVIRONMENT} / ${TF_BD_OPERATION}"
 
