@@ -214,11 +214,37 @@ class TestTerraformExecutor:
         args = call_args[0][0]
 
         # Plan file must be in the command — NOT var-file fallback
-        assert plan_file.name in " ".join(args)
+        assert plan_file.name in args
         assert "-var-file" not in args, (
             "var-file should NOT appear when a plan file exists — "
             "this means the plan file was not found and a full untargeted apply ran instead"
         )
+
+    @patch("subprocess.run")
+    def test_apply_aborts_when_plan_file_provided_but_missing(
+        self, mock_run: MagicMock, tmp_path: Path
+    ) -> None:
+        """apply() aborts when plan_file is provided but does not exist.
+
+        Regression test: a missing plan file must NEVER silently fall through
+        to an untargeted 'terraform apply -auto-approve'. The executor must
+        abort and return a failure exit code.
+        """
+        working_dir = tmp_path / "terraform" / "modules"
+        working_dir.mkdir(parents=True)
+
+        executor = TerraformExecutor(
+            working_directory=working_dir,
+            var_files=["../config/int/int_config.tfvars"],
+        )
+
+        # Pass a plan file that does NOT exist
+        result = executor.apply(plan_file=Path("tfplan-int-missing.tfplan"))
+
+        assert result.exit_code == 1
+        assert "not found" in result.stderr.lower()
+        # subprocess.run must NOT have been called — no terraform command ran
+        mock_run.assert_not_called()
 
 
 class TestTfcmtIntegration:
