@@ -313,3 +313,93 @@ class TestCompleteLifecycleCommand:
             mock_manager.add_reaction.assert_called_with("456", "rocket")
             mock_manager.post_result_comment.assert_called()
             mock_manager.remove_non_sticky_lock.assert_called_with("dev")
+
+
+class TestHandleApply:
+    """Tests for _handle_apply — rollback priority and plan file resolution."""
+
+    def test_rollback_takes_priority_over_stale_plan(self, tmp_path: Path) -> None:
+        """Rollback must execute directly, even if a stale plan file exists.
+
+        Regression: if plan_file.exists() is checked before is_rollback,
+        a stale cached plan could be consumed instead of doing a fresh
+        stable-branch apply.
+        """
+        from unittest.mock import MagicMock, patch
+
+        from tf_branch_deploy.cli import _handle_apply
+
+        working_dir = tmp_path / "terraform" / "modules"
+        working_dir.mkdir(parents=True)
+
+        # Create a stale plan file that should NOT be used
+        stale_plan = working_dir / "tfplan-int-abc12345.tfplan"
+        stale_plan.write_bytes(b"stale targeted plan")
+
+        mock_executor = MagicMock()
+        mock_executor.apply.return_value = MagicMock(success=True)
+
+        env_vars = {
+            "TF_BD_IS_ROLLBACK": "true",
+        }
+
+        with patch.dict("os.environ", env_vars):
+            _handle_apply(mock_executor, "int", "abc12345ff", working_dir)
+
+        # Executor.apply() must be called with NO plan_file (rollback path)
+        mock_executor.apply.assert_called_once_with()
+
+    def test_plan_file_used_when_not_rollback(self, tmp_path: Path) -> None:
+        """Normal apply uses the cached plan file when it exists."""
+        from unittest.mock import MagicMock, patch
+
+        from tf_branch_deploy.cli import _handle_apply
+
+        working_dir = tmp_path / "terraform" / "modules"
+        working_dir.mkdir(parents=True)
+
+        # Create the expected plan file
+        plan_file = working_dir / "tfplan-int-abc12345.tfplan"
+        plan_file.write_bytes(b"valid plan")
+
+        mock_executor = MagicMock()
+        mock_executor.apply.return_value = MagicMock(success=True)
+
+        env_vars = {
+            "TF_BD_IS_ROLLBACK": "false",
+        }
+
+        with patch.dict("os.environ", env_vars):
+            _handle_apply(mock_executor, "int", "abc12345ff", working_dir)
+
+        # Executor.apply() must be called WITH plan_file
+        call_args = mock_executor.apply.call_args
+        assert call_args is not None
+        assert "plan_file" in call_args.kwargs or len(call_args.args) > 0
+        plan_arg = call_args.kwargs.get("plan_file", call_args.args[0] if call_args.args else None)
+        assert plan_arg is not None
+        assert "tfplan-int-abc12345.tfplan" in str(plan_arg)
+
+    def test_apply_passes_full_path_to_executor(self, tmp_path: Path) -> None:
+        """_apply_with_plan passes the full resolved path, not a bare filename."""
+        from unittest.mock import MagicMock, patch
+
+        from tf_branch_deploy.cli import _apply_with_plan
+
+        working_dir = tmp_path / "terraform" / "modules"
+        working_dir.mkdir(parents=True)
+
+        plan_file = working_dir / "tfplan-int-abc12345.tfplan"
+        plan_file.write_bytes(b"valid plan")
+
+        mock_executor = MagicMock()
+        mock_executor.apply.return_value = MagicMock(success=True)
+
+        with patch.dict("os.environ", {}, clear=False):
+            _apply_with_plan(mock_executor, plan_file)
+
+        call_args = mock_executor.apply.call_args
+        plan_arg = call_args.kwargs.get("plan_file")
+        # Must be the full path, not just the bare filename
+        assert plan_arg == plan_file
+        assert str(plan_arg) != plan_file.name

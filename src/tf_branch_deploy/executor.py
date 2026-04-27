@@ -189,16 +189,28 @@ class TerraformExecutor:
 
         args = ["terraform", "apply", TF_INPUT_FALSE, "-auto-approve"]
 
-        # Resolve plan_file relative to working_directory since subprocess
-        # runs with cwd=working_directory but Path.exists() checks from
-        # the Python process CWD (which may be different).
-        resolved_plan = (
-            (self.working_directory / plan_file)
-            if plan_file and not plan_file.is_absolute()
-            else plan_file
-        )
+        # Resolve plan_file for existence check. The plan_file may be:
+        # 1. A full path (e.g., /repo/terraform/modules/tfplan-int-abc.tfplan)
+        # 2. A path relative to repo root (e.g., terraform/modules/tfplan-int-abc.tfplan)
+        # 3. A bare filename (e.g., tfplan-int-abc.tfplan) — legacy callers
+        # In all cases, we resolve to an absolute path for the exists() check,
+        # then derive the name relative to working_directory for the terraform command
+        # (since subprocess runs with cwd=working_directory).
+        if plan_file:
+            if plan_file.is_absolute():
+                resolved_plan = plan_file
+            else:
+                resolved_plan = (self.working_directory / plan_file).resolve()
+        else:
+            resolved_plan = None
+
         if resolved_plan and resolved_plan.exists():
-            args.append(str(plan_file))
+            # Pass just the filename to terraform (it runs in working_directory)
+            try:
+                relative_plan = resolved_plan.relative_to(self.working_directory.resolve())
+            except ValueError:
+                relative_plan = resolved_plan
+            args.append(str(relative_plan))
         elif plan_file is not None:
             # A plan file was explicitly requested but not found — abort.
             # Never silently fall through to an untargeted apply.
