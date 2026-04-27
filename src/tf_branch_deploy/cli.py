@@ -27,6 +27,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from .config import load_config
+from .executor import _redact_single_arg
 
 DEFAULT_CONFIG_PATH = Path(".tf-branch-deploy.yml")
 GITHUB_URL_DEFAULT = "https://github.com"
@@ -101,6 +102,61 @@ def format_error_for_comment(
         lines.append(f"> {suggestion}")
 
     return "\n".join(lines)
+
+
+ALLOWED_EXTRA_ARG_FLAGS: frozenset[str] = frozenset(
+    {
+        "-target",
+        "-var",
+        "-var-file",
+        "-refresh",
+        "-parallelism",
+        "-compact-warnings",
+        "-lock",
+        "-lock-timeout",
+        "-replace",
+    }
+)
+
+BLOCKED_EXTRA_ARG_FLAGS: frozenset[str] = frozenset(
+    {
+        "-destroy",
+        "-backend-config",
+        "-migrate-state",
+        "-state",
+        "-force-unlock",
+        "-reconfigure",
+    }
+)
+
+
+def _validate_extra_args(args: list[str]) -> list[str]:
+    """Validate parsed extra args against the allowlist.
+
+    Raises:
+        typer.Exit: If any arg uses a blocked or unknown flag.
+    """
+    validated: list[str] = []
+
+    for arg in args:
+        flag = arg.split("=", 1)[0] if "=" in arg else arg
+
+        if flag in BLOCKED_EXTRA_ARG_FLAGS:
+            console.print(f"[red]❌ Blocked extra arg: {flag}[/red]")
+            console.print(
+                "[red]This flag is explicitly blocked for safety. "
+                "It cannot be passed via PR comments.[/red]"
+            )
+            raise typer.Exit(1)
+
+        if flag not in ALLOWED_EXTRA_ARG_FLAGS:
+            console.print(f"[red]❌ Unknown extra arg flag: {flag}[/red]")
+            console.print(f"[red]Allowed flags: {', '.join(sorted(ALLOWED_EXTRA_ARG_FLAGS))}[/red]")
+            raise typer.Exit(1)
+
+        validated.append(arg)
+
+    return validated
 
 
 def _parse_extra_args(raw: str) -> list[str]:
@@ -346,7 +402,11 @@ def execute(
 
     if raw_extra_args:
         parsed_extra_args = _parse_extra_args(raw_extra_args)
-        console.print(f"[cyan]📝 Extra args from command:[/cyan] {parsed_extra_args}")
+        parsed_extra_args = _validate_extra_args(parsed_extra_args)
+        console.print(
+            f"[cyan]📝 Extra args from command:[/cyan]"
+            f" {[_redact_single_arg(a) for a in parsed_extra_args]}"
+        )
 
     table = Table(title="Terraform Execution")
     table.add_column("Setting", style="cyan")
@@ -357,7 +417,10 @@ def execute(
     table.add_row("Working Dir", str(resolved_working_dir))
     table.add_row("Dry Run", str(dry_run))
     if parsed_extra_args:
-        table.add_row("Extra Args", " ".join(parsed_extra_args))
+        table.add_row(
+            "Extra Args",
+            " ".join(_redact_single_arg(a) for a in parsed_extra_args),
+        )
     console.print(table)
 
     var_files = config.resolve_var_files(environment)

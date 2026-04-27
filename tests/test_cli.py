@@ -5,14 +5,18 @@ from pathlib import Path
 from textwrap import dedent
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from tf_branch_deploy.cli import (
+    ALLOWED_EXTRA_ARG_FLAGS,
+    BLOCKED_EXTRA_ARG_FLAGS,
     DEFAULT_CONFIG_PATH,
     _ArgTokenizer,
     _load_and_validate_config,
     _parse_extra_args,
     _strip_shell_quotes,
+    _validate_extra_args,
     app,
 )
 
@@ -60,6 +64,67 @@ class TestParseExtraArgs:
         """Test preserving spaces within quoted values."""
         result = _parse_extra_args("-var='message=hello world foo bar'")
         assert result == ["-var=message=hello world foo bar"]
+
+
+class TestValidateExtraArgs:
+    """Tests for _validate_extra_args function."""
+
+    def test_allowed_flags_pass(self) -> None:
+        """Allowed flags pass validation."""
+        args = ["-target=module.base", "-refresh=false", "-parallelism=5"]
+        result = _validate_extra_args(args)
+        assert result == args
+
+    def test_var_allowed(self) -> None:
+        """The -var flag is allowed."""
+        args = ["-var=key=value"]
+        assert _validate_extra_args(args) == args
+
+    def test_destroy_blocked(self) -> None:
+        """The -destroy flag is blocked."""
+        with pytest.raises(typer.Exit):
+            _validate_extra_args(["-destroy"])
+
+    def test_backend_config_blocked(self) -> None:
+        """The -backend-config flag is blocked."""
+        with pytest.raises(typer.Exit):
+            _validate_extra_args(["-backend-config=key=value"])
+
+    def test_state_blocked(self) -> None:
+        """The -state flag is blocked."""
+        with pytest.raises(typer.Exit):
+            _validate_extra_args(["-state=/tmp/evil.tfstate"])
+
+    def test_migrate_state_blocked(self) -> None:
+        """The -migrate-state flag is blocked."""
+        with pytest.raises(typer.Exit):
+            _validate_extra_args(["-migrate-state"])
+
+    def test_unknown_flag_blocked(self) -> None:
+        """Unknown flags that aren't in the allowlist are blocked."""
+        with pytest.raises(typer.Exit):
+            _validate_extra_args(["-some-unknown-flag=value"])
+
+    def test_mixed_valid_then_blocked_fails(self) -> None:
+        """If any arg is blocked, the whole set fails."""
+        with pytest.raises(typer.Exit):
+            _validate_extra_args(["-target=module.base", "-destroy"])
+
+    def test_empty_list_passes(self) -> None:
+        """Empty args list passes validation."""
+        assert _validate_extra_args([]) == []
+
+    def test_all_allowed_flags_accepted(self) -> None:
+        """All flags in ALLOWED_EXTRA_ARG_FLAGS pass validation."""
+        args = [f"{flag}=test" for flag in sorted(ALLOWED_EXTRA_ARG_FLAGS)]
+        result = _validate_extra_args(args)
+        assert len(result) == len(ALLOWED_EXTRA_ARG_FLAGS)
+
+    def test_all_blocked_flags_rejected(self) -> None:
+        """All flags in BLOCKED_EXTRA_ARG_FLAGS are rejected."""
+        for flag in BLOCKED_EXTRA_ARG_FLAGS:
+            with pytest.raises(typer.Exit):
+                _validate_extra_args([flag])
 
 
 class TestStripShellQuotes:

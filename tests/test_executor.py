@@ -9,6 +9,7 @@ from tf_branch_deploy.executor import (
     CommandResult,
     PlanResult,
     TerraformExecutor,
+    _redact_args,
 )
 
 
@@ -370,3 +371,49 @@ class TestVersion:
         """version() returns 'unknown' on malformed JSON."""
         mock_run.return_value = MagicMock(returncode=0, stdout="not json", stderr="")
         assert executor.version() == "unknown"
+
+
+class TestRedactArgs:
+    """Tests for _redact_args log redaction."""
+
+    def test_no_vars_unchanged(self) -> None:
+        """Args without -var= are unchanged."""
+        args = ["terraform", "plan", "-target=module.base"]
+        assert _redact_args(args) == "terraform plan -target=module.base"
+
+    def test_var_value_redacted(self) -> None:
+        """The value part of -var=key=value is replaced with ***."""
+        args = ["terraform", "plan", "-var=password=s3cr3t"]
+        assert _redact_args(args) == "terraform plan -var=password=***"
+
+    def test_multiple_vars_redacted(self) -> None:
+        """Multiple -var= args are all redacted."""
+        args = ["terraform", "plan", "-var=a=1", "-var=b=2"]
+        assert _redact_args(args) == "terraform plan -var=a=*** -var=b=***"
+
+    def test_var_file_not_redacted(self) -> None:
+        """-var-file= is NOT the same as -var= and should not be redacted."""
+        args = ["terraform", "plan", "-var-file=vars.tfvars"]
+        assert _redact_args(args) == "terraform plan -var-file=vars.tfvars"
+
+    def test_mixed_args(self) -> None:
+        """Mix of -var, -target, and plain args."""
+        args = ["terraform", "apply", "-var=token=abc123", "-target=module.foo"]
+        result = _redact_args(args)
+        assert "-var=token=***" in result
+        assert "-target=module.foo" in result
+
+    def test_var_with_spaces_fully_redacted(self) -> None:
+        """Value containing spaces in a single token is fully redacted."""
+        args = ["terraform", "plan", "-var=msg=hello world"]
+        assert _redact_args(args) == "terraform plan -var=msg=***"
+
+    def test_two_token_var_redacted(self) -> None:
+        """-var key=value (two tokens) redacts the value token."""
+        args = ["terraform", "plan", "-var", "password=s3cr3t"]
+        assert _redact_args(args) == "terraform plan -var ***"
+
+    def test_two_token_var_at_end(self) -> None:
+        """-var at end of args (no value following) is left as-is."""
+        args = ["terraform", "plan", "-var"]
+        assert _redact_args(args) == "terraform plan -var"

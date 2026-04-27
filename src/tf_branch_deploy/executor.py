@@ -20,6 +20,40 @@ TF_INPUT_FALSE = "-input=false"
 console = Console()
 
 
+def _redact_single_arg(arg: str) -> str:
+    """Redact a single arg if it contains a -var= value."""
+    if arg.startswith("-var="):
+        eq_pos = arg.find("=", 5)
+        if eq_pos != -1:
+            return arg[: eq_pos + 1] + "***"
+    return arg
+
+
+def _redact_args(args: list[str]) -> str:
+    """Join args for display, redacting -var= values.
+
+    Handles both ``-var=key=value`` (single token) and
+    ``-var key=value`` (two-token) forms, including values that
+    contain spaces.
+    """
+    redacted: list[str] = []
+    skip_next = False
+    for i, arg in enumerate(args):
+        if skip_next:
+            redacted.append("***")
+            skip_next = False
+            continue
+        redacted_arg = _redact_single_arg(arg)
+        if redacted_arg != arg:
+            redacted.append(redacted_arg)
+        elif arg == "-var" and i + 1 < len(args):
+            redacted.append(arg)
+            skip_next = True
+        else:
+            redacted.append(arg)
+    return " ".join(redacted)
+
+
 @dataclass
 class CommandResult:
     """Result of a command execution."""
@@ -94,7 +128,7 @@ class TerraformExecutor:
         if env:
             full_env.update(env)
 
-        console.print(f"[dim]$ {' '.join(args)}[/dim]")
+        console.print(f"[dim]$ {_redact_args(args)}[/dim]")
 
         result = subprocess.run(  # nosec B603 B607 - args from validated config, terraform via PATH is expected
             args,
