@@ -7,6 +7,7 @@ argument resolution and PR comment posting via tfcmt.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess  # nosec B404 - subprocess is required to run terraform
 from dataclasses import dataclass, field
@@ -67,6 +68,21 @@ class TerraformExecutor:
 
     use_tfcmt: bool = True
     dry_run: bool = False
+
+    def version(self) -> str:
+        """Get the installed Terraform version string.
+
+        Returns:
+            Semantic version string (e.g., "1.9.8") or "unknown" on failure.
+        """
+        result = self._run_command(["terraform", "version", "-json"])
+        if result.success:
+            try:
+                version_info = json.loads(result.stdout)
+                return version_info.get("terraform_version", "unknown")
+            except (json.JSONDecodeError, KeyError):
+                pass
+        return "unknown"
 
     def _run_command(
         self,

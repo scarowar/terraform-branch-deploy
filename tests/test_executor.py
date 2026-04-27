@@ -304,3 +304,35 @@ class TestTfcmtIntegration:
             # Should call _run_command directly with terraform args
             call_args = mock_run.call_args[0][0]
             assert call_args == ["terraform", "plan"]
+
+
+class TestVersion:
+    """Tests for TerraformExecutor.version()."""
+
+    @patch("subprocess.run")
+    def test_version_parses_json_output(
+        self, mock_run: MagicMock, executor: TerraformExecutor
+    ) -> None:
+        """version() extracts terraform_version from JSON output."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout='{"terraform_version":"1.9.8","platform":"linux_amd64"}',
+            stderr="",
+        )
+        assert executor.version() == "1.9.8"
+
+    @patch("subprocess.run")
+    def test_version_returns_unknown_on_failure(
+        self, mock_run: MagicMock, executor: TerraformExecutor
+    ) -> None:
+        """version() returns 'unknown' when terraform command fails."""
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="error")
+        assert executor.version() == "unknown"
+
+    @patch("subprocess.run")
+    def test_version_returns_unknown_on_invalid_json(
+        self, mock_run: MagicMock, executor: TerraformExecutor
+    ) -> None:
+        """version() returns 'unknown' on malformed JSON."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="not json", stderr="")
+        assert executor.version() == "unknown"

@@ -498,13 +498,37 @@ runs:
 
         echo "✅ State validated: ${TF_BD_ENVIRONMENT} / ${TF_BD_OPERATION}"
 
-    - name: "[Execute] Cache Plan File"
-      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
-      if: inputs.mode == 'execute'
+    # Restore cached plan for apply operations.
+    # Uses prefix matching via restore-keys to find the most recent plan
+    # for this environment and commit. Each plan run has a unique key
+    # (run_id + run_attempt), preventing cache collision when re-planning.
+    #
+    # ACCEPTED RISK: actions/cache is evictable (10GB repo limit) and
+    # not an independent trust domain. The CLI handles cache misses safely
+    # by aborting with "no plan file found" rather than falling through
+    # to an untargeted apply. Plan integrity is further protected by the
+    # metadata sidecar checksum verified in the CLI.
+    - name: "[Execute] Restore Cached Plan"
+      uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      if: inputs.mode == 'execute' && env.TF_BD_OPERATION == 'apply'
       with:
         path: |
-          **/*.tfplan
-        key: tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}
+          **/tfplan-${{ env.TF_BD_ENVIRONMENT }}-*.tfplan
+          **/tfplan-${{ env.TF_BD_ENVIRONMENT }}-*.meta.json
+        key: tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: |
+          tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}-
+
+    # Cache plan file after plan operations (auto-saves in post-job on cache miss).
+    # Key includes run_id + run_attempt for uniqueness — re-plans never collide.
+    - name: "[Execute] Cache Plan File"
+      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      if: inputs.mode == 'execute' && env.TF_BD_OPERATION == 'plan'
+      with:
+        path: |
+          **/tfplan-${{ env.TF_BD_ENVIRONMENT }}-*.tfplan
+          **/tfplan-${{ env.TF_BD_ENVIRONMENT }}-*.meta.json
+        key: tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     - name: "[Execute] Run Terraform"
       id: tf-execute
