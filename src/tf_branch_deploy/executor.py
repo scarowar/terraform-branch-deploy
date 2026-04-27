@@ -44,7 +44,7 @@ def _redact_args(args: list[str]) -> str:
             skip_next = False
             continue
         redacted_arg = _redact_single_arg(arg)
-        if redacted_arg is not arg and redacted_arg != arg:
+        if redacted_arg != arg:
             redacted.append(redacted_arg)
         elif arg == "-var" and i + 1 < len(args):
             redacted.append(arg)
