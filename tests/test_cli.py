@@ -446,8 +446,13 @@ class TestHandleApply:
         assert plan_arg is not None
         assert "tfplan-int-abc12345.tfplan" in str(plan_arg)
 
-    def test_apply_passes_full_path_to_executor(self, tmp_path: Path) -> None:
-        """_apply_with_plan passes the full resolved path, not a bare filename."""
+    def test_apply_passes_filename_only_to_executor(self, tmp_path: Path) -> None:
+        """_apply_with_plan passes only the filename to executor, not the full path.
+
+        The executor resolves plan_file relative to its working_directory.
+        Passing the full path (which includes working_directory) would cause
+        path doubling: working_dir/working_dir/filename.
+        """
         from unittest.mock import MagicMock, patch
 
         from tf_branch_deploy.cli import _apply_with_plan
@@ -466,9 +471,43 @@ class TestHandleApply:
 
         call_args = mock_executor.apply.call_args
         plan_arg = call_args.kwargs.get("plan_file")
-        # Must be the full path, not just the bare filename
-        assert plan_arg == plan_file
-        assert str(plan_arg) != plan_file.name
+        # Must be just the filename — executor resolves from working_directory
+        assert plan_arg == Path(plan_file.name)
+        assert str(plan_arg) == plan_file.name
+
+    def test_handle_apply_no_path_doubling(self, tmp_path: Path) -> None:
+        """Regression test: _handle_apply must not cause path doubling.
+
+        When working_dir is 'terraform/modules' and plan file is at
+        'terraform/modules/tfplan-int-abc12345.tfplan', the executor must
+        receive just the filename, not 'terraform/modules/tfplan-int-abc12345.tfplan'
+        (which would be resolved to 'terraform/modules/terraform/modules/...').
+        """
+        from unittest.mock import MagicMock, patch
+
+        from tf_branch_deploy.cli import _handle_apply
+
+        working_dir = tmp_path / "terraform" / "modules"
+        working_dir.mkdir(parents=True)
+
+        plan_file = working_dir / "tfplan-int-abc12345.tfplan"
+        plan_file.write_bytes(b"valid plan")
+
+        mock_executor = MagicMock()
+        mock_executor.apply.return_value = MagicMock(success=True)
+        mock_executor.working_directory = working_dir
+
+        env_vars = {"TF_BD_IS_ROLLBACK": "false"}
+
+        with patch.dict("os.environ", env_vars):
+            _handle_apply(mock_executor, "int", "abc12345ff", working_dir)
+
+        call_args = mock_executor.apply.call_args
+        plan_arg = call_args.kwargs.get("plan_file", call_args.args[0] if call_args.args else None)
+        # The executor receives just the filename — no path doubling possible
+        assert str(plan_arg) == "tfplan-int-abc12345.tfplan"
+        # Verify it does NOT contain the working_dir prefix
+        assert "terraform/modules" not in str(plan_arg)
 
 
 class TestApplyWithPlanIntegrity:
@@ -505,8 +544,8 @@ class TestApplyWithPlanIntegrity:
         with patch.dict("os.environ", {}, clear=False):
             _apply_with_plan(mock_executor, plan_file)
 
-        # apply() must be called — checksum passed
-        mock_executor.apply.assert_called_once_with(plan_file=plan_file)
+        # apply() must be called with just the filename (executor resolves from working_dir)
+        mock_executor.apply.assert_called_once_with(plan_file=Path(plan_file.name))
 
     def test_checksum_mismatch_aborts(self, tmp_path: Path) -> None:
         """Checksum mismatch from metadata sidecar aborts with exit code 1."""
@@ -592,9 +631,7 @@ class TestApplyWithPlanIntegrity:
         with patch.dict("os.environ", env_vars, clear=False):
             _apply_with_plan(mock_executor, plan_file)
 
-        mock_executor.apply.assert_called_once_with(plan_file=plan_file)
-
-    def test_no_metadata_no_env_var_warns_but_proceeds(self, tmp_path: Path) -> None:
+        mock_executor.apply.assert_called_once_with(plan_file=Path(plan_file.name))
         """Without any verification source, warns but still applies (backward compat)."""
         from unittest.mock import MagicMock, patch
 
@@ -611,7 +648,7 @@ class TestApplyWithPlanIntegrity:
             _apply_with_plan(mock_executor, plan_file)
 
         # Should still proceed with apply
-        mock_executor.apply.assert_called_once_with(plan_file=plan_file)
+        mock_executor.apply.assert_called_once_with(plan_file=Path(plan_file.name))
 
     def test_tf_version_unknown_skips_check(self, tmp_path: Path) -> None:
         """When TF version is 'unknown' (either side), skip version check."""
