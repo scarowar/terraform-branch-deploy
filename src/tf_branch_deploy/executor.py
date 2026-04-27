@@ -189,7 +189,15 @@ class TerraformExecutor:
 
         args = ["terraform", "apply", TF_INPUT_FALSE, "-auto-approve"]
 
-        if plan_file and plan_file.exists():
+        # Resolve plan_file relative to working_directory since subprocess
+        # runs with cwd=working_directory but Path.exists() checks from
+        # the Python process CWD (which may be different).
+        resolved_plan = (
+            (self.working_directory / plan_file)
+            if plan_file and not plan_file.is_absolute()
+            else plan_file
+        )
+        if resolved_plan and resolved_plan.exists():
             args.append(str(plan_file))
         else:
             for var_file in self.var_files:

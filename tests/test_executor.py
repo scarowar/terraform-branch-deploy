@@ -182,6 +182,44 @@ class TestTerraformExecutor:
         # Var files should NOT be in command when using plan file
         assert "-var-file" not in args
 
+    @patch("subprocess.run")
+    def test_apply_with_relative_plan_file_in_working_directory(
+        self, mock_run: MagicMock, tmp_path: Path
+    ) -> None:
+        """apply() resolves relative plan file path against working_directory.
+
+        Regression test: when _apply_with_plan passes Path(plan_file.name)
+        (a bare filename), the executor must resolve it relative to
+        working_directory — not the Python process CWD — to find the file.
+        """
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+        # Simulate: working_directory = tmp_path/terraform/modules
+        working_dir = tmp_path / "terraform" / "modules"
+        working_dir.mkdir(parents=True)
+
+        # Plan file exists inside working_directory
+        plan_file = working_dir / "tfplan-int-06b61570.tfplan"
+        plan_file.write_bytes(b"targeted plan content")
+
+        executor = TerraformExecutor(
+            working_directory=working_dir,
+            var_files=["../config/int/int_config.tfvars"],
+        )
+
+        # Pass only the bare filename (as _apply_with_plan does)
+        executor.apply(plan_file=Path(plan_file.name))
+
+        call_args = mock_run.call_args
+        args = call_args[0][0]
+
+        # Plan file must be in the command — NOT var-file fallback
+        assert plan_file.name in " ".join(args)
+        assert "-var-file" not in args, (
+            "var-file should NOT appear when a plan file exists — "
+            "this means the plan file was not found and a full untargeted apply ran instead"
+        )
+
 
 class TestTfcmtIntegration:
     """Tests for tfcmt integration."""
