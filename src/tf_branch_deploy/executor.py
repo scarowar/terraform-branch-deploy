@@ -102,6 +102,7 @@ class TerraformExecutor:
 
     use_tfcmt: bool = True
     dry_run: bool = False
+    timeout: int = 3600
 
     def version(self) -> str:
         """Get the installed Terraform version string.
@@ -130,13 +131,25 @@ class TerraformExecutor:
 
         console.print(f"[dim]$ {_redact_args(args)}[/dim]")
 
-        result = subprocess.run(  # nosec B603 B607 - args from validated config, terraform via PATH is expected
-            args,
-            cwd=self.working_directory,
-            capture_output=True,
-            text=True,
-            env=full_env,
-        )
+        try:
+            result = subprocess.run(  # nosec B603 B607 - args from validated config, terraform via PATH is expected
+                args,
+                cwd=self.working_directory,
+                capture_output=True,
+                text=True,
+                env=full_env,
+                timeout=self.timeout,
+            )
+        except subprocess.TimeoutExpired:
+            console.print(
+                f"[red]❌ Command timed out after {self.timeout}s: {_redact_args(args)}[/red]"
+            )
+            return CommandResult(
+                exit_code=124,
+                stdout="",
+                stderr=f"Command timed out after {self.timeout} seconds",
+                command=args,
+            )
 
         return CommandResult(
             exit_code=result.returncode,

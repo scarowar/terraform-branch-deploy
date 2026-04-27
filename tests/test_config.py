@@ -203,3 +203,55 @@ class TestJsonSchema:
         assert "default-environment" in props
         assert "production-environments" in props
         assert "environments" in props
+
+
+class TestEnvironmentTimeout:
+    """Tests for environment timeout configuration."""
+
+    def test_default_timeout(self) -> None:
+        """Default timeout is 3600s."""
+        config = TerraformBranchDeployConfig.model_validate(
+            {
+                "default-environment": "dev",
+                "production-environments": ["prod"],
+                "environments": {"dev": {}, "prod": {}},
+            }
+        )
+        assert config.get_environment("dev").timeout == 3600
+
+    def test_custom_timeout(self) -> None:
+        """Custom timeout is accepted."""
+        config = TerraformBranchDeployConfig.model_validate(
+            {
+                "default-environment": "dev",
+                "production-environments": ["prod"],
+                "environments": {
+                    "dev": {"timeout": 600},
+                    "prod": {"timeout": 7200},
+                },
+            }
+        )
+        assert config.get_environment("dev").timeout == 600
+        assert config.get_environment("prod").timeout == 7200
+
+    def test_timeout_below_minimum_rejected(self) -> None:
+        """Timeout below 60s is rejected."""
+        with pytest.raises(ValueError):
+            TerraformBranchDeployConfig.model_validate(
+                {
+                    "default-environment": "dev",
+                    "production-environments": ["dev"],
+                    "environments": {"dev": {"timeout": 10}},
+                }
+            )
+
+    def test_timeout_above_maximum_rejected(self) -> None:
+        """Timeout above 14400s (4h) is rejected."""
+        with pytest.raises(ValueError):
+            TerraformBranchDeployConfig.model_validate(
+                {
+                    "default-environment": "dev",
+                    "production-environments": ["dev"],
+                    "environments": {"dev": {"timeout": 20000}},
+                }
+            )

@@ -78,6 +78,7 @@ class EnvironmentConfig(BaseModel):
     plan_args: ArgsConfig | None = Field(default=None, alias="plan-args")
     apply_args: ArgsConfig | None = Field(default=None, alias="apply-args")
     init_args: ArgsConfig | None = Field(default=None, alias="init-args")
+    timeout: int = Field(default=3600, ge=60, le=14400)
 
 
 class TerraformBranchDeployConfig(BaseModel):
