@@ -188,9 +188,9 @@ class TestTerraformExecutor:
     ) -> None:
         """apply() resolves relative plan file path against working_directory.
 
-        Regression test: when _apply_with_plan passes Path(plan_file.name)
-        (a bare filename), the executor must resolve it relative to
-        working_directory — not the Python process CWD — to find the file.
+        Regression test: when a bare filename is passed, the executor must
+        resolve it relative to working_directory — not the Python process
+        CWD — to find the file.
         """
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 

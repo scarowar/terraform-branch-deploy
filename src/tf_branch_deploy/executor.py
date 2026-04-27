@@ -190,12 +190,12 @@ class TerraformExecutor:
         args = ["terraform", "apply", TF_INPUT_FALSE, "-auto-approve"]
 
         # Resolve plan_file for existence check. The plan_file may be:
-        # 1. A full path (e.g., /repo/terraform/modules/tfplan-int-abc.tfplan)
-        # 2. A path relative to repo root (e.g., terraform/modules/tfplan-int-abc.tfplan)
+        # 1. An absolute path (e.g., /repo/terraform/modules/tfplan-int-abc.tfplan)
+        # 2. A relative path (resolved against working_directory)
         # 3. A bare filename (e.g., tfplan-int-abc.tfplan) — legacy callers
         # In all cases, we resolve to an absolute path for the exists() check,
-        # then derive the name relative to working_directory for the terraform command
-        # (since subprocess runs with cwd=working_directory).
+        # then derive the path relative to working_directory for the terraform
+        # command (since subprocess runs with cwd=working_directory).
         if plan_file:
             if plan_file.is_absolute():
                 resolved_plan = plan_file
