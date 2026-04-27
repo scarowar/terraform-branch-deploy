@@ -145,6 +145,40 @@ class TestTerraformExecutor:
         assert result.success is False
 
     @patch("subprocess.run")
+    def test_plan_resolves_relative_out_file_against_working_directory(
+        self, mock_run: MagicMock, tmp_path: Path
+    ) -> None:
+        """plan() resolves relative out_file against working_directory.
+
+        Regression test: when working_directory != CWD, a relative out_file
+        must be resolved against working_directory so checksum calculation
+        and plan_file return work correctly.
+        """
+        working_dir = tmp_path / "terraform" / "modules"
+        working_dir.mkdir(parents=True)
+
+        plan_name = "tfplan-int-abc12345.tfplan"
+        plan_content = b"terraform plan binary"
+
+        # Simulate terraform writing the plan file inside working_directory
+        (working_dir / plan_name).write_bytes(plan_content)
+
+        mock_run.return_value = MagicMock(returncode=2, stdout="", stderr="")
+
+        executor = TerraformExecutor(
+            working_directory=working_dir,
+            var_files=["../config/int/int_config.tfvars"],
+        )
+
+        result = executor.plan(out_file=Path(plan_name))
+
+        # plan_file must be set (resolved to working_directory)
+        assert result.plan_file is not None
+        assert result.plan_file.exists()
+        # checksum must be calculated
+        assert result.checksum is not None
+
+    @patch("subprocess.run")
     def test_apply_builds_correct_command(
         self, mock_run: MagicMock, executor: TerraformExecutor
     ) -> None:
@@ -304,3 +338,35 @@ class TestTfcmtIntegration:
             # Should call _run_command directly with terraform args
             call_args = mock_run.call_args[0][0]
             assert call_args == ["terraform", "plan"]
+
+
+class TestVersion:
+    """Tests for TerraformExecutor.version()."""
+
+    @patch("subprocess.run")
+    def test_version_parses_json_output(
+        self, mock_run: MagicMock, executor: TerraformExecutor
+    ) -> None:
+        """version() extracts terraform_version from JSON output."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout='{"terraform_version":"1.9.8","platform":"linux_amd64"}',
+            stderr="",
+        )
+        assert executor.version() == "1.9.8"
+
+    @patch("subprocess.run")
+    def test_version_returns_unknown_on_failure(
+        self, mock_run: MagicMock, executor: TerraformExecutor
+    ) -> None:
+        """version() returns 'unknown' when terraform command fails."""
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="error")
+        assert executor.version() == "unknown"
+
+    @patch("subprocess.run")
+    def test_version_returns_unknown_on_invalid_json(
+        self, mock_run: MagicMock, executor: TerraformExecutor
+    ) -> None:
+        """version() returns 'unknown' on malformed JSON."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="not json", stderr="")
+        assert executor.version() == "unknown"

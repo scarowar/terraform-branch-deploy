@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from textwrap import dedent
 
+import pytest
 from typer.testing import CliRunner
 
 from tf_branch_deploy.cli import (
@@ -403,3 +404,180 @@ class TestHandleApply:
         # Must be the full path, not just the bare filename
         assert plan_arg == plan_file
         assert str(plan_arg) != plan_file.name
+
+
+class TestApplyWithPlanIntegrity:
+    """Tests for plan integrity verification in _apply_with_plan."""
+
+    def test_checksum_verified_from_metadata_sidecar(self, tmp_path: Path) -> None:
+        """Checksum verified successfully via metadata sidecar."""
+        from unittest.mock import MagicMock, patch
+
+        from tf_branch_deploy.artifacts import (
+            PlanMetadata,
+            calculate_checksum,
+            save_plan_metadata,
+        )
+        from tf_branch_deploy.cli import _apply_with_plan
+
+        plan_file = tmp_path / "tfplan-int-abc12345.tfplan"
+        plan_file.write_bytes(b"valid plan content")
+        checksum = calculate_checksum(plan_file)
+
+        metadata = PlanMetadata(
+            checksum=checksum,
+            extra_args=["-target=module.base"],
+            terraform_version="1.9.8",
+            params_hash="a1b2c3d4",
+            created_at="2025-01-15T10:00:00+00:00",
+        )
+        save_plan_metadata(plan_file, metadata)
+
+        mock_executor = MagicMock()
+        mock_executor.apply.return_value = MagicMock(success=True)
+        mock_executor.version.return_value = "1.9.8"
+
+        with patch.dict("os.environ", {}, clear=False):
+            _apply_with_plan(mock_executor, plan_file)
+
+        # apply() must be called — checksum passed
+        mock_executor.apply.assert_called_once_with(plan_file=plan_file)
+
+    def test_checksum_mismatch_aborts(self, tmp_path: Path) -> None:
+        """Checksum mismatch from metadata sidecar aborts with exit code 1."""
+        from unittest.mock import MagicMock, patch
+
+        from click.exceptions import Exit as ClickExit
+
+        from tf_branch_deploy.artifacts import PlanMetadata, save_plan_metadata
+        from tf_branch_deploy.cli import _apply_with_plan
+
+        plan_file = tmp_path / "tfplan-int-abc12345.tfplan"
+        plan_file.write_bytes(b"valid plan content")
+
+        metadata = PlanMetadata(
+            checksum="wrong_checksum_value",
+            extra_args=[],
+            terraform_version="1.9.8",
+            params_hash="no-args",
+            created_at="2025-01-15T10:00:00+00:00",
+        )
+        save_plan_metadata(plan_file, metadata)
+
+        mock_executor = MagicMock()
+        mock_executor.version.return_value = "1.9.8"
+
+        with patch.dict("os.environ", {}, clear=False):
+            with pytest.raises(ClickExit):
+                _apply_with_plan(mock_executor, plan_file)
+
+        # apply() must NOT be called
+        mock_executor.apply.assert_not_called()
+
+    def test_tf_version_mismatch_aborts(self, tmp_path: Path) -> None:
+        """Terraform version mismatch aborts with exit code 1."""
+        from unittest.mock import MagicMock, patch
+
+        from click.exceptions import Exit as ClickExit
+
+        from tf_branch_deploy.artifacts import (
+            PlanMetadata,
+            calculate_checksum,
+            save_plan_metadata,
+        )
+        from tf_branch_deploy.cli import _apply_with_plan
+
+        plan_file = tmp_path / "tfplan-int-abc12345.tfplan"
+        plan_file.write_bytes(b"valid plan content")
+        checksum = calculate_checksum(plan_file)
+
+        metadata = PlanMetadata(
+            checksum=checksum,
+            extra_args=[],
+            terraform_version="1.8.0",
+            params_hash="no-args",
+            created_at="2025-01-15T10:00:00+00:00",
+        )
+        save_plan_metadata(plan_file, metadata)
+
+        mock_executor = MagicMock()
+        mock_executor.version.return_value = "1.9.8"  # Different!
+
+        with patch.dict("os.environ", {}, clear=False):
+            with pytest.raises(ClickExit):
+                _apply_with_plan(mock_executor, plan_file)
+
+        mock_executor.apply.assert_not_called()
+
+    def test_legacy_env_var_checksum_still_works(self, tmp_path: Path) -> None:
+        """Without metadata sidecar, falls back to TF_BD_PLAN_CHECKSUM env var."""
+        from unittest.mock import MagicMock, patch
+
+        from tf_branch_deploy.artifacts import calculate_checksum
+        from tf_branch_deploy.cli import _apply_with_plan
+
+        plan_file = tmp_path / "tfplan-int-abc12345.tfplan"
+        plan_file.write_bytes(b"valid plan content")
+        checksum = calculate_checksum(plan_file)
+
+        mock_executor = MagicMock()
+        mock_executor.apply.return_value = MagicMock(success=True)
+
+        env_vars = {"TF_BD_PLAN_CHECKSUM": checksum}
+        with patch.dict("os.environ", env_vars, clear=False):
+            _apply_with_plan(mock_executor, plan_file)
+
+        mock_executor.apply.assert_called_once_with(plan_file=plan_file)
+
+    def test_no_metadata_no_env_var_warns_but_proceeds(self, tmp_path: Path) -> None:
+        """Without any verification source, warns but still applies (backward compat)."""
+        from unittest.mock import MagicMock, patch
+
+        from tf_branch_deploy.cli import _apply_with_plan
+
+        plan_file = tmp_path / "tfplan-int-abc12345.tfplan"
+        plan_file.write_bytes(b"valid plan content")
+
+        mock_executor = MagicMock()
+        mock_executor.apply.return_value = MagicMock(success=True)
+
+        # No metadata sidecar, no env var
+        with patch.dict("os.environ", {}, clear=False):
+            _apply_with_plan(mock_executor, plan_file)
+
+        # Should still proceed with apply
+        mock_executor.apply.assert_called_once_with(plan_file=plan_file)
+
+    def test_tf_version_unknown_skips_check(self, tmp_path: Path) -> None:
+        """When TF version is 'unknown' (either side), skip version check."""
+        from unittest.mock import MagicMock, patch
+
+        from tf_branch_deploy.artifacts import (
+            PlanMetadata,
+            calculate_checksum,
+            save_plan_metadata,
+        )
+        from tf_branch_deploy.cli import _apply_with_plan
+
+        plan_file = tmp_path / "tfplan-int-abc12345.tfplan"
+        plan_file.write_bytes(b"valid plan content")
+        checksum = calculate_checksum(plan_file)
+
+        metadata = PlanMetadata(
+            checksum=checksum,
+            extra_args=[],
+            terraform_version="unknown",
+            params_hash="no-args",
+            created_at="2025-01-15T10:00:00+00:00",
+        )
+        save_plan_metadata(plan_file, metadata)
+
+        mock_executor = MagicMock()
+        mock_executor.apply.return_value = MagicMock(success=True)
+        mock_executor.version.return_value = "1.9.8"
+
+        with patch.dict("os.environ", {}, clear=False):
+            _apply_with_plan(mock_executor, plan_file)
+
+        # Should proceed despite version mismatch (unknown is ignored)
+        mock_executor.apply.assert_called_once()

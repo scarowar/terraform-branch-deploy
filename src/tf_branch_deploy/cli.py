@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
@@ -430,6 +431,27 @@ def _handle_plan(executor: "TerraformExecutor", environment: str, sha: str) -> N
         set_github_output("plan_file", str(result.plan_file))
         set_github_output("plan_checksum", result.checksum)
         set_github_output("has_changes", str(result.has_changes).lower())
+
+        # Save plan metadata sidecar for cross-run integrity verification
+        from .artifacts import PlanMetadata, generate_params_hash, save_plan_metadata
+
+        extra_args_str = os.environ.get("TF_BD_EXTRA_ARGS", "")
+        tf_version = executor.version()
+        params_hash = generate_params_hash(extra_args_str)
+
+        metadata = PlanMetadata(
+            checksum=result.checksum,
+            extra_args=_parse_extra_args(extra_args_str) if extra_args_str.strip() else [],
+            terraform_version=tf_version,
+            params_hash=params_hash,
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+        meta_path = save_plan_metadata(result.plan_file, metadata)
+        console.print(f"[dim]📝 Plan metadata saved: {meta_path.name}[/dim]")
+
+        set_github_output("plan_params_hash", params_hash)
+        set_github_output("plan_terraform_version", tf_version)
+
     if not result.success:
         logs_url = (
             os.environ.get("GITHUB_SERVER_URL", GITHUB_URL_DEFAULT)
@@ -501,25 +523,101 @@ def _handle_apply(
 
 
 def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path) -> None:
-    """Apply using an existing plan file with checksum verification."""
+    """Apply using an existing plan file with integrity verification.
+
+    Verification priority:
+    1. Metadata sidecar (.meta.json) — mandatory checksum + TF version check
+    2. TF_BD_PLAN_CHECKSUM env var — legacy same-run fallback
+    3. No verification source — warning only (backward compatibility)
+    """
     console.print(f"[green]✅ Found plan file:[/green] {plan_file}")
-    expected_checksum = os.environ.get("TF_BD_PLAN_CHECKSUM")
 
-    if expected_checksum:
-        from .artifacts import verify_checksum
+    from .artifacts import load_plan_metadata, verify_checksum
 
-        if not verify_checksum(plan_file, expected_checksum):
+    metadata = load_plan_metadata(plan_file)
+
+    if metadata:
+        # Mandatory checksum verification when metadata sidecar exists
+        if not verify_checksum(plan_file, metadata.checksum):
             console.print(
-                "[red]❌ Plan file checksum mismatch! Plan may have been tampered with.[/red]"
+                "[red]❌ Plan file checksum mismatch! "
+                "Plan may have been tampered with or corrupted.[/red]"
             )
             env = os.environ.get("TF_BD_ENVIRONMENT", "dev")
             error_msg = format_error_for_comment(
-                message="Security validation failed: Plan file checksum mismatch. The plan file's checksum does not match the expected value, which could indicate tampering or corruption.",
+                message=(
+                    "Security validation failed: Plan file checksum mismatch. "
+                    "The plan file's integrity could not be verified against "
+                    "the metadata recorded at plan time."
+                ),
                 suggestion=f"Create a fresh plan by running `.plan to {env}`",
             )
             set_github_output("failure_reason", error_msg)
             raise typer.Exit(1)
         console.print("[green]✅ Plan checksum verified[/green]")
+
+        # Hard-fail on Terraform version mismatch
+        current_tf_version = executor.version()
+        if (
+            current_tf_version != "unknown"
+            and metadata.terraform_version != "unknown"
+            and current_tf_version != metadata.terraform_version
+        ):
+            console.print(
+                f"[red]❌ Terraform version mismatch![/red]\n"
+                f"    Plan created with: {metadata.terraform_version}\n"
+                f"    Current version:   {current_tf_version}"
+            )
+            env = os.environ.get("TF_BD_ENVIRONMENT", "dev")
+            error_msg = format_error_for_comment(
+                message=(
+                    f"Terraform version mismatch: plan was created with "
+                    f"v{metadata.terraform_version} but current version is "
+                    f"v{current_tf_version}. Applying a plan with a different "
+                    f"Terraform version can cause unpredictable behavior."
+                ),
+                suggestion=(
+                    f"Create a fresh plan with `.plan to {env}` using the current Terraform version"
+                ),
+            )
+            set_github_output("failure_reason", error_msg)
+            raise typer.Exit(1)
+        if current_tf_version != "unknown":
+            console.print(f"[green]✅ Terraform version verified: {current_tf_version}[/green]")
+
+        # Audit trail: log plan provenance
+        if metadata.extra_args:
+            console.print(
+                f"[dim]📝 Plan was created with args: {' '.join(metadata.extra_args)}[/dim]"
+            )
+        console.print(f"[dim]📝 Plan created at: {metadata.created_at}[/dim]")
+    else:
+        # Legacy path: try env var checksum
+        expected_checksum = os.environ.get("TF_BD_PLAN_CHECKSUM")
+        if expected_checksum:
+            if not verify_checksum(plan_file, expected_checksum):
+                console.print(
+                    "[red]❌ Plan file checksum mismatch! Plan may have been tampered with.[/red]"
+                )
+                env = os.environ.get("TF_BD_ENVIRONMENT", "dev")
+                error_msg = format_error_for_comment(
+                    message=(
+                        "Security validation failed: Plan file checksum mismatch. "
+                        "The plan file's checksum does not match the expected value, "
+                        "which could indicate tampering or corruption."
+                    ),
+                    suggestion=f"Create a fresh plan by running `.plan to {env}`",
+                )
+                set_github_output("failure_reason", error_msg)
+                raise typer.Exit(1)
+            console.print("[green]✅ Plan checksum verified (via env var)[/green]")
+        else:
+            console.print(
+                "[yellow]⚠️  No plan metadata found — checksum verification skipped[/yellow]"
+            )
+            console.print(
+                "[yellow]   This may indicate the plan was created by an older version[/yellow]"
+            )
 
     apply_result = executor.apply(plan_file=plan_file)
     if not apply_result.success:

@@ -7,6 +7,7 @@ argument resolution and PR comment posting via tfcmt.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess  # nosec B404 - subprocess is required to run terraform
 from dataclasses import dataclass, field
@@ -67,6 +68,21 @@ class TerraformExecutor:
 
     use_tfcmt: bool = True
     dry_run: bool = False
+
+    def version(self) -> str:
+        """Get the installed Terraform version string.
+
+        Returns:
+            Semantic version string (e.g., "1.9.8") or "unknown" on failure.
+        """
+        result = self._run_command(["terraform", "version", "-json"])
+        if result.success:
+            try:
+                version_info = json.loads(result.stdout)
+                return version_info.get("terraform_version", "unknown")
+            except (json.JSONDecodeError, KeyError):
+                pass
+        return "unknown"
 
     def _run_command(
         self,
@@ -131,6 +147,10 @@ class TerraformExecutor:
         if out_file is None:
             out_file = self.working_directory / "tfplan.bin"
 
+        # Resolve relative paths against working_directory so .exists()
+        # checks the correct location (terraform writes relative to cwd).
+        resolved_out = out_file if out_file.is_absolute() else self.working_directory / out_file
+
         args = ["terraform", "plan", TF_INPUT_FALSE, "-detailed-exitcode"]
 
         for var_file in self.var_files:
@@ -158,12 +178,12 @@ class TerraformExecutor:
             console.print("[red]❌ Plan failed[/red]")
             console.print(result.stderr)
 
-        # Calculate checksum
+        # Calculate checksum using resolved path
         checksum = None
-        if out_file.exists():
+        if resolved_out.exists():
             from .artifacts import calculate_checksum
 
-            checksum = calculate_checksum(out_file)
+            checksum = calculate_checksum(resolved_out)
 
         return PlanResult(
             exit_code=0 if success else result.exit_code,
@@ -171,7 +191,7 @@ class TerraformExecutor:
             stderr=result.stderr,
             command=result.command,
             has_changes=has_changes,
-            plan_file=out_file if out_file.exists() else None,
+            plan_file=resolved_out if resolved_out.exists() else None,
             checksum=checksum,
         )
 
