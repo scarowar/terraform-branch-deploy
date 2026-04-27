@@ -683,7 +683,11 @@ def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path) -> None:
                 "[yellow]   This may indicate the plan was created by an older version[/yellow]"
             )
 
-    apply_result = executor.apply(plan_file=plan_file)
+    # Pass only the filename to the executor — not the full path.
+    # The executor resolves plan_file relative to its working_directory,
+    # so passing the full path (which already includes working_directory)
+    # would cause path doubling: working_dir/working_dir/filename.
+    apply_result = executor.apply(plan_file=Path(plan_file.name))
     if not apply_result.success:
         logs_url = (
             os.environ.get("GITHUB_SERVER_URL", GITHUB_URL_DEFAULT)
