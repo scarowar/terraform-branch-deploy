@@ -27,6 +27,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from .config import load_config
+from .executor import _redact_single_arg
 
 DEFAULT_CONFIG_PATH = Path(".tf-branch-deploy.yml")
 GITHUB_URL_DEFAULT = "https://github.com"
@@ -402,7 +403,10 @@ def execute(
     if raw_extra_args:
         parsed_extra_args = _parse_extra_args(raw_extra_args)
         parsed_extra_args = _validate_extra_args(parsed_extra_args)
-        console.print(f"[cyan]📝 Extra args from command:[/cyan] {parsed_extra_args}")
+        console.print(
+            f"[cyan]📝 Extra args from command:[/cyan]"
+            f" {[_redact_single_arg(a) for a in parsed_extra_args]}"
+        )
 
     table = Table(title="Terraform Execution")
     table.add_column("Setting", style="cyan")
@@ -413,7 +417,10 @@ def execute(
     table.add_row("Working Dir", str(resolved_working_dir))
     table.add_row("Dry Run", str(dry_run))
     if parsed_extra_args:
-        table.add_row("Extra Args", " ".join(parsed_extra_args))
+        table.add_row(
+            "Extra Args",
+            " ".join(_redact_single_arg(a) for a in parsed_extra_args),
+        )
     console.print(table)
 
     var_files = config.resolve_var_files(environment)

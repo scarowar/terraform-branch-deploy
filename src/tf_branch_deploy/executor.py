@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import subprocess  # nosec B404 - subprocess is required to run terraform
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -18,16 +17,40 @@ from rich.console import Console
 
 TF_INPUT_FALSE = "-input=false"
 
-_VAR_REDACT_RE = re.compile(r"(-var=\S+?=)(\S+)")
-
 console = Console()
 
 
+def _redact_single_arg(arg: str) -> str:
+    """Redact a single arg if it contains a -var= value."""
+    if arg.startswith("-var="):
+        eq_pos = arg.find("=", 5)
+        if eq_pos != -1:
+            return arg[: eq_pos + 1] + "***"
+    return arg
+
+
 def _redact_args(args: list[str]) -> str:
-    """Join args for display, redacting -var= values."""
-    redacted = []
-    for arg in args:
-        redacted.append(_VAR_REDACT_RE.sub(r"\1***", arg))
+    """Join args for display, redacting -var= values.
+
+    Handles both ``-var=key=value`` (single token) and
+    ``-var key=value`` (two-token) forms, including values that
+    contain spaces.
+    """
+    redacted: list[str] = []
+    skip_next = False
+    for i, arg in enumerate(args):
+        if skip_next:
+            redacted.append("***")
+            skip_next = False
+            continue
+        redacted_arg = _redact_single_arg(arg)
+        if redacted_arg is not arg and redacted_arg != arg:
+            redacted.append(redacted_arg)
+        elif arg == "-var" and i + 1 < len(args):
+            redacted.append(arg)
+            skip_next = True
+        else:
+            redacted.append(arg)
     return " ".join(redacted)
 
 

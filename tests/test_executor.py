@@ -402,3 +402,18 @@ class TestRedactArgs:
         result = _redact_args(args)
         assert "-var=token=***" in result
         assert "-target=module.foo" in result
+
+    def test_var_with_spaces_fully_redacted(self) -> None:
+        """Value containing spaces in a single token is fully redacted."""
+        args = ["terraform", "plan", "-var=msg=hello world"]
+        assert _redact_args(args) == "terraform plan -var=msg=***"
+
+    def test_two_token_var_redacted(self) -> None:
+        """-var key=value (two tokens) redacts the value token."""
+        args = ["terraform", "plan", "-var", "password=s3cr3t"]
+        assert _redact_args(args) == "terraform plan -var ***"
+
+    def test_two_token_var_at_end(self) -> None:
+        """-var at end of args (no value following) is left as-is."""
+        args = ["terraform", "plan", "-var"]
+        assert _redact_args(args) == "terraform plan -var"
