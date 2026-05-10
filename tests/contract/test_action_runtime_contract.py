@@ -1,0 +1,144 @@
+"""Regression tests for the composite action runtime contract."""
+
+from pathlib import Path
+from typing import Any
+
+import pytest
+import yaml
+
+
+@pytest.fixture
+def action() -> dict[str, Any]:
+    """Load action.yml."""
+    action_path = Path(__file__).parent.parent.parent / "action.yml"
+    with open(action_path) as f:
+        return yaml.safe_load(f)
+
+
+def step_by_name(action: dict[str, Any], name: str) -> dict[str, Any]:
+    """Return an action step by name."""
+    for step in action["runs"]["steps"]:
+        if step.get("name") == name:
+            return step
+    raise AssertionError(f"Missing action step: {name}")
+
+
+def step_by_id(action: dict[str, Any], step_id: str) -> dict[str, Any]:
+    """Return an action step by id."""
+    for step in action["runs"]["steps"]:
+        if step.get("id") == step_id:
+            return step
+    raise AssertionError(f"Missing action step id: {step_id}")
+
+
+class TestCompositeRuntimeContract:
+    """Tests for behavior that only exists inside action.yml."""
+
+    def test_install_step_recreates_venv_for_two_mode_jobs(
+        self, action: dict[str, Any]
+    ) -> None:
+        """The action is invoked twice in one job, so venv setup must be idempotent."""
+        step = step_by_name(action, "Install tf-branch-deploy")
+        script = step["run"]
+
+        assert 'uv venv --clear "${{ runner.temp }}/tf-bd-venv"' in script
+        assert 'uv pip install "${{ github.action_path }}"' in script
+        assert 'echo "${{ runner.temp }}/tf-bd-venv/bin" >> $GITHUB_PATH' in script
+
+    def test_trigger_mode_exports_state_required_by_execute_mode(
+        self, action: dict[str, Any]
+    ) -> None:
+        """Execute mode depends on these env vars surviving in the same job."""
+        export_step = step_by_name(action, "[Trigger] Export State to GITHUB_ENV")
+        validate_step = step_by_name(action, "[Execute] Validate State")
+        export_script = export_step["run"]
+        validate_script = validate_step["run"]
+
+        required_exports = [
+            "TF_BD_CONTINUE",
+            "TF_BD_ENVIRONMENT",
+            "TF_BD_OPERATION",
+            "TF_BD_IS_ROLLBACK",
+            "TF_BD_SHA",
+            "TF_BD_REF",
+            "TF_BD_ACTOR",
+            "TF_BD_PR_NUMBER",
+            "TF_BD_PARAMS",
+            "TF_BD_DEPLOYMENT_ID",
+            "TF_BD_COMMENT_ID",
+            "TF_BD_INITIAL_REACTION_ID",
+            "TF_BD_NOOP",
+            "TF_BD_TYPE",
+        ]
+
+        for env_name in required_exports:
+            assert f'echo "{env_name}=' in export_script
+            assert ">> $GITHUB_ENV" in export_script
+
+        for env_name in ["TF_BD_ENVIRONMENT", "TF_BD_OPERATION", "TF_BD_SHA"]:
+            assert env_name in validate_script
+
+    def test_operation_derivation_keeps_plan_before_rollback(
+        self, action: dict[str, Any]
+    ) -> None:
+        """Plan detection must win before ref-based rollback detection."""
+        step = step_by_id(action, "derive-operation")
+        script = step["run"]
+
+        noop_check = script.index('if [[ "$BD_NOOP" == "true" ]]')
+        rollback_check = script.index('elif [[ "$BD_REF" == "$STABLE_BRANCH" ]]')
+
+        assert noop_check < rollback_check
+        assert 'OPERATION="plan"' in script
+        assert 'OPERATION="rollback"' in script
+        assert 'OPERATION="apply"' in script
+
+    def test_execute_mode_cache_restore_and_save_are_environment_and_sha_scoped(
+        self, action: dict[str, Any]
+    ) -> None:
+        """A plan from another environment or SHA must not be restored."""
+        restore_step = step_by_name(action, "[Execute] Restore Cached Plan")
+        save_step = step_by_name(action, "[Execute] Cache Plan File")
+
+        assert restore_step["uses"].startswith("actions/cache/restore@")
+        assert restore_step["if"] == "inputs.mode == 'execute' && env.TF_BD_OPERATION == 'apply'"
+        restore_paths = restore_step["with"]["path"].splitlines()
+        assert "**/tfplan-${{ env.TF_BD_ENVIRONMENT }}-*.tfplan" in restore_paths
+        assert "**/tfplan-${{ env.TF_BD_ENVIRONMENT }}-*.meta.json" in restore_paths
+        assert (
+            restore_step["with"]["key"]
+            == "tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}"
+        )
+        assert (
+            "tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}-"
+            in restore_step["with"]["restore-keys"]
+        )
+
+        assert save_step["uses"].startswith("actions/cache@")
+        assert save_step["if"] == "inputs.mode == 'execute' && env.TF_BD_OPERATION == 'plan'"
+        save_paths = save_step["with"]["path"].splitlines()
+        assert save_paths == restore_paths
+        assert save_step["with"]["key"] == restore_step["with"]["key"]
+
+    def test_lifecycle_completion_runs_on_success_and_failure_with_ghe_context(
+        self, action: dict[str, Any]
+    ) -> None:
+        """Lifecycle completion must run even when terraform fails."""
+        step = step_by_name(action, "[Execute] Complete Deployment Lifecycle")
+
+        assert step["if"] == "inputs.mode == 'execute' && always()"
+        assert step["env"]["GITHUB_SERVER_URL"] == "${{ github.server_url }}"
+        assert step["env"]["GH_REPO"] == "${{ github.repository }}"
+        assert step["env"]["STATUS"] == "${{ steps.tf-execute.outcome }}"
+        assert step["env"]["FAILURE_REASON"] == "${{ steps.tf-execute.outputs.failure_reason }}"
+
+    def test_execute_mode_passes_pr_comment_params_without_shell_expansion(
+        self, action: dict[str, Any]
+    ) -> None:
+        """Extra Terraform args are parsed by Python, not interpolated into a shell command."""
+        step = step_by_id(action, "tf-execute")
+        script = step["run"]
+
+        assert step["env"]["TF_BD_EXTRA_ARGS"] == "${{ env.TF_BD_PARAMS }}"
+        assert 'TF_BD_EXTRA_ARGS: ${{ env.TF_BD_PARAMS }}' not in script
+        assert "--extra-args" not in script
