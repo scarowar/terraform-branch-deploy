@@ -34,9 +34,7 @@ def step_by_id(action: dict[str, Any], step_id: str) -> dict[str, Any]:
 class TestCompositeRuntimeContract:
     """Tests for behavior that only exists inside action.yml."""
 
-    def test_install_step_recreates_venv_for_two_mode_jobs(
-        self, action: dict[str, Any]
-    ) -> None:
+    def test_install_step_recreates_venv_for_two_mode_jobs(self, action: dict[str, Any]) -> None:
         """The action is invoked twice in one job, so venv setup must be idempotent."""
         step = step_by_name(action, "Install tf-branch-deploy")
         script = step["run"]
@@ -78,9 +76,7 @@ class TestCompositeRuntimeContract:
         for env_name in ["TF_BD_ENVIRONMENT", "TF_BD_OPERATION", "TF_BD_SHA"]:
             assert env_name in validate_script
 
-    def test_operation_derivation_keeps_plan_before_rollback(
-        self, action: dict[str, Any]
-    ) -> None:
+    def test_operation_derivation_keeps_plan_before_rollback(self, action: dict[str, Any]) -> None:
         """Plan detection must win before ref-based rollback detection."""
         step = step_by_id(action, "derive-operation")
         script = step["run"]
@@ -140,5 +136,5 @@ class TestCompositeRuntimeContract:
         script = step["run"]
 
         assert step["env"]["TF_BD_EXTRA_ARGS"] == "${{ env.TF_BD_PARAMS }}"
-        assert 'TF_BD_EXTRA_ARGS: ${{ env.TF_BD_PARAMS }}' not in script
+        assert "TF_BD_EXTRA_ARGS: ${{ env.TF_BD_PARAMS }}" not in script
         assert "--extra-args" not in script
