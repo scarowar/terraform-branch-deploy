@@ -39,9 +39,13 @@ class TestCompositeRuntimeContract:
         step = step_by_name(action, "Install tf-branch-deploy")
         script = step["run"]
 
-        assert 'uv venv --clear "${{ runner.temp }}/tf-bd-venv"' in script
-        assert 'uv pip install "${{ github.action_path }}"' in script
-        assert 'echo "${{ runner.temp }}/tf-bd-venv/bin" >> $GITHUB_PATH' in script
+        assert step["env"]["ACTION_PATH"] == "${{ github.action_path }}"
+        assert step["env"]["TFBD_VENV"] == "${{ runner.temp }}/tf-bd-venv"
+        assert 'uv venv --clear "${TFBD_VENV}"' in script
+        assert 'UV_PROJECT_ENVIRONMENT="${TFBD_VENV}"' in script
+        assert 'uv sync --frozen --no-dev --project "${ACTION_PATH}"' in script
+        assert "uv pip install" not in script
+        assert 'echo "${TFBD_VENV}/bin" >> "$GITHUB_PATH"' in script
 
     def test_trigger_mode_exports_state_required_by_execute_mode(
         self, action: dict[str, Any]
@@ -70,11 +74,29 @@ class TestCompositeRuntimeContract:
         ]
 
         for env_name in required_exports:
-            assert f'echo "{env_name}=' in export_script
-            assert ">> $GITHUB_ENV" in export_script
+            assert f'write_env "{env_name}"' in export_script
+
+        assert '>> "$GITHUB_ENV"' in export_script
+        assert 'echo "TF_BD_PARAMS=' not in export_script
+        assert 'echo "TF_BD_EXTRA_ARGS=' not in export_script
 
         for env_name in ["TF_BD_ENVIRONMENT", "TF_BD_OPERATION", "TF_BD_SHA"]:
             assert env_name in validate_script
+
+    def test_action_outputs_use_multiline_file_command_format(self, action: dict[str, Any]) -> None:
+        """Branch Deploy and config values can be PR controlled, so outputs must be data-only."""
+        detect_script = step_by_name(action, "[Trigger] Detect Environments from Config")["run"]
+        derive_script = step_by_id(action, "derive-operation")["run"]
+
+        for script in [detect_script, derive_script]:
+            assert '>> "$GITHUB_OUTPUT"' in script
+            assert "write_output()" in script
+
+        assert 'echo "targets=' not in detect_script
+        assert 'echo "default=' not in detect_script
+        assert 'echo "production=' not in detect_script
+        assert 'echo "operation=' not in derive_script
+        assert 'echo "is_rollback=' not in derive_script
 
     def test_operation_derivation_keeps_plan_before_rollback(self, action: dict[str, Any]) -> None:
         """Plan detection must win before ref-based rollback detection."""
@@ -138,3 +160,11 @@ class TestCompositeRuntimeContract:
         assert step["env"]["TF_BD_EXTRA_ARGS"] == "${{ env.TF_BD_PARAMS }}"
         assert "TF_BD_EXTRA_ARGS: ${{ env.TF_BD_PARAMS }}" not in script
         assert "--extra-args" not in script
+
+    def test_shell_steps_do_not_interpolate_action_inputs_directly(
+        self, action: dict[str, Any]
+    ) -> None:
+        """Action inputs are passed through env so shell parses data, not expressions."""
+        for step in action["runs"]["steps"]:
+            if "run" in step:
+                assert "${{ inputs." not in step["run"], step.get("name", step.get("id"))

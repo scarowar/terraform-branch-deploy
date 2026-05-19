@@ -1,31 +1,29 @@
 # Environment Variables
 
-Trigger mode exports environment variables prefixed with `TF_BD_` for use in subsequent workflow steps.
+Trigger mode writes `TF_BD_*` variables to `GITHUB_ENV`. Later steps in the same job can use them directly.
 
----
-
-## Available Variables
+## Variables
 
 | Variable | Description |
-|----------|-------------|
-| `TF_BD_CONTINUE` | `true` if workflow should proceed |
-| `TF_BD_ENVIRONMENT` | Target environment name |
-| `TF_BD_OPERATION` | `plan`, `apply`, or `rollback` |
-| `TF_BD_IS_ROLLBACK` | `true` if this is a rollback |
-| `TF_BD_SHA` | Commit SHA to deploy |
-| `TF_BD_REF` | Git ref to checkout |
-| `TF_BD_ACTOR` | User who triggered deployment |
-| `TF_BD_PR_NUMBER` | PR number |
-| `TF_BD_PARAMS` | Extra parameters from command |
-| `TF_BD_DEPLOYMENT_ID` | GitHub deployment ID |
-| `TF_BD_COMMENT_ID` | Triggering comment ID |
-| `TF_BD_NOOP` | `true` for plan operations |
+| --- | --- |
+| `TF_BD_CONTINUE` | `true` when the workflow should continue. |
+| `TF_BD_ENVIRONMENT` | Target environment. |
+| `TF_BD_OPERATION` | `plan`, `apply`, or `rollback`. |
+| `TF_BD_IS_ROLLBACK` | `true` for rollback commands. |
+| `TF_BD_SHA` | Commit SHA associated with the command. |
+| `TF_BD_REF` | Git ref to check out before execute mode. |
+| `TF_BD_ACTOR` | User who triggered the command. |
+| `TF_BD_PR_NUMBER` | Pull request number. |
+| `TF_BD_PARAMS` | Extra command arguments after the separator. |
+| `TF_BD_DEPLOYMENT_ID` | GitHub deployment ID. |
+| `TF_BD_COMMENT_ID` | Triggering comment ID. |
+| `TF_BD_INITIAL_REACTION_ID` | Initial reaction ID used for cleanup. |
+| `TF_BD_NOOP` | `true` for plan operations. |
+| `TF_BD_TYPE` | Branch Deploy command type. |
 
----
+## Gate Later Steps
 
-## Conditional Execution
-
-Use `TF_BD_CONTINUE` to gate subsequent steps:
+Every step after trigger mode should check `TF_BD_CONTINUE`:
 
 ```yaml
 - uses: actions/checkout@v6
@@ -34,40 +32,28 @@ Use `TF_BD_CONTINUE` to gate subsequent steps:
     ref: ${{ env.TF_BD_REF }}
 ```
 
-When `TF_BD_CONTINUE` is `false`:
+If `TF_BD_CONTINUE` is not `true`, the command was not authorized, was not a supported command, or did not require execution.
 
-- The comment was not a recognized command
-- The user lacks permission
-- The environment is locked by another user
-- An error occurred during parsing
+## Choose Credentials by Environment
 
-!!! warning "Always Gate on TF_BD_CONTINUE"
-    Every step after trigger mode should check `if: env.TF_BD_CONTINUE == 'true'`. Without this gate, subsequent steps will run even when the command was invalid or unauthorized.
-
----
-
-## Environment-Specific Logic
-
-Use `TF_BD_ENVIRONMENT` to vary behavior:
+Use `TF_BD_ENVIRONMENT` to choose cloud credentials:
 
 ```yaml
-- name: Assume Role
-  if: env.TF_BD_CONTINUE == 'true'
-  uses: aws-actions/configure-aws-credentials@v4
+- uses: aws-actions/configure-aws-credentials@v5
+  if: env.TF_BD_CONTINUE == 'true' && env.TF_BD_ENVIRONMENT == 'prod'
   with:
-    role-to-assume: arn:aws:iam::${{ env.TF_BD_ENVIRONMENT == 'prod' && '111111111111' || '222222222222' }}:role/deploy
+    role-to-assume: arn:aws:iam::123456789012:role/prod-terraform
     aws-region: us-east-1
 ```
 
----
-
-## Rollback Detection
-
-Use `TF_BD_IS_ROLLBACK` to detect rollback operations:
+## Detect Rollbacks
 
 ```yaml
-- name: Notify on Rollback
+- name: Notify rollback
   if: env.TF_BD_IS_ROLLBACK == 'true'
-  run: |
-    echo "ROLLBACK IN PROGRESS: $TF_BD_ENVIRONMENT"
+  run: echo "Rollback requested for $TF_BD_ENVIRONMENT"
 ```
+
+## Job Boundary
+
+`GITHUB_ENV` variables are scoped to one job. Keep trigger mode, credential setup, and execute mode in the same job.

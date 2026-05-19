@@ -1,5 +1,6 @@
 """Tests for configuration module."""
 
+import json
 from pathlib import Path
 from textwrap import dedent
 
@@ -203,6 +204,21 @@ class TestJsonSchema:
         assert "default-environment" in props
         assert "production-environments" in props
         assert "environments" in props
+
+    def test_committed_schema_matches_generated_schema(self) -> None:
+        """The checked-in schema should stay in sync with the config model."""
+        schema_path = Path(__file__).parent.parent / "tf-branch-deploy.schema.json"
+        committed_schema = json.loads(schema_path.read_text())
+
+        assert committed_schema == generate_json_schema()
+
+    def test_schema_includes_timeout(self) -> None:
+        schema = generate_json_schema()
+
+        timeout = schema["$defs"]["EnvironmentConfig"]["properties"]["timeout"]
+        assert timeout["default"] == 3600
+        assert timeout["minimum"] == 60
+        assert timeout["maximum"] == 14400
 
 
 class TestEnvironmentTimeout:

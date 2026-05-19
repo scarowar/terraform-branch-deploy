@@ -1,15 +1,19 @@
 # Quickstart
 
-Deploy your first infrastructure change in 5 minutes.
+This guide creates a pull-request driven Terraform workflow with one non-production environment and one production environment.
+
+The workflow uses Branch Deploy for pull request commands, permissions, checks, deployments, and locks. Terraform Branch Deploy runs Terraform after Branch Deploy accepts a command.
 
 ## Prerequisites
 
-- GitHub repository with Terraform configurations
-- GitHub Actions enabled
+- A GitHub repository with Terraform code.
+- GitHub Actions enabled.
+- Cloud credentials that can be configured from a GitHub Actions job, preferably through OIDC.
+- Terraform state stored in a remote backend.
 
-## Step 1: Create Configuration
+## 1. Add Configuration
 
-Create `.tf-branch-deploy.yml` in your repository root:
+Create `.tf-branch-deploy.yml` at the repository root:
 
 ```yaml title=".tf-branch-deploy.yml"
 default-environment: dev
@@ -22,12 +26,18 @@ environments:
     working-directory: terraform/prod
 ```
 
-## Step 2: Create Workflow
+The environment in the PR comment must match one of the keys under `environments`.
+
+## 2. Add the Workflow
 
 Create `.github/workflows/deploy.yml`:
 
+!!! note "Why the action appears twice"
+
+    Trigger mode runs Branch Deploy first and decides whether the comment may continue. Execute mode runs Terraform only after the workflow has checked out the requested ref and configured cloud credentials.
+
 ```yaml title=".github/workflows/deploy.yml"
-name: Deploy
+name: Terraform Deploy
 
 on:
   issue_comment:
@@ -37,6 +47,9 @@ permissions:
   contents: write
   pull-requests: write
   deployments: write
+  checks: read
+  statuses: read
+  id-token: write
 
 jobs:
   deploy:
@@ -44,35 +57,37 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout to read config file
       - uses: actions/checkout@v6
 
-      # Parse command, acquire lock, export context
-      - uses: scarowar/terraform-branch-deploy@v0.2.0
+      - uses: scarowar/terraform-branch-deploy@v0
         with:
           mode: trigger
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          disable-naked-commands: true
+          checks: all
+          outdated-mode: strict
 
-      # Checkout PR branch for Terraform
       - uses: actions/checkout@v6
         if: env.TF_BD_CONTINUE == 'true'
         with:
           ref: ${{ env.TF_BD_REF }}
 
-      # Run Terraform
-      - uses: scarowar/terraform-branch-deploy@v0.2.0
+      # Add cloud credentials here.
+
+      - uses: scarowar/terraform-branch-deploy@v0
         if: env.TF_BD_CONTINUE == 'true'
         with:
           mode: execute
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-!!! note "Single Job Architecture"
-    All steps run in one job. Environment variables from trigger mode are available to subsequent steps automatically.
+Trigger mode runs first. It calls Branch Deploy, checks whether the comment is allowed to proceed, and exports `TF_BD_*` variables for the rest of the job. Terraform does not run until execute mode.
 
-## Step 3: Add Cloud Credentials
+## 3. Add Cloud Credentials
 
-Insert cloud credentials between the checkouts:
+Put credential setup after the second checkout and before execute mode. Gate credential steps with `TF_BD_CONTINUE` so credentials are configured only after Branch Deploy has accepted the command.
+
+The workflow above includes `id-token: write` for OIDC-based cloud authentication. Remove it only if your credential step does not use OIDC.
 
 === "AWS"
 
@@ -105,29 +120,63 @@ Insert cloud credentials between the checkouts:
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     ```
 
-## Step 4: Deploy
+## 4. Plan and Apply
 
-1. Push the workflow and config files
-2. Create a branch with Terraform changes
-3. Open a pull request
-4. Comment on the PR:
+Open a pull request with Terraform changes and comment:
 
-```
+```text
 .plan to dev
 ```
 
-The action runs `terraform plan` and posts the output as a PR comment.
+![Pull request comment running .plan to dev](assets/images/workflow/01-plan-command.png)
 
-After reviewing, apply:
+Review the plan comment. If it is correct, apply the saved plan:
 
-```
+![Expanded Terraform change result in a pull request comment](assets/images/workflow/03-plan-change-result.png)
+
+```text
 .apply to dev
 ```
 
----
+![Pull request comment running .apply to dev](assets/images/workflow/04-apply-command.png)
 
-## Next Steps
+If new commits are pushed after planning, run `.plan to dev` again before applying.
 
-- [Trigger and Execute](concepts/modes.md) — How the two-mode architecture works
-- [Configuration](configuration/index.md) — Full config reference with inheritance
-- [Security](security.md) — Access control and guardrails
+!!! warning "Apply the saved plan"
+
+    Normal apply uses the saved plan for the same environment and commit. It must not run a fresh untargeted Terraform apply.
+
+After apply completes, the result is posted back to the pull request:
+
+![Terraform apply succeeded comment in GitHub](assets/images/workflow/05-apply-succeeded.png)
+
+For a targeted plan, pass Terraform arguments after the pipe separator:
+
+```text
+.plan to dev | -target=module.database
+```
+
+The matching apply command stays the same:
+
+```text
+.apply to dev
+```
+
+The saved targeted plan is restored and applied. Terraform Branch Deploy rejects extra Terraform arguments on apply.
+
+## 5. Roll Back
+
+To apply the stable branch directly:
+
+```text
+.apply main to prod
+```
+
+Rollback is intentionally separate from normal apply. It does not use a saved pull request plan.
+
+## Next
+
+- [How It Works](concepts/modes.md)
+- [Configuration](configuration/index.md)
+- [Commands](reference/commands.md)
+- [Security](security.md)

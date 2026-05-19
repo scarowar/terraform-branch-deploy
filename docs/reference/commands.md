@@ -1,125 +1,145 @@
 # Commands
 
-All commands are posted as comments on pull requests.
+Commands are pull request comments. Terraform Branch Deploy uses Branch Deploy's IssueOps model: the comment is parsed by Branch Deploy, checked against repository policy, and then executed by Terraform Branch Deploy when the command is allowed to continue.
 
----
+The default command set is:
+
+| Command | Purpose |
+| --- | --- |
+| `.plan to <env>` | Run `terraform plan`, post the result, and save the plan. |
+| `.apply to <env>` | Apply the saved plan for the same environment and commit. |
+| `.apply main to <env>` | Roll back by applying the stable branch directly. |
+| `.lock <env>` | Lock one environment. |
+| `.unlock <env>` | Unlock one environment. |
+| `.lock --global` | Lock all environments. |
+| `.unlock --global` | Unlock all environments. |
+| `.wcid` | Show current lock ownership. |
+| `.help` | Show available commands. |
+
+!!! tip "Prefer explicit environments"
+
+    Use commands such as `.plan to dev` and `.apply to prod`. Set `disable-naked-commands: true` so a comment cannot silently target the default environment.
+
+## Examples
+
+- `.plan to dev`: Plans the `dev` environment.
+- `.apply to dev`: Applies the saved `dev` plan for the current commit.
+- `.plan to prod | -target=module.database`: Plans `prod` with extra Terraform arguments.
+- `.apply main to prod`: Applies the stable branch to `prod`.
+- `.lock prod`: Prevents deployments to `prod` until it is unlocked or released.
+- `.unlock prod`: Releases the `prod` lock.
 
 ## Plan
 
-Preview infrastructure changes.
-
-```bash
+```text
 .plan to <env>
 ```
 
-| Example | Effect |
-|---------|--------|
-| `.plan to dev` | Plan changes to dev |
-| `.plan to prod` | Plan changes to prod |
+Plan runs `terraform init` and `terraform plan` for the selected environment. The plan output is posted to the pull request. The plan file and metadata are saved for later apply.
 
-![Plan command in action](../assets/images/plan-command.png)
-
-The plan output is posted as a PR comment:
-
-![Plan output](../assets/images/plan-output.png)
-
----
+![Terraform plan result posted by github-actions](../assets/images/workflow/02-plan-result.png)
 
 ## Apply
 
-Apply the reviewed plan.
-
-```bash
+```text
 .apply to <env>
 ```
 
-!!! warning "Requires Plan"
-    A plan must exist for the current commit SHA. If you push new commits after planning, you must re-plan.
+A normal apply requires a saved plan. If new commits are pushed after planning, run `.plan to <env>` again.
 
-![Apply command](../assets/images/apply-command.png)
+Apply restores the saved plan for the environment and commit SHA. It does not create a fresh plan during a normal apply.
 
-The apply result is posted as a PR comment:
+Saved plan metadata is required and verified before the plan is applied. Re-plan to replace older cached plans that do not have metadata.
 
-![Apply output](../assets/images/apply-output.png)
-
----
+![Terraform apply succeeded comment in GitHub](../assets/images/workflow/05-apply-succeeded.png)
 
 ## Rollback
 
-Deploy the main branch directly.
-
-```bash
+```text
 .apply main to <env>
 ```
 
-This bypasses the plan requirement and applies the stable main branch immediately. Use this as an emergency latch to restore production to a known-good state.
+Rollback checks out the configured stable branch and runs Terraform apply directly. Use this path when the goal is to restore an environment from the stable branch rather than apply a pull request plan.
 
----
+Rollback does not require a saved plan.
 
-## Lock
+![Pull request comment running .apply main to dev](../assets/images/workflow/08-rollback-command.png)
 
-Acquire an exclusive lock on an environment.
+![Rollback apply result from the stable branch](../assets/images/workflow/09-rollback-succeeded.png)
 
-```bash
+## Locks
+
+```text
 .lock <env>
-```
-
-Use this for maintenance windows or to prevent deployments during incidents.
-
-![Lock command](../assets/images/lock.png)
-
----
-
-## Unlock
-
-Release the lock on an environment.
-
-```bash
 .unlock <env>
-```
-
-Locks are automatically released when deployments complete. Manual unlock is only needed for stuck locks or when using sticky lock mode.
-
-![Unlock command](../assets/images/unlock.png)
-
----
-
-## Status
-
-Check who is currently deploying.
-
-```bash
 .wcid
 ```
 
-Shows the current lock status for all environments.
+Use locks to pause deployment to an environment during maintenance or incident response.
 
-![WCID command](../assets/images/wcid.png)
+Locks are released automatically after deployment unless sticky lock mode is enabled. When sticky locks are enabled, release the lock manually:
 
----
-
-## Help
-
-Display available commands.
-
-```bash
-.help
+```text
+.unlock prod
 ```
 
----
+![Deployment lock claimed in GitHub](../assets/images/workflow/10-lock-claimed.png)
 
-## Extra Arguments
+![Lock details shown by .wcid](../assets/images/workflow/11-lock-details.png)
 
-Pass additional arguments to Terraform using a pipe separator:
+## Extra Terraform Arguments
 
-```bash
+Add command-specific Terraform arguments after the configured separator. The default separator is `|`.
+
+```text
 .plan to prod | -target=module.database
 ```
 
-| Example | Effect |
-|---------|--------|
-| `.plan to dev \| -target=module.api` | Plan only the API module |
-| `.plan to dev \| -var='count=3'` | Pass a variable |
-| `.plan to dev \| -refresh=false` | Skip refresh |
+Common examples:
 
-![Extra arguments in action](../assets/images/plan-extra-args.png)
+- `.plan to dev | -target=module.api`: Plans only `module.api`.
+- `.plan to dev | -var='replicas=3'`: Adds a Terraform variable.
+- `.plan to dev | -refresh=false`: Skips refresh for that plan.
+
+Extra arguments from `.plan` are part of the saved plan. A later `.apply to <env>` applies that saved plan without needing to repeat those arguments.
+
+![Targeted Terraform plan warning in GitHub](../assets/images/workflow/06-targeted-plan-warning.png)
+
+!!! warning "Extra arguments are plan-only"
+
+    A targeted plan is applied with the normal apply command:
+
+    ```text
+    .plan to prod | -target=module.database
+    .apply to prod
+    ```
+
+    The apply step uses the saved targeted plan. Terraform Branch Deploy rejects extra Terraform arguments on `.apply` and rollback commands.
+
+![Targeted plan applied with the normal apply command](../assets/images/workflow/07-targeted-apply-succeeded.png)
+
+## Branch Deploy Mapping
+
+Terraform Branch Deploy maps Terraform operations onto Branch Deploy command types:
+
+| Terraform Branch Deploy | Branch Deploy behavior |
+| --- | --- |
+| `.plan` | Uses the Branch Deploy noop command path. |
+| `.apply` | Uses the Branch Deploy deploy command path. |
+| `.apply main` | Uses the Branch Deploy stable branch rollback path. |
+| `.lock`, `.unlock`, `.wcid`, `.help` | Passed through to Branch Deploy. |
+
+The command triggers can be renamed with action inputs:
+
+```yaml
+- uses: scarowar/terraform-branch-deploy@v0
+  with:
+    mode: trigger
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    noop-trigger: ".tf plan"
+    trigger: ".tf apply"
+    lock-trigger: ".tf lock"
+    unlock-trigger: ".tf unlock"
+```
+
+See [Inputs](inputs.md) for all trigger inputs.

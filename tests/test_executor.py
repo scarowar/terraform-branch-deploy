@@ -216,6 +216,7 @@ class TestTerraformExecutor:
         assert plan_file.name in args
         # Var files should NOT be in command when using plan file
         assert "-var-file" not in args
+        assert "-parallelism=5" not in args
 
     @patch("subprocess.run")
     def test_apply_with_relative_plan_file_in_working_directory(

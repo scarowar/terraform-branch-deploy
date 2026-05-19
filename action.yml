@@ -22,7 +22,7 @@ inputs:
 
   # === REQUIRED ===
   github-token:
-    description: "GitHub token with pull-requests:write, deployments:write, contents:write"
+    description: "GitHub token with Branch Deploy permissions: pull-requests:write, deployments:write, contents:write, checks:read, statuses:read"
     required: true
 
   # === TF-BRANCH-DEPLOY SPECIFIC ===
@@ -122,9 +122,6 @@ inputs:
   disable-naked-commands:
     description: "Require 'to <env>' in commands"
     default: "false"
-  allow-forks:
-    description: "Allow fork deployments"
-    default: "true"
   allow-non-default-target-branch:
     description: "Allow non-default target branches"
     default: "false"
@@ -143,39 +140,9 @@ inputs:
   sticky-locks-for-noop:
     description: "Keep locks for noop"
     default: "false"
-  successful-deploy-labels:
-    description: "Labels for successful deploy"
-    default: ""
-  successful-noop-labels:
-    description: "Labels for successful noop"
-    default: ""
-  failed-deploy-labels:
-    description: "Labels for failed deploy"
-    default: ""
-  failed-noop-labels:
-    description: "Labels for failed noop"
-    default: ""
-  skip-successful-noop-labels-if-approved:
-    description: "Skip noop labels if approved"
-    default: "false"
-  skip-successful-deploy-labels-if-approved:
-    description: "Skip deploy labels if approved"
-    default: "false"
   use-security-warnings:
     description: "Show security warnings"
     default: "true"
-  merge-deploy-mode:
-    description: "Merge deploy mode"
-    default: "false"
-  unlock-on-merge-mode:
-    description: "Unlock on merge"
-    default: "false"
-  environment-url-in-comment:
-    description: "Show env URL in comment"
-    default: "true"
-  deploy-message-path:
-    description: "Path to deploy message file"
-    default: ""
   reaction:
     description: "Initial reaction to command"
     default: "eyes"
@@ -279,11 +246,14 @@ runs:
 
     - name: Install tf-branch-deploy
       shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        TFBD_VENV: ${{ runner.temp }}/tf-bd-venv
       run: |
-        uv venv --clear "${{ runner.temp }}/tf-bd-venv"
-        . "${{ runner.temp }}/tf-bd-venv/bin/activate"
-        uv pip install "${{ github.action_path }}"
-        echo "${{ runner.temp }}/tf-bd-venv/bin" >> $GITHUB_PATH
+        uv venv --clear "${TFBD_VENV}"
+        UV_PROJECT_ENVIRONMENT="${TFBD_VENV}" \
+          uv sync --frozen --no-dev --project "${ACTION_PATH}"
+        echo "${TFBD_VENV}/bin" >> "$GITHUB_PATH"
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
@@ -305,7 +275,7 @@ runs:
         rm -f /tmp/tfcmt.tar.gz
 
     # ╔══════════════════════════════════════════════════════════════════════════╗
-    # ║                           TRIGGER MODE                                    ║
+    # ║                           TRIGGER MODE                                   ║
     # ║   Parse command → Export TF_BD_* env vars → STOP (no terraform)          ║
     # ╚══════════════════════════════════════════════════════════════════════════╝
     - name: "[Trigger] Detect Environments from Config"
@@ -317,11 +287,26 @@ runs:
         INPUT_PRODUCTION_ENVIRONMENTS: ${{ inputs.production-environments }}
         INPUT_CONFIG_PATH: ${{ inputs.config-path }}
       run: |
+        write_output() {
+          local name="$1"
+          local value="${2-}"
+          local delimiter
+          delimiter="TFBD_${name}_$(date +%s%N)_${RANDOM}"
+          while [[ "$value" == *"$delimiter"* ]]; do
+            delimiter="TFBD_${name}_$(date +%s%N)_${RANDOM}"
+          done
+          {
+            printf '%s<<%s\n' "$name" "$delimiter"
+            printf '%s\n' "$value"
+            printf '%s\n' "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+        }
+
         if [ -n "$INPUT_ENVIRONMENT_TARGETS" ]; then
-          echo "targets=$INPUT_ENVIRONMENT_TARGETS" >> $GITHUB_OUTPUT
-          default_env=$(echo "$INPUT_ENVIRONMENT_TARGETS" | cut -d',' -f1)
-          echo "default=${default_env}" >> $GITHUB_OUTPUT
-          echo "production=$INPUT_PRODUCTION_ENVIRONMENTS" >> $GITHUB_OUTPUT
+          default_env="${INPUT_ENVIRONMENT_TARGETS%%,*}"
+          write_output "targets" "$INPUT_ENVIRONMENT_TARGETS"
+          write_output "default" "$default_env"
+          write_output "production" "$INPUT_PRODUCTION_ENVIRONMENTS"
         else
           config_path="$INPUT_CONFIG_PATH"
           if [ -f "$config_path" ]; then
@@ -333,9 +318,9 @@ runs:
             default="production"
             production="production"
           fi
-          echo "targets=$targets" >> $GITHUB_OUTPUT
-          echo "default=$default" >> $GITHUB_OUTPUT
-          echo "production=$production" >> $GITHUB_OUTPUT
+          write_output "targets" "$targets"
+          write_output "default" "$default"
+          write_output "production" "$production"
         fi
 
     - name: "[Trigger] IssueOps Command Dispatcher"
@@ -373,24 +358,17 @@ runs:
         admins_pat: ${{ inputs.admins-pat }}
         commit_verification: ${{ inputs.commit-verification }}
         disable_naked_commands: ${{ inputs.disable-naked-commands }}
-        allow_forks: ${{ inputs.allow-forks }}
+        # Terraform Branch Deploy v0.2.0 does not support forked PR execution.
+        # Fork-aware checkout and lifecycle handling will be added only with
+        # explicit tests for Branch Deploy's fork outputs.
+        allow_forks: "false"
         allow_non_default_target_branch_deployments: ${{ inputs.allow-non-default-target-branch }}
         deployment_confirmation: ${{ inputs.deployment-confirmation }}
         deployment_confirmation_timeout: ${{ inputs.deployment-confirmation-timeout }}
         global_lock_flag: ${{ inputs.global-lock-flag }}
         sticky_locks: ${{ inputs.sticky-locks }}
         sticky_locks_for_noop: ${{ inputs.sticky-locks-for-noop }}
-        successful_deploy_labels: ${{ inputs.successful-deploy-labels }}
-        successful_noop_labels: ${{ inputs.successful-noop-labels }}
-        failed_deploy_labels: ${{ inputs.failed-deploy-labels }}
-        failed_noop_labels: ${{ inputs.failed-noop-labels }}
-        skip_successful_noop_labels_if_approved: ${{ inputs.skip-successful-noop-labels-if-approved }}
-        skip_successful_deploy_labels_if_approved: ${{ inputs.skip-successful-deploy-labels-if-approved }}
         use_security_warnings: ${{ inputs.use-security-warnings }}
-        merge_deploy_mode: ${{ inputs.merge-deploy-mode }}
-        unlock_on_merge_mode: ${{ inputs.unlock-on-merge-mode }}
-        environment_url_in_comment: ${{ inputs.environment-url-in-comment }}
-        deploy_message_path: ${{ inputs.deploy-message-path }}
         reaction: ${{ inputs.reaction }}
 
     - name: "[Trigger] Derive Operation and Rollback"
@@ -402,6 +380,21 @@ runs:
         BD_REF: ${{ steps.branch-deploy.outputs.ref }}
         STABLE_BRANCH: ${{ inputs.stable-branch }}
       run: |
+        write_output() {
+          local name="$1"
+          local value="${2-}"
+          local delimiter
+          delimiter="TFBD_${name}_$(date +%s%N)_${RANDOM}"
+          while [[ "$value" == *"$delimiter"* ]]; do
+            delimiter="TFBD_${name}_$(date +%s%N)_${RANDOM}"
+          done
+          {
+            printf '%s<<%s\n' "$name" "$delimiter"
+            printf '%s\n' "$value"
+            printf '%s\n' "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+        }
+
         # Derive operation: plan, apply, or rollback
         if [[ "$BD_NOOP" == "true" ]]; then
           OPERATION="plan"
@@ -415,8 +408,8 @@ runs:
           IS_ROLLBACK="false"
         fi
 
-        echo "operation=${OPERATION}" >> $GITHUB_OUTPUT
-        echo "is_rollback=${IS_ROLLBACK}" >> $GITHUB_OUTPUT
+        write_output "operation" "${OPERATION}"
+        write_output "is_rollback" "${IS_ROLLBACK}"
         echo "✅ Operation: ${OPERATION}, Is Rollback: ${IS_ROLLBACK}"
 
     - name: "[Trigger] Export State to GITHUB_ENV"
@@ -438,21 +431,38 @@ runs:
         DERIVED_OPERATION: ${{ steps.derive-operation.outputs.operation }}
         DERIVED_IS_ROLLBACK: ${{ steps.derive-operation.outputs.is_rollback }}
       run: |
-        # Write all TF_BD_* variables to GITHUB_ENV for execute mode
-        echo "TF_BD_CONTINUE=${BD_CONTINUE}" >> $GITHUB_ENV
-        echo "TF_BD_ENVIRONMENT=${BD_ENVIRONMENT}" >> $GITHUB_ENV
-        echo "TF_BD_OPERATION=${DERIVED_OPERATION}" >> $GITHUB_ENV
-        echo "TF_BD_IS_ROLLBACK=${DERIVED_IS_ROLLBACK}" >> $GITHUB_ENV
-        echo "TF_BD_SHA=${BD_SHA}" >> $GITHUB_ENV
-        echo "TF_BD_REF=${BD_REF}" >> $GITHUB_ENV
-        echo "TF_BD_ACTOR=${BD_ACTOR}" >> $GITHUB_ENV
-        echo "TF_BD_PR_NUMBER=${BD_ISSUE_NUMBER}" >> $GITHUB_ENV
-        echo "TF_BD_PARAMS=${BD_PARAMS}" >> $GITHUB_ENV
-        echo "TF_BD_DEPLOYMENT_ID=${BD_DEPLOYMENT_ID}" >> $GITHUB_ENV
-        echo "TF_BD_COMMENT_ID=${BD_COMMENT_ID}" >> $GITHUB_ENV
-        echo "TF_BD_INITIAL_REACTION_ID=${BD_INITIAL_REACTION_ID}" >> $GITHUB_ENV
-        echo "TF_BD_NOOP=${BD_NOOP}" >> $GITHUB_ENV
-        echo "TF_BD_TYPE=${BD_TYPE}" >> $GITHUB_ENV
+        # Write all TF_BD_* variables to GITHUB_ENV for execute mode.
+        # Branch Deploy outputs include PR-controlled params, so use the
+        # multiline env-file format instead of single-line echo assignments.
+        write_env() {
+          local name="$1"
+          local value="${2-}"
+          local delimiter
+          delimiter="TFBD_${name}_$(date +%s%N)_${RANDOM}"
+          while [[ "$value" == *"$delimiter"* ]]; do
+            delimiter="TFBD_${name}_$(date +%s%N)_${RANDOM}"
+          done
+          {
+            printf '%s<<%s\n' "$name" "$delimiter"
+            printf '%s\n' "$value"
+            printf '%s\n' "$delimiter"
+          } >> "$GITHUB_ENV"
+        }
+
+        write_env "TF_BD_CONTINUE" "${BD_CONTINUE}"
+        write_env "TF_BD_ENVIRONMENT" "${BD_ENVIRONMENT}"
+        write_env "TF_BD_OPERATION" "${DERIVED_OPERATION}"
+        write_env "TF_BD_IS_ROLLBACK" "${DERIVED_IS_ROLLBACK}"
+        write_env "TF_BD_SHA" "${BD_SHA}"
+        write_env "TF_BD_REF" "${BD_REF}"
+        write_env "TF_BD_ACTOR" "${BD_ACTOR}"
+        write_env "TF_BD_PR_NUMBER" "${BD_ISSUE_NUMBER}"
+        write_env "TF_BD_PARAMS" "${BD_PARAMS}"
+        write_env "TF_BD_DEPLOYMENT_ID" "${BD_DEPLOYMENT_ID}"
+        write_env "TF_BD_COMMENT_ID" "${BD_COMMENT_ID}"
+        write_env "TF_BD_INITIAL_REACTION_ID" "${BD_INITIAL_REACTION_ID}"
+        write_env "TF_BD_NOOP" "${BD_NOOP}"
+        write_env "TF_BD_TYPE" "${BD_TYPE}"
 
         echo ""
         echo "═══════════════════════════════════════════════════════════════════"
@@ -471,12 +481,15 @@ runs:
         echo "  3. Run execute mode"
 
     # ╔══════════════════════════════════════════════════════════════════════════╗
-    # ║                           EXECUTE MODE                                    ║
+    # ║                           EXECUTE MODE                                   ║
     # ║   Validate state → Hooks → Terraform → Lifecycle completion              ║
     # ╚══════════════════════════════════════════════════════════════════════════╝
     - name: "[Execute] Validate State"
       if: inputs.mode == 'execute'
       shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_CONFIG_PATH: ${{ inputs.config-path }}
       run: |
         ERROR_COUNT=0
 
@@ -503,7 +516,7 @@ runs:
         fi
 
         # Cross-validate TF_BD_ENVIRONMENT against config file
-        CONFIG_PATH="${{ inputs.config-path }}"
+        CONFIG_PATH="${INPUT_CONFIG_PATH}"
         if [[ ! -f "${CONFIG_PATH}" ]]; then
           echo "::error::Config file '${CONFIG_PATH}' not found in execute mode."
           echo "::error::The config file is required to validate the target environment."
@@ -511,7 +524,7 @@ runs:
         fi
 
         # Use Python + PyYAML (available in runner) for reliable YAML parsing
-        python3 "${{ github.action_path }}/scripts/validate_env.py" "${CONFIG_PATH}" "${TF_BD_ENVIRONMENT}"
+        python3 "${ACTION_PATH}/scripts/validate_env.py" "${CONFIG_PATH}" "${TF_BD_ENVIRONMENT}"
 
         echo "✅ State validated: ${TF_BD_ENVIRONMENT} / ${TF_BD_OPERATION}"
 
@@ -554,6 +567,8 @@ runs:
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         TF_BD_EXTRA_ARGS: ${{ env.TF_BD_PARAMS }}
+        INPUT_CONFIG_PATH: ${{ inputs.config-path }}
+        INPUT_DRY_RUN: ${{ inputs.dry-run }}
       run: |
         if ! command -v tf-branch-deploy &> /dev/null; then
           echo "::error::tf-branch-deploy command not found"
@@ -561,19 +576,15 @@ runs:
         fi
 
         DRY_RUN_FLAG=""
-        if [ "${{ inputs.dry-run }}" == "true" ]; then
+        if [ "${INPUT_DRY_RUN}" == "true" ]; then
           DRY_RUN_FLAG="--dry-run"
-        fi
-
-        if [ -n "$TF_BD_EXTRA_ARGS" ]; then
-          echo "📝 Extra terraform args: $TF_BD_EXTRA_ARGS"
         fi
 
         tf-branch-deploy execute \
           --environment "${TF_BD_ENVIRONMENT}" \
           --operation "${TF_BD_OPERATION}" \
           --sha "${TF_BD_SHA}" \
-          --config "${{ inputs.config-path }}" \
+          --config "${INPUT_CONFIG_PATH}" \
           $DRY_RUN_FLAG
 
     - name: "[Execute] Complete Deployment Lifecycle"

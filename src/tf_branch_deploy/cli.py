@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -52,15 +53,15 @@ def set_github_output(name: str, value: str) -> None:
     """Set a GitHub Actions output."""
     output_file = os.environ.get("GITHUB_OUTPUT")
     if output_file:
-        with open(output_file, "a") as f:
-            if "\n" in value:
-                import uuid
+        delimiter = f"TFBD_{name}_{uuid.uuid4().hex}"
+        while delimiter in value:
+            delimiter = f"TFBD_{name}_{uuid.uuid4().hex}"
 
-                delimiter = uuid.uuid4().hex
-                f.write(f"{name}<<{delimiter}\n{value}\n{delimiter}\n")
-            else:
-                f.write(f"{name}={value}\n")
-    console.print(f"[dim]Output: {name}={value[:50]}{'...' if len(value) > 50 else ''}[/dim]")
+        with open(output_file, "a", encoding="utf-8") as f:
+            f.write(f"{name}<<{delimiter}\n{value}\n{delimiter}\n")
+
+    preview = value.replace("\r", "\\r").replace("\n", "\\n")
+    console.print(f"[dim]Output: {name}={preview[:50]}{'...' if len(preview) > 50 else ''}[/dim]")
 
 
 def format_error_for_comment(
@@ -118,6 +119,17 @@ ALLOWED_EXTRA_ARG_FLAGS: frozenset[str] = frozenset(
     }
 )
 
+ALLOWED_APPLY_CONFIG_ARG_FLAGS: frozenset[str] = frozenset(
+    {
+        "-var",
+        "-var-file",
+        "-parallelism",
+        "-compact-warnings",
+        "-lock",
+        "-lock-timeout",
+    }
+)
+
 BLOCKED_EXTRA_ARG_FLAGS: frozenset[str] = frozenset(
     {
         "-destroy",
@@ -129,6 +141,34 @@ BLOCKED_EXTRA_ARG_FLAGS: frozenset[str] = frozenset(
     }
 )
 
+VALID_OPERATIONS: frozenset[str] = frozenset({"plan", "apply", "rollback"})
+
+
+def _redact_args_for_display(args: list[str]) -> list[str]:
+    """Redact argument values before showing PR-supplied or metadata args."""
+    return [_redact_single_arg(arg) for arg in args]
+
+
+def _validate_args_allowed(
+    args: list[str],
+    allowed_flags: frozenset[str],
+    source: str,
+) -> list[str]:
+    """Validate args against an allowlist for a specific source."""
+    validated: list[str] = []
+
+    for arg in args:
+        flag = arg.split("=", 1)[0] if "=" in arg else arg
+
+        if flag in BLOCKED_EXTRA_ARG_FLAGS or flag not in allowed_flags:
+            console.print(f"[red]❌ Unsupported {source} arg: {flag}[/red]")
+            console.print(f"[red]Allowed {source} flags: {', '.join(sorted(allowed_flags))}[/red]")
+            raise typer.Exit(1)
+
+        validated.append(arg)
+
+    return validated
+
 
 def _validate_extra_args(args: list[str]) -> list[str]:
     """Validate parsed extra args against the allowlist.
@@ -136,27 +176,16 @@ def _validate_extra_args(args: list[str]) -> list[str]:
     Raises:
         typer.Exit: If any arg uses a blocked or unknown flag.
     """
-    validated: list[str] = []
+    return _validate_args_allowed(args, ALLOWED_EXTRA_ARG_FLAGS, "PR comment")
 
-    for arg in args:
-        flag = arg.split("=", 1)[0] if "=" in arg else arg
 
-        if flag in BLOCKED_EXTRA_ARG_FLAGS:
-            console.print(f"[red]❌ Blocked extra arg: {flag}[/red]")
-            console.print(
-                "[red]This flag is explicitly blocked for safety. "
-                "It cannot be passed via PR comments.[/red]"
-            )
-            raise typer.Exit(1)
-
-        if flag not in ALLOWED_EXTRA_ARG_FLAGS:
-            console.print(f"[red]❌ Unknown extra arg flag: {flag}[/red]")
-            console.print(f"[red]Allowed flags: {', '.join(sorted(ALLOWED_EXTRA_ARG_FLAGS))}[/red]")
-            raise typer.Exit(1)
-
-        validated.append(arg)
-
-    return validated
+def _validate_config_args(
+    plan_args: list[str],
+    apply_args: list[str],
+) -> None:
+    """Validate configured Terraform args before any Terraform command runs."""
+    _validate_args_allowed(plan_args, ALLOWED_EXTRA_ARG_FLAGS, "plan-args")
+    _validate_args_allowed(apply_args, ALLOWED_APPLY_CONFIG_ARG_FLAGS, "apply-args")
 
 
 def _parse_extra_args(raw: str) -> list[str]:
@@ -388,7 +417,7 @@ def execute(
     done that and are passing the environment/sha from those outputs.
 
     Dynamic args can be passed via PR comment:
-      .plan to dev | --target=module.base --target=module.network
+      .plan to dev | -target=module.base -target=module.network
     """
     console.print(
         Panel.fit("[bold blue]Terraform Branch Deploy[/bold blue] v0.2.0", subtitle="Execute Mode")
@@ -397,15 +426,30 @@ def execute(
     config, env_config = _load_and_validate_config(config_path, environment)
     resolved_working_dir = Path(working_dir or env_config.working_directory)
 
+    if operation not in VALID_OPERATIONS:
+        msg = f"Unknown operation: {operation}"
+        console.print(f"[red]{msg}[/red]")
+        set_github_output("failure_reason", msg)
+        raise typer.Exit(1)
+
     raw_extra_args = extra_args or os.environ.get("TF_BD_EXTRA_ARGS")
     parsed_extra_args = []
+
+    if operation != "plan" and raw_extra_args and raw_extra_args.strip():
+        msg = (
+            "Extra Terraform arguments are only supported on plan commands. "
+            "Apply uses the saved plan, and rollback applies the stable branch directly."
+        )
+        console.print(f"[red]❌ {msg}[/red]")
+        set_github_output("failure_reason", msg)
+        raise typer.Exit(1)
 
     if raw_extra_args:
         parsed_extra_args = _parse_extra_args(raw_extra_args)
         parsed_extra_args = _validate_extra_args(parsed_extra_args)
         console.print(
             f"[cyan]📝 Extra args from command:[/cyan]"
-            f" {[_redact_single_arg(a) for a in parsed_extra_args]}"
+            f" {_redact_args_for_display(parsed_extra_args)}"
         )
 
     table = Table(title="Terraform Execution")
@@ -426,8 +470,10 @@ def execute(
     var_files = config.resolve_var_files(environment)
     backend_configs = config.resolve_backend_configs(environment)
     init_args = config.resolve_args(environment, "init_args")
-    plan_args = config.resolve_args(environment, "plan_args") + parsed_extra_args
-    apply_args = config.resolve_args(environment, "apply_args") + parsed_extra_args
+    config_plan_args = config.resolve_args(environment, "plan_args")
+    apply_args = config.resolve_args(environment, "apply_args")
+    _validate_config_args(config_plan_args, apply_args)
+    plan_args = config_plan_args + parsed_extra_args
 
     set_github_output("working_directory", str(resolved_working_dir))
     set_github_output("var_files", json.dumps(var_files))
@@ -439,6 +485,8 @@ def execute(
         console.print(f"  terraform init {' '.join(init_args)}")
         if operation == "plan":
             console.print(f"  terraform plan {' '.join(plan_args)}")
+        elif operation == "apply":
+            console.print("  terraform apply <saved plan file>")
         else:
             console.print(f"  terraform apply {' '.join(apply_args)}")
         return
@@ -474,19 +522,20 @@ def execute(
         raise typer.Exit(1)
 
     if operation == "plan":
-        _handle_plan(executor, environment, sha)
-    elif operation == "apply" or operation == "rollback":
-        _handle_apply(executor, environment, sha, resolved_working_dir)
+        _handle_plan(executor, environment, sha, plan_args, var_files)
     else:
-        msg = f"Unknown operation: {operation}"
-        console.print(f"[red]{msg}[/red]")
-        set_github_output("failure_reason", msg)
-        raise typer.Exit(1)
+        _handle_apply(executor, environment, sha, resolved_working_dir)
 
     console.print("\n[green]✅ Terraform execution complete[/green]")
 
 
-def _handle_plan(executor: "TerraformExecutor", environment: str, sha: str) -> None:
+def _handle_plan(
+    executor: "TerraformExecutor",
+    environment: str,
+    sha: str,
+    plan_args: list[str],
+    var_files: list[str],
+) -> None:
     """Handle terraform plan operation."""
 
     plan_file = Path(f"tfplan-{environment}-{sha[:8]}.tfplan")
@@ -504,8 +553,12 @@ def _handle_plan(executor: "TerraformExecutor", environment: str, sha: str) -> N
         params_hash = generate_params_hash(extra_args_str)
 
         metadata = PlanMetadata(
+            environment=environment,
+            sha=sha,
             checksum=result.checksum,
             extra_args=_parse_extra_args(extra_args_str) if extra_args_str.strip() else [],
+            plan_args=plan_args,
+            var_files=var_files,
             terraform_version=tf_version,
             params_hash=params_hash,
             created_at=datetime.now(timezone.utc).isoformat(),
@@ -540,6 +593,16 @@ def _handle_apply(
     plan_filename = f"tfplan-{environment}-{sha[:8]}.tfplan"
     plan_file = working_dir / plan_filename
     is_rollback = os.environ.get("TF_BD_IS_ROLLBACK", "false").lower() == "true"
+    raw_extra_args = os.environ.get("TF_BD_EXTRA_ARGS", "")
+
+    if raw_extra_args.strip():
+        msg = (
+            "Extra Terraform arguments are only supported on plan commands. "
+            "Apply and rollback commands must not include Terraform arguments."
+        )
+        console.print(f"[red]❌ {msg}[/red]")
+        set_github_output("failure_reason", msg)
+        raise typer.Exit(1)
 
     if is_rollback:
         console.print(
@@ -567,7 +630,7 @@ def _handle_apply(
             raise typer.Exit(1)
         console.print("[dim]📋 Rollback applied directly (no plan file)[/dim]")
     elif plan_file.exists():
-        _apply_with_plan(executor, plan_file)
+        _apply_with_plan(executor, plan_file, environment, sha)
         console.print(f"[dim]📋 Plan applied: {plan_filename}[/dim]")
     else:
         console.print(f"[red]❌ No plan file found for this SHA: {plan_file}[/red]")
@@ -586,13 +649,15 @@ def _handle_apply(
         raise typer.Exit(1)
 
 
-def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path) -> None:
+def _apply_with_plan(
+    executor: "TerraformExecutor",
+    plan_file: Path,
+    environment: str,
+    sha: str,
+) -> None:
     """Apply using an existing plan file with integrity verification.
 
-    Verification priority:
-    1. Metadata sidecar (.meta.json) — mandatory checksum + TF version check
-    2. TF_BD_PLAN_CHECKSUM env var — legacy same-run fallback
-    3. No verification source — warning only (backward compatibility)
+    Metadata sidecar (.meta.json) is mandatory for v0.2.0.
     """
     console.print(f"[green]✅ Found plan file:[/green] {plan_file}")
 
@@ -600,88 +665,87 @@ def _apply_with_plan(executor: "TerraformExecutor", plan_file: Path) -> None:
 
     metadata = load_plan_metadata(plan_file)
 
-    if metadata:
-        # Mandatory checksum verification when metadata sidecar exists
-        if not verify_checksum(plan_file, metadata.checksum):
-            console.print(
-                "[red]❌ Plan file checksum mismatch! "
-                "Plan may have been tampered with or corrupted.[/red]"
-            )
-            env = os.environ.get("TF_BD_ENVIRONMENT", "dev")
-            error_msg = format_error_for_comment(
-                message=(
-                    "Security validation failed: Plan file checksum mismatch. "
-                    "The plan file's integrity could not be verified against "
-                    "the metadata recorded at plan time."
-                ),
-                suggestion=f"Create a fresh plan by running `.plan to {env}`",
-            )
-            set_github_output("failure_reason", error_msg)
-            raise typer.Exit(1)
-        console.print("[green]✅ Plan checksum verified[/green]")
+    if metadata is None:
+        error_msg = format_error_for_comment(
+            message=(
+                "Saved plan metadata was not found or could not be read. "
+                "Terraform Branch Deploy refuses to apply an unverified saved plan."
+            ),
+            suggestion=f"Create a fresh plan by running `.plan to {environment}`",
+        )
+        set_github_output("failure_reason", error_msg)
+        raise typer.Exit(1)
 
-        # Hard-fail on Terraform version mismatch
-        current_tf_version = executor.version()
-        if (
-            current_tf_version != "unknown"
-            and metadata.terraform_version != "unknown"
-            and current_tf_version != metadata.terraform_version
-        ):
-            console.print(
-                f"[red]❌ Terraform version mismatch![/red]\n"
-                f"    Plan created with: {metadata.terraform_version}\n"
-                f"    Current version:   {current_tf_version}"
-            )
-            env = os.environ.get("TF_BD_ENVIRONMENT", "dev")
-            error_msg = format_error_for_comment(
-                message=(
-                    f"Terraform version mismatch: plan was created with "
-                    f"v{metadata.terraform_version} but current version is "
-                    f"v{current_tf_version}. Applying a plan with a different "
-                    f"Terraform version can cause unpredictable behavior."
-                ),
-                suggestion=(
-                    f"Create a fresh plan with `.plan to {env}` using the current Terraform version"
-                ),
-            )
-            set_github_output("failure_reason", error_msg)
-            raise typer.Exit(1)
-        if current_tf_version != "unknown":
-            console.print(f"[green]✅ Terraform version verified: {current_tf_version}[/green]")
+    if metadata.environment != environment:
+        error_msg = format_error_for_comment(
+            message=(
+                f"Saved plan environment mismatch: plan was created for "
+                f"`{metadata.environment}`, but apply requested `{environment}`."
+            ),
+            suggestion=f"Create a fresh plan by running `.plan to {environment}`",
+        )
+        set_github_output("failure_reason", error_msg)
+        raise typer.Exit(1)
 
-        # Audit trail: log plan provenance
-        if metadata.extra_args:
-            console.print(
-                f"[dim]📝 Plan was created with args: {' '.join(metadata.extra_args)}[/dim]"
-            )
-        console.print(f"[dim]📝 Plan created at: {metadata.created_at}[/dim]")
-    else:
-        # Legacy path: try env var checksum
-        expected_checksum = os.environ.get("TF_BD_PLAN_CHECKSUM")
-        if expected_checksum:
-            if not verify_checksum(plan_file, expected_checksum):
-                console.print(
-                    "[red]❌ Plan file checksum mismatch! Plan may have been tampered with.[/red]"
-                )
-                env = os.environ.get("TF_BD_ENVIRONMENT", "dev")
-                error_msg = format_error_for_comment(
-                    message=(
-                        "Security validation failed: Plan file checksum mismatch. "
-                        "The plan file's checksum does not match the expected value, "
-                        "which could indicate tampering or corruption."
-                    ),
-                    suggestion=f"Create a fresh plan by running `.plan to {env}`",
-                )
-                set_github_output("failure_reason", error_msg)
-                raise typer.Exit(1)
-            console.print("[green]✅ Plan checksum verified (via env var)[/green]")
-        else:
-            console.print(
-                "[yellow]⚠️  No plan metadata found — checksum verification skipped[/yellow]"
-            )
-            console.print(
-                "[yellow]   This may indicate the plan was created by an older version[/yellow]"
-            )
+    if metadata.sha != sha:
+        error_msg = format_error_for_comment(
+            message=(
+                f"Saved plan commit mismatch: plan was created for `{metadata.sha[:8]}`, "
+                f"but apply requested `{sha[:8]}`."
+            ),
+            suggestion=f"Create a fresh plan by running `.plan to {environment}`",
+        )
+        set_github_output("failure_reason", error_msg)
+        raise typer.Exit(1)
+
+    if not verify_checksum(plan_file, metadata.checksum):
+        console.print(
+            "[red]❌ Plan file checksum mismatch! "
+            "Plan may have been tampered with or corrupted.[/red]"
+        )
+        error_msg = format_error_for_comment(
+            message=(
+                "Security validation failed: Plan file checksum mismatch. "
+                "The plan file's integrity could not be verified against "
+                "the metadata recorded at plan time."
+            ),
+            suggestion=f"Create a fresh plan by running `.plan to {environment}`",
+        )
+        set_github_output("failure_reason", error_msg)
+        raise typer.Exit(1)
+    console.print("[green]✅ Plan checksum verified[/green]")
+
+    current_tf_version = executor.version()
+    if (
+        current_tf_version != "unknown"
+        and metadata.terraform_version != "unknown"
+        and current_tf_version != metadata.terraform_version
+    ):
+        console.print(
+            f"[red]❌ Terraform version mismatch![/red]\n"
+            f"    Plan created with: {metadata.terraform_version}\n"
+            f"    Current version:   {current_tf_version}"
+        )
+        error_msg = format_error_for_comment(
+            message=(
+                f"Terraform version mismatch: plan was created with "
+                f"v{metadata.terraform_version} but current version is "
+                f"v{current_tf_version}. Applying a plan with a different "
+                f"Terraform version can cause unpredictable behavior."
+            ),
+            suggestion=f"Create a fresh plan with `.plan to {environment}` using the current Terraform version",
+        )
+        set_github_output("failure_reason", error_msg)
+        raise typer.Exit(1)
+    if current_tf_version != "unknown":
+        console.print(f"[green]✅ Terraform version verified: {current_tf_version}[/green]")
+
+    if metadata.extra_args:
+        console.print(
+            "[dim]📝 Plan was created with args: "
+            f"{' '.join(_redact_args_for_display(metadata.extra_args))}[/dim]"
+        )
+    console.print(f"[dim]📝 Plan created at: {metadata.created_at}[/dim]")
 
     # Pass only the filename to the executor — not the full path.
     # The executor resolves plan_file relative to its working_directory,

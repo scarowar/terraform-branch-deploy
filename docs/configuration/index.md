@@ -1,8 +1,8 @@
 # Configuration
 
-The `.tf-branch-deploy.yml` file defines your environments and Terraform settings.
+`.tf-branch-deploy.yml` defines the Terraform environments that can be targeted from pull request comments.
 
-## Minimal Config
+## Minimal Configuration
 
 ```yaml title=".tf-branch-deploy.yml"
 default-environment: dev
@@ -15,7 +15,51 @@ environments:
     working-directory: terraform/prod
 ```
 
-## Full Config
+## Root Fields
+
+| Field | Required | Default | Description |
+| --- | --- | --- | --- |
+| `default-environment` | Yes | none | Environment used by Branch Deploy when a command omits an explicit environment. |
+| `production-environments` | Yes | none | Environments that should be treated as production. |
+| `stable-branch` | No | `main` | Stable branch recorded in the config. In GitHub Actions, rollback command parsing is controlled by the action input `stable-branch`; set that input too when the stable branch is not `main`. |
+| `environments` | Yes | none | Environment definitions keyed by command target name. |
+| `defaults` | No | none | Shared Terraform settings inherited by environments. |
+
+For safer workflows, use `disable-naked-commands: true` in the action inputs so users must always write commands such as `.plan to dev`.
+
+## Environment Fields
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `working-directory` | `.` | Terraform root module path for the environment. |
+| `var-files` | none | `.tfvars` files passed to `terraform plan` and direct apply paths such as rollback. Normal saved plan apply uses the saved plan file. |
+| `backend-configs` | none | Files passed to `terraform init` as `-backend-config`. |
+| `init-args` | none | Extra arguments for `terraform init`. |
+| `plan-args` | none | Extra arguments for `terraform plan`. |
+| `apply-args` | none | Extra arguments for direct `terraform apply` paths such as rollback. Normal saved plan apply uses the saved plan file. Target and replace arguments are rejected. |
+| `timeout` | `3600` | Environment timeout in seconds. Must be between `60` and `14400`. |
+
+Paths are resolved relative to the environment `working-directory`.
+
+Normal apply is intentionally plan-file based: `.apply to <env>` restores the saved plan for the same environment and commit SHA, then passes that plan file to Terraform. It does not add `var-files` or `apply-args` again. Extra Terraform arguments from PR comments are accepted only on `.plan`.
+
+If your stable branch is not `main`, set it in both the config and the trigger-mode action input:
+
+```yaml title=".tf-branch-deploy.yml"
+stable-branch: release
+```
+
+```yaml title=".github/workflows/deploy.yml"
+- uses: scarowar/terraform-branch-deploy@v0
+  with:
+    mode: trigger
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    stable-branch: release
+```
+
+## Shared Defaults
+
+Use `defaults` for arguments and files shared by multiple environments:
 
 ```yaml title=".tf-branch-deploy.yml"
 default-environment: dev
@@ -25,7 +69,10 @@ stable-branch: main
 defaults:
   var-files:
     paths:
-      - ../common.tfvars
+      - ../shared/common.tfvars
+  init-args:
+    args:
+      - "-upgrade"
   plan-args:
     args:
       - "-parallelism=20"
@@ -34,21 +81,12 @@ environments:
   dev:
     working-directory: terraform/dev
     var-files:
-      inherit: true
       paths:
         - dev.tfvars
-
-  staging:
-    working-directory: terraform/staging
-    var-files:
-      inherit: true
-      paths:
-        - staging.tfvars
 
   prod:
     working-directory: terraform/prod
     var-files:
-      inherit: true
       paths:
         - prod.tfvars
     plan-args:
@@ -56,104 +94,45 @@ environments:
         - "-parallelism=10"
 ```
 
-## Root-Level Fields
-
-| Field | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `default-environment` | Yes | - | Environment used when none specified |
-| `production-environments` | Yes | - | List of production environments |
-| `stable-branch` | No | `main` | Branch for rollbacks |
-| `environments` | Yes | - | Environment definitions |
-| `defaults` | No | - | Shared settings inherited by all environments |
-
-## Environment Fields
-
-| Field | Description |
-|-------|-------------|
-| `working-directory` | Path to Terraform root module (required) |
-| `var-files` | Variable files to pass to Terraform |
-| `backend-configs` | Backend configuration file paths for `terraform init -backend-config` |
-| `plan-args` | Additional arguments for `terraform plan` |
-| `apply-args` | Additional arguments for `terraform apply` |
-| `init-args` | Additional arguments for `terraform init` |
+By default, environment settings inherit from `defaults`.
 
 ## Inheritance
 
-By default, environments inherit from `defaults`. This creates a layered configuration:
+The inheritable fields are:
 
-```mermaid
-flowchart TD
-    A[defaults] --> B[dev]
-    A --> C[staging]
-    A --> D[prod]
-    B --> E["var-files: common.tfvars + dev.tfvars"]
-    C --> F["var-files: common.tfvars + staging.tfvars"]
-    D --> G["var-files: common.tfvars + prod.tfvars"]
-```
+- `var-files`
+- `backend-configs`
+- `init-args`
+- `plan-args`
+- `apply-args`
 
-### Disable Inheritance
-
-Override inheritance for specific fields:
-
-```yaml
-prod:
-  var-files:
-    inherit: false  # Don't inherit from defaults
-    paths:
-      - prod-only.tfvars
-```
-
-### Merge Behavior
-
-When `inherit: true` (default):
-
-- **var-files**: Merged (defaults + environment)
-- **args**: Merged (defaults + environment)
-- **backend-configs**: Merged (defaults + environment)
-
-When `inherit: false`:
-
-- Only environment-specific values are used
-
-## Variable Files Format
+Each supports the same shape:
 
 ```yaml
 var-files:
-  inherit: true  # Optional, default: true
-  paths:
-    - variables.tfvars
-    - ../shared/common.tfvars
-```
-
-Paths are relative to the environment's `working-directory`.
-
-## Backend Configs Format
-
-```yaml
-backend-configs:
   inherit: true
   paths:
-    - backend.conf
+    - dev.tfvars
 ```
 
-These files are passed as `-backend-config=path` to `terraform init`.
-
-## Arguments Format
+For argument fields, use `args` instead of `paths`:
 
 ```yaml
 plan-args:
   inherit: true
   args:
-    - "-parallelism=20"
     - "-refresh=false"
+```
 
-apply-args:
-  args:
-    - "-parallelism=10"
+Set `inherit: false` to replace the default list for a specific environment:
 
-init-args:
-  args:
-    - "-upgrade"
+```yaml
+prod:
+  working-directory: terraform/prod
+  var-files:
+    inherit: false
+    paths:
+      - prod-only.tfvars
 ```
 
 ## Complete Example
@@ -168,10 +147,10 @@ stable-branch: main
 defaults:
   var-files:
     paths:
-      - ../common/variables.tfvars
-  init-args:
-    args:
-      - "-upgrade"
+      - ../shared/common.tfvars
+  backend-configs:
+    paths:
+      - ../shared/backend.conf
   plan-args:
     args:
       - "-parallelism=20"
@@ -180,32 +159,20 @@ environments:
   dev:
     working-directory: terraform/environments/dev
     var-files:
-      inherit: true
       paths:
         - dev.tfvars
-    backend-configs:
-      paths:
-        - ../backend/dev.conf
 
   staging:
     working-directory: terraform/environments/staging
     var-files:
-      inherit: true
       paths:
         - staging.tfvars
-    backend-configs:
-      paths:
-        - ../backend/staging.conf
 
   prod:
     working-directory: terraform/environments/prod
     var-files:
-      inherit: true
       paths:
         - prod.tfvars
-    backend-configs:
-      paths:
-        - ../backend/prod.conf
     plan-args:
       inherit: false
       args:
@@ -214,21 +181,17 @@ environments:
   prod-eu:
     working-directory: terraform/environments/prod-eu
     var-files:
-      inherit: true
       paths:
         - prod-eu.tfvars
-    backend-configs:
-      paths:
-        - ../backend/prod-eu.conf
 ```
 
-## Schema Validation
+## Validation
 
-Enable IDE validation with the JSON schema:
+Enable editor validation with the generated JSON schema.
 
 === "VS Code"
 
-    Add to the top of your config file:
+    Add this comment to `.tf-branch-deploy.yml`:
 
     ```yaml
     # yaml-language-server: $schema=https://raw.githubusercontent.com/scarowar/terraform-branch-deploy/main/tf-branch-deploy.schema.json
@@ -236,8 +199,16 @@ Enable IDE validation with the JSON schema:
 
 === "JetBrains IDEs"
 
-    1. Open Settings → Languages & Frameworks → Schemas and DTDs → JSON Schema Mappings
-    2. Add new mapping:
-       - Name: `terraform-branch-deploy`
-       - Schema URL: `https://raw.githubusercontent.com/scarowar/terraform-branch-deploy/main/tf-branch-deploy.schema.json`
-       - File pattern: `.tf-branch-deploy.yml`
+    Add a JSON Schema mapping:
+
+    | Setting | Value |
+    | --- | --- |
+    | Name | `terraform-branch-deploy` |
+    | Schema URL | Use the schema URL below. |
+    | File pattern | `.tf-branch-deploy.yml` |
+
+    ```text
+    https://raw.githubusercontent.com/scarowar/terraform-branch-deploy/main/tf-branch-deploy.schema.json
+    ```
+
+The action validates the configuration during execute mode. Unknown fields are rejected.

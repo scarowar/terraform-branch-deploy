@@ -21,6 +21,21 @@ from rich.console import Console
 console = Console()
 
 
+class GitHubApiError(RuntimeError):
+    """Raised when a required GitHub CLI API call fails."""
+
+    def __init__(self, cmd: list[str], stderr: str, returncode: int) -> None:
+        self.cmd = cmd
+        self.stderr = stderr
+        self.returncode = returncode
+        super().__init__(f"gh api failed with exit {returncode}: {stderr}")
+
+    @property
+    def is_not_found(self) -> bool:
+        """Whether the API failure represents a missing resource."""
+        return "HTTP 404" in self.stderr or "Not Found" in self.stderr
+
+
 @dataclass
 class LifecycleManager:
     """Manages the GitHub PR lifecycle for deployments."""
@@ -141,12 +156,17 @@ class LifecycleManager:
                 f"repos/{self.repo}/contents/lock.json", ref=lock_ref
             )
             sticky = content_json.get("sticky", "false")
+        except GitHubApiError as e:
+            if e.is_not_found:
+                console.print("   🔓 No active environment lock found")
+                return
+            msg = f"Failed to read lock metadata for environment={environment}: {e}"
+            console.print(f"[red]❌ {msg}[/red]")
+            raise RuntimeError(msg) from e
         except Exception as e:
-            console.print(
-                f"[yellow]⚠️  Non-critical: could not read lock metadata "
-                f"(environment={environment}): {e} — assuming sticky[/yellow]"
-            )
-            sticky = "true"
+            msg = f"Failed to parse lock metadata for environment={environment}: {e}"
+            console.print(f"[red]❌ {msg}[/red]")
+            raise RuntimeError(msg) from e
 
         if str(sticky).lower() == "true":
             console.print("   🔒 Lock is sticky - preserving")
@@ -161,12 +181,11 @@ class LifecycleManager:
                 "DELETE",
                 f"repos/{self.repo}/git/refs/heads/{lock_ref}",
             ]
-            self._run_gh(cmd)
+            self._run_gh(cmd, raise_on_error=True)
         except Exception as e:
-            console.print(
-                f"[yellow]⚠️  Non-critical: failed to remove lock "
-                f"(environment={environment}): {e}[/yellow]"
-            )
+            msg = f"Failed to remove non-sticky lock for environment={environment}: {e}"
+            console.print(f"[red]❌ {msg}[/red]")
+            raise RuntimeError(msg) from e
 
     def _gh_api(self, method: str, endpoint: str, **kwargs: Any) -> Any:
         """Call gh api."""
@@ -183,15 +202,20 @@ class LifecycleManager:
         """
         import base64
 
-        cmd = ["gh", "api", endpoint, "-f", f"ref={ref}", "--jq", ".content"]
-        result = self._run_gh(cmd, capture_output=True)
+        cmd = ["gh", "api", "--method", "GET", endpoint, "-f", f"ref={ref}", "--jq", ".content"]
+        result = self._run_gh(cmd, capture_output=True, raise_on_error=True)
         if not result:
             raise RuntimeError("gh api returned empty response")
 
         decoded = base64.b64decode(result).decode("utf-8")
         return json.loads(decoded)
 
-    def _run_gh(self, cmd: list[str], capture_output: bool = False) -> str | None:
+    def _run_gh(
+        self,
+        cmd: list[str],
+        capture_output: bool = False,
+        raise_on_error: bool = False,
+    ) -> str | None:
         """Run gh command.
 
         Supports:
@@ -220,13 +244,20 @@ class LifecycleManager:
                 cmd, capture_output=True, text=True, env=env, check=False
             )
             if result.returncode != 0:
+                stderr = result.stderr.strip()
+                if raise_on_error:
+                    raise GitHubApiError(cmd=cmd, stderr=stderr, returncode=result.returncode)
                 if not capture_output:
                     console.print(
                         f"[yellow]⚠️  gh command failed (exit {result.returncode}): "
-                        f"{result.stderr.strip()}[/yellow]"
+                        f"{stderr}[/yellow]"
                     )
                 return None
             return result.stdout.strip()
         except Exception as e:
+            if raise_on_error:
+                if isinstance(e, GitHubApiError):
+                    raise
+                raise GitHubApiError(cmd=cmd, stderr=str(e), returncode=1) from e
             console.print(f"[red]Error running gh: {e}[/red]")
             return None

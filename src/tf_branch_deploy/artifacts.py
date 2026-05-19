@@ -34,8 +34,12 @@ class PlanMetadata:
     Cached together with the plan so it survives across workflow runs.
     """
 
+    environment: str
+    sha: str
     checksum: str
     extra_args: list[str]
+    plan_args: list[str]
+    var_files: list[str]
     terraform_version: str
     params_hash: str
     created_at: str
@@ -124,8 +128,12 @@ def save_plan_metadata(plan_file: Path, metadata: PlanMetadata) -> Path:
     meta_path.write_text(
         json.dumps(
             {
+                "environment": metadata.environment,
+                "sha": metadata.sha,
                 "checksum": metadata.checksum,
                 "extra_args": list(metadata.extra_args),
+                "plan_args": list(metadata.plan_args),
+                "var_files": list(metadata.var_files),
                 "terraform_version": metadata.terraform_version,
                 "params_hash": metadata.params_hash,
                 "created_at": metadata.created_at,
@@ -152,11 +160,15 @@ def load_plan_metadata(plan_file: Path) -> PlanMetadata | None:
     try:
         data = json.loads(meta_path.read_text())
         return PlanMetadata(
+            environment=data["environment"],
+            sha=data["sha"],
             checksum=data["checksum"],
-            extra_args=data.get("extra_args", []),
-            terraform_version=data.get("terraform_version", "unknown"),
-            params_hash=data.get("params_hash", "unknown"),
-            created_at=data.get("created_at", "unknown"),
+            extra_args=data["extra_args"],
+            plan_args=data["plan_args"],
+            var_files=data["var_files"],
+            terraform_version=data["terraform_version"],
+            params_hash=data["params_hash"],
+            created_at=data["created_at"],
         )
     except (json.JSONDecodeError, KeyError):
         logger.warning("Failed to parse plan metadata sidecar: %s", meta_path)

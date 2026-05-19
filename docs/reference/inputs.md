@@ -1,88 +1,112 @@
 # Inputs
 
-All action inputs for `scarowar/terraform-branch-deploy`.
+All inputs for `scarowar/terraform-branch-deploy`.
 
----
+## Required Inputs
 
-## Core Inputs
+| Input | Description |
+| --- | --- |
+| `mode` | `trigger` parses the PR comment and exports state. `execute` runs Terraform from that state. |
+| `github-token` | Token with the permissions needed for comments, deployments, checks, and repository access. |
 
-| Input | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `github-token` | Yes | - | GitHub token with PR write access |
-| `mode` | Yes | - | `trigger` or `execute` |
-| `config-path` | No | `.tf-branch-deploy.yml` | Path to config file |
-| `terraform-version` | No | `latest` | Terraform version to install |
-| `dry-run` | No | `false` | Print commands without executing |
+## Input Ownership
 
----
+Terraform Branch Deploy has two kinds of inputs:
 
-## Command Triggers
+- Terraform execution inputs, used by execute mode to find configuration and run Terraform.
+- Branch Deploy pass-through inputs, used by trigger mode to configure command parsing, authorization, checks, locks, and deployment policy.
 
-| Input | Default | Description |
-|-------|---------|-------------|
-| `trigger` | `.apply` | Deploy command trigger |
-| `noop-trigger` | `.plan` | Plan command trigger |
-| `lock-trigger` | `.lock` | Lock command trigger |
-| `unlock-trigger` | `.unlock` | Unlock command trigger |
-| `help-trigger` | `.help` | Help command trigger |
-| `lock-info-alias` | `.wcid` | Lock info alias |
-| `param-separator` | `\|` | Parameter separator |
+Execute mode reads the `TF_BD_*` state exported by trigger mode. Do not call execute mode directly.
 
----
-
-## Environment Configuration
+## Terraform Execution Inputs
 
 | Input | Default | Description |
-|-------|---------|-------------|
-| `environment-targets` | (auto) | Comma-separated environments (auto-detected from config) |
-| `production-environments` | (auto) | Comma-separated production environments |
-| `environment-urls` | - | Environment URLs mapping |
-| `draft-permitted-targets` | - | Environments allowing draft PR deployments |
+| --- | --- | --- |
+| `config-path` | `.tf-branch-deploy.yml` | Path to the Terraform Branch Deploy configuration file. |
+| `terraform-version` | `latest` | Terraform version installed through `hashicorp/setup-terraform`. |
+| `uv-version` | `>=0.7.0` | uv version constraint passed to `astral-sh/setup-uv`. |
+| `dry-run` | `false` | Print Terraform commands in execute mode without running Terraform. Trigger-mode and earlier workflow steps can still run. |
 
----
+## Branch Deploy Command Inputs
 
-## Branch & Rollback
-
-| Input | Default | Description |
-|-------|---------|-------------|
-| `stable-branch` | `main` | Stable branch for rollbacks |
-| `update-branch` | `warn` | `disabled`, `warn`, or `force` |
-| `outdated-mode` | `strict` | `strict`, `pr_base`, or `default_branch` |
-| `allow-sha-deployments` | `false` | Allow deploying specific SHAs |
-| `enforced-deployment-order` | - | Required deployment order (e.g., `dev,staging,prod`) |
-
----
-
-## Permissions & Security
+These inputs are passed to Branch Deploy in trigger mode.
 
 | Input | Default | Description |
-|-------|---------|-------------|
-| `permissions` | `write,admin` | Required GitHub permissions |
-| `admins` | `false` | Admin users/teams (bypass approvals) |
-| `admins-pat` | `false` | PAT for admin team lookups |
-| `commit-verification` | `false` | Require verified commits |
-| `allow-forks` | `true` | Allow fork deployments |
-| `allow-non-default-target-branch` | `false` | Allow non-default target branch deployments |
-| `disable-naked-commands` | `false` | Require environment in commands |
+| --- | --- | --- |
+| `trigger` | `.apply` | Apply command trigger. |
+| `noop-trigger` | `.plan` | Plan command trigger. |
+| `lock-trigger` | `.lock` | Lock command trigger. |
+| `unlock-trigger` | `.unlock` | Unlock command trigger. |
+| `help-trigger` | `.help` | Help command trigger. |
+| `lock-info-alias` | `.wcid` | Current-lock status command. |
+| `param-separator` | <code>&#124;</code> | Separator before extra Terraform arguments. |
 
----
-
-## CI & Checks
+## Environments
 
 | Input | Default | Description |
-|-------|---------|-------------|
-| `checks` | `all` | CI check requirements: `all`, `required`, or check names |
-| `ignored-checks` | - | Checks to ignore |
-| `skip-ci` | - | Environments that skip CI |
-| `skip-reviews` | - | Environments that skip reviews |
-| `required-contexts` | `false` | Manually required status contexts |
+| --- | --- | --- |
+| `environment-targets` | auto-detected | Comma-separated deployable environments. Empty means read from `.tf-branch-deploy.yml`. |
+| `production-environments` | auto-detected | Comma-separated production environments. Empty means read from `.tf-branch-deploy.yml`. |
+| `environment-urls` | empty | Branch Deploy environment URL mapping. |
+| `draft-permitted-targets` | empty | Environments that allow draft PR deployments. |
 
----
-
-## Locking
+## Branch and Rollback
 
 | Input | Default | Description |
-|-------|---------|-------------|
-| `sticky-locks` | `false` | Keep locks after deployment |
-| `sticky-locks-for-noop` | `false` | Keep locks for plan operations |
-| `global-lock-flag` | `--global` | Global lock flag |
+| --- | --- | --- |
+| `stable-branch` | `main` | Branch Deploy stable branch input used by rollback commands such as `.apply main to prod`. Set this on trigger mode when the rollback source is not `main`. |
+| `update-branch` | `warn` | How Branch Deploy handles outdated branches: `disabled`, `warn`, or `force`. |
+| `outdated-mode` | `strict` | Branch Deploy outdated-branch policy. |
+| `allow-sha-deployments` | `false` | Allow deployment of explicit commit SHAs. |
+| `allow-non-default-target-branch` | `false` | Allow PRs targeting non-default branches to deploy. |
+
+## Review, Checks, and Permissions
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `checks` | `all` | Check policy before deployment. |
+| `ignored-checks` | empty | Checks ignored by Branch Deploy. |
+| `skip-ci` | empty | Environments where CI checks are skipped. |
+| `skip-reviews` | empty | Environments where review checks are skipped. |
+| `required-contexts` | empty | Explicit required status contexts. |
+| `permissions` | `write,admin` | Repository permission levels allowed to deploy. |
+| `admins` | `false` | Users or teams allowed to bypass review requirements. |
+| `admins-pat` | `false` | PAT used for GitHub team membership lookup. |
+| `commit-verification` | `false` | Require verified commits. |
+| `disable-naked-commands` | `false` | Require commands to include `to <env>`. |
+| `deployment-confirmation` | `false` | Require deployment confirmation. |
+| `deployment-confirmation-timeout` | `300` | Confirmation timeout in seconds. |
+| `use-security-warnings` | `true` | Show Branch Deploy security warnings. |
+
+## Deployment Order and Locks
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `enforced-deployment-order` | empty | Required environment promotion order, such as `dev,staging,prod`. |
+| `global-lock-flag` | `--global` | Flag used for global lock commands. |
+| `sticky-locks` | `false` | Keep locks after deployments complete. |
+| `sticky-locks-for-noop` | `false` | Keep locks after plan commands. |
+
+## Comments and Reactions
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `reaction` | `eyes` | Initial reaction added to the trigger comment. |
+
+## Branch Deploy Inputs Not Exposed
+
+Terraform Branch Deploy exposes the Branch Deploy inputs listed above. Other Branch Deploy inputs are outside this action's public interface.
+
+Forked pull request execution and Branch Deploy's alternate merge workflows are not enabled by this action.
+
+## Minimal Example
+
+```yaml
+- uses: scarowar/terraform-branch-deploy@v0
+  with:
+    mode: trigger
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    disable-naked-commands: true
+    checks: all
+    outdated-mode: strict
+```

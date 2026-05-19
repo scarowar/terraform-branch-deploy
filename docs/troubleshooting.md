@@ -1,291 +1,215 @@
 # Troubleshooting
 
-## Debugging Flowchart
+Start with the workflow run for the PR comment. The failure usually belongs to one of four areas: trigger mode, checkout and credentials, execute mode, or Terraform itself.
+
+## Quick Checks
 
 ```mermaid
 flowchart TD
-    A[Deployment Issue] --> B{Workflow triggered?}
-    B -->|No| C[Check on: issue_comment trigger]
-    B -->|Yes| D{branch-deploy responded?}
-    D -->|No| E[Check permissions & triggers]
-    D -->|Yes| F{Terraform ran?}
-    F -->|No| G[Check mode: execute]
-    F -->|Yes| H{Plan/Apply succeeded?}
-    H -->|No| I[Check Terraform error]
-    H -->|Yes| J[Check PR comment output]
+    Comment["PR comment posted"] --> Started{"Workflow started?"}
+    Started -- No --> Trigger["Check issue_comment trigger and PR guard"]
+    Started -- Yes --> Continued{"Trigger mode continued?"}
+    Continued -- No --> BranchDeploy["Check permissions, locks, checks, command spelling, and environment name"]
+    Continued -- Yes --> Checkout{"Target ref checked out?"}
+    Checkout -- No --> Ref["Check actions/checkout ref: env.TF_BD_REF"]
+    Checkout -- Yes --> Execute{"Execute mode ran?"}
+    Execute -- No --> Gate["Check TF_BD_CONTINUE gates"]
+    Execute -- Yes --> Terraform["Read Terraform or saved plan error"]
 ```
 
----
+## Workflow Does Not Start
 
-## Common Issues
+Check the event and PR guard:
 
-### "No plan file found for this SHA"
+```yaml
+on:
+  issue_comment:
+    types: [created]
 
-**Cause:** You tried to `.apply` without running `.plan` first, or new commits changed the SHA.
+jobs:
+  deploy:
+    if: github.event.issue.pull_request
+```
 
-**Fix:**
+The command must be a comment on a pull request, not on a commit or plain issue.
 
-1. Run `.plan to <env>` first
-2. If you made new commits after planning, run `.plan` again
-3. The plan is tied to a specific commit SHA for safety
+## Trigger Mode Does Not Continue
+
+If `TF_BD_CONTINUE` is not `true`, Branch Deploy decided execution should stop.
+
+Common causes:
+
+- The comment is not a supported command.
+- The target environment is unknown.
+- The user does not have the required repository permission.
+- Required checks or reviews are not complete.
+- The environment is locked.
+- The PR is outdated according to your Branch Deploy inputs.
+
+Use `.wcid` to inspect locks.
+
+## Execute Mode Runs When It Should Not
+
+Every target-ref checkout, credential step, and execute-mode step after trigger mode should be gated:
+
+```yaml
+if: env.TF_BD_CONTINUE == 'true'
+```
+
+Without the gate, later steps may run after an ignored or unauthorized comment.
+
+## Wrong Ref Checked Out
+
+Execute mode should run against `TF_BD_REF`:
+
+```yaml
+- uses: actions/checkout@v6
+  if: env.TF_BD_CONTINUE == 'true'
+  with:
+    ref: ${{ env.TF_BD_REF }}
+```
+
+Do not rely on the default checkout ref for issue comment workflows.
+
+## No Plan File Found
+
+This means apply could not find a valid saved plan for the commit and environment.
+
+Fix:
 
 ```text
-❌ .apply to dev
-   → Error: No plan file found for SHA abc123
-
-✅ .plan to dev
-   → Plan saved for SHA abc123
-
-✅ .apply to dev
-   → Applies the saved plan
+.plan to dev
+.apply to dev
 ```
 
----
+If new commits were pushed after planning, run the plan again. Plans are tied to the commit SHA.
 
-### "Environment not found"
+## Targeted Plan Was Not Applied
 
-**Cause:** The environment in your command doesn't exist in `.tf-branch-deploy.yml`.
+Use the same simple apply command after a targeted plan:
 
-**Fix:**
+```text
+.plan to prod | -target=module.database
+.apply to prod
+```
 
-1. Check your config file for typos
-2. Environment names are **case-sensitive**
-3. Ensure the `environments` section includes your target
+The apply should restore and apply the saved plan. If it reports no saved plan, re-run `.plan to prod | -target=module.database` and inspect the workflow logs for cache restore messages.
+
+## Environment Not Found
+
+Environment names come from `.tf-branch-deploy.yml` unless you override them with workflow inputs.
 
 ```yaml
 environments:
-  dev:           # ✅ .plan to dev
+  dev:
     working-directory: terraform/dev
-  Dev:           # ✅ .plan to Dev (different!)
-    working-directory: terraform/Dev
 ```
 
----
+Environment names are case-sensitive. `.plan to Dev` and `.plan to dev` are different.
 
-### "Config file not found"
+## Config File Not Found
 
-**Cause:** `.tf-branch-deploy.yml` doesn't exist in the repository root.
-
-**Fix:**
-
-1. Create the config file in your repository root
-2. Or specify a custom path:
+The default config path is `.tf-branch-deploy.yml`. If your file lives elsewhere, set `config-path` on both action calls:
 
 ```yaml
-- uses: scarowar/terraform-branch-deploy@v0.2.0
+- uses: scarowar/terraform-branch-deploy@v0
   with:
+    mode: trigger
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    config-path: terraform/.tf-branch-deploy.yml
+
+- uses: scarowar/terraform-branch-deploy@v0
+  if: env.TF_BD_CONTINUE == 'true'
+  with:
+    mode: execute
     github-token: ${{ secrets.GITHUB_TOKEN }}
     config-path: terraform/.tf-branch-deploy.yml
 ```
 
----
+## Token Permission Errors
 
-### "Branch is outdated"
-
-**Cause:** Your PR branch is behind the target branch (`main`).
-
-**Fix:**
-
-The fix depends on your `update-branch` and `outdated-mode` settings:
-
-=== "update-branch: warn (default)"
-
-    You'll see a warning but deployment proceeds. Consider updating your branch:
-
-    ```bash
-    git fetch origin main
-    git merge origin/main
-    git push
-    ```
-
-=== "update-branch: force"
-
-    The action will auto-update your branch. This may re-trigger CI.
-
-=== "outdated-mode: strict"
-
-    Deployment is blocked until you update:
-
-    1. Click "Update branch" in the GitHub PR UI
-    2. Or merge main into your branch manually
-
----
-
-### "Environment locked by another PR"
-
-**Cause:** Another user has locked the environment.
-
-**Fix:**
-
-1. Check who has the lock: `.wcid`
-2. Ask them to unlock or wait for their deployment
-3. If lock is stuck, unlock from any PR: `.unlock <env>`
-
-!!! note "Sticky Locks"
-    If `sticky-locks: true`, locks persist after deployment. The deployer must manually `.unlock`.
-
----
-
-### "Deployment order violation"
-
-**Cause:** You have `enforced-deployment-order` set and tried to skip an environment.
-
-**Fix:**
-
-If your config has:
-```yaml
-enforced-deployment-order: "dev,staging,prod"
-```
-
-You must deploy to `dev`, then `staging`, before `prod`:
-
-```text
-❌ .apply to prod
-   → Error: Must deploy to staging before prod
-
-✅ .apply to dev
-✅ .apply to staging
-✅ .apply to prod
-```
-
----
-
-### Plan Output Not Appearing in PR
-
-**Cause:** `tfcmt` issue or GitHub token permissions.
-
-**Fix:**
-
-1. Ensure your token has `pull-requests: write`:
+Use workflow permissions that match the features you enable:
 
 ```yaml
 permissions:
   contents: write
   pull-requests: write
   deployments: write
+  checks: read
+  statuses: read
 ```
 
-2. Check the workflow logs for tfcmt errors
-3. The action installs tfcmt automatically—no setup needed
+Team-based admin checks also require `admins-pat` with access to read team membership.
 
----
+## Branch Is Outdated
 
-### "Permission denied" Errors
+If `outdated-mode: strict` blocks deployment, update the PR branch and wait for required checks.
 
-**Cause:** GitHub token missing required permissions.
+With `update-branch: warn`, Branch Deploy warns but can continue. With `update-branch: force`, Branch Deploy may update the branch automatically.
 
-**Fix:**
+## Environment Is Locked
 
-Add all required permissions to your workflow:
+Check lock ownership:
 
-```yaml
-permissions:
-  contents: write       # For checkout and branch operations
-  pull-requests: write  # For PR comments
-  deployments: write    # For deployment status
-  checks: read          # If using checks validation
-  statuses: read        # If using required contexts
+```text
+.wcid
 ```
 
----
-
-### Environment Lock Stuck
-
-**Cause:** Previous deployment failed without releasing lock.
-
-**Fix:**
-
-Comment `.unlock <env>` on **any** open PR:
+Unlock after confirming it is safe:
 
 ```text
 .unlock dev
 ```
 
-!!! warning "Global Lock"
-    If someone used `.lock --global`, you need `.unlock --global` to release all environments.
+For global locks:
 
----
-
-### "Admin bypass not working"
-
-**Cause:** Admin team lookup failing.
-
-**Fix:**
-
-If using GitHub teams in `admins`:
-
-1. Ensure `admins-pat` is set with a PAT that has `read:org` scope
-2. Team format is `org-name/team-slug` (not display name)
-3. The PAT owner must be able to view team membership
-
-```yaml
-# Correct
-admins: "my-org/platform-team"
-admins-pat: ${{ secrets.ADMIN_PAT }}
-
-# Wrong - missing PAT
-admins: "my-org/platform-team"
-
-# Wrong - display name instead of slug
-admins: "my-org/Platform Team"
+```text
+.unlock --global
 ```
 
----
+## Deployment Order Violation
 
-### Cache/Artifact Not Found
-
-**Cause:** Plan cache expired or different SHA.
-
-**Fix:**
-
-- GitHub Actions cache expires after 7 days of no access
-- New commits = new SHA = new cache key
-- Run `.plan` again to regenerate
-
----
-
-## Debug Mode
-
-Enable verbose logging:
+If `enforced-deployment-order` is set, deploy in that order:
 
 ```yaml
-env:
-  ACTIONS_STEP_DEBUG: true
-  ACTIONS_RUNNER_DEBUG: true
+enforced-deployment-order: "dev,staging,prod"
 ```
 
-This shows:
+Then:
 
-- Full terraform command output
-- branch-deploy internal state
-- Cache operations
+```text
+.apply to dev
+.apply to staging
+.apply to prod
+```
 
----
+## Terraform Fails
 
-## Dry Run Mode
+Read the execute-mode logs. Most Terraform failures are normal Terraform problems:
 
-Test without executing terraform:
+- Provider authentication is missing or points at the wrong account.
+- Backend configuration is wrong.
+- A `var-files` path is wrong.
+- Terraform code failed validation or planning.
+- The target cloud API returned an authorization or quota error.
+
+Use `dry-run: true` to print commands without executing Terraform:
 
 ```yaml
-- uses: scarowar/terraform-branch-deploy@v0.2.0
+- uses: scarowar/terraform-branch-deploy@v0
   with:
+    mode: execute
     github-token: ${{ secrets.GITHUB_TOKEN }}
     dry-run: true
 ```
 
-This prints commands that would run without executing them.
+`dry-run` only changes Terraform execution in execute mode. Trigger-mode parsing, Branch Deploy lifecycle behavior, and any earlier workflow steps can still run.
 
----
+## Debug Logs
 
-## Getting Help
+Enable GitHub Actions debug logging from repository settings, or set these secrets to `true`:
 
-- 📖 [Documentation](https://scarowar.github.io/terraform-branch-deploy/)
-- 🐛 [GitHub Issues](https://github.com/scarowar/terraform-branch-deploy/issues)
-- 💬 [GitHub Discussions](https://github.com/scarowar/terraform-branch-deploy/discussions)
+- `ACTIONS_STEP_DEBUG`
+- `ACTIONS_RUNNER_DEBUG`
 
-When reporting issues, include:
-
-1. Workflow file (sanitized)
-2. `.tf-branch-deploy.yml` config
-3. Error message from logs
-4. PR comment that triggered the issue
+When opening an issue, include the sanitized workflow, `.tf-branch-deploy.yml`, command comment, and relevant workflow log excerpt.

@@ -1,45 +1,58 @@
-# Contributing to terraform-branch-deploy
+# Contributing
 
-Thank you for your interest in contributing to terraform-branch-deploy! Your ideas, bug reports, and improvements are welcome. Please read this guide to help you get started.
+Thanks for helping improve Terraform Branch Deploy. Keep changes focused, tested, and easy to review.
 
-## How to Contribute
+## Issues
 
-- **Bug Reports & Feature Requests:**
-  - Open an issue on [GitHub Issues](https://github.com/scarowar/terraform-branch-deploy/issues).
-  - Provide as much detail as possible, including steps to reproduce bugs or a clear description of your feature request.
+Use GitHub Issues for reproducible bugs and concrete feature requests. Include:
 
-- **Pull Requests:**
-  1. Fork the repository and create your branch from `main`.
-  2. Make clear, focused changes. Each pull request should address a single concern.
-  3. If your change affects the action's behavior, update the documentation (e.g., `README.md`).
-  4. Run all pre-commit checks before submitting:
-     ```sh
-     pre-commit run --all-files
-     ```
-  5. Open a pull request and describe your changes clearly.
+- The command comment that triggered the workflow.
+- A sanitized workflow file.
+- A sanitized `.tf-branch-deploy.yml`.
+- Relevant workflow logs.
+- The action version or commit SHA.
 
-## Code Style & Linting
+Do not report security vulnerabilities in public issues. See [SECURITY.md](SECURITY.md).
 
-- Python code is formatted and linted with [Ruff](https://docs.astral.sh/ruff/).
-- Pre-commit hooks are configured. Please run `pre-commit install` after cloning the repository to enable automatic checks before each commit.
-- You can manually run all pre-commit checks with:
-  ```sh
-  pre-commit run --all-files
-  ```
-- YAML and GitHub Actions workflows are also checked via pre-commit.
+## Pull Requests
 
-## Security
+1. Create a branch from `main`.
+2. Keep the pull request focused on one behavior or documentation topic.
+3. Update tests when behavior changes.
+4. Update docs when public commands, inputs, outputs, config, or safety behavior changes.
+5. Run the local checks before opening the pull request.
 
-- Please do not report security vulnerabilities in public issues. See [SECURITY.md](./SECURITY.md) for how to report vulnerabilities.
+## Local Checks
 
-## Code of Conduct
+```bash
+uv run pytest
+uv run pre-commit run --all-files
+uv run zensical build --strict --clean
+```
 
-- By participating, you agree to follow our [Code of Conduct](./CODE_OF_CONDUCT.md).
+## Documentation
 
-## Questions & Discussions
+Docs are user-facing. Keep them simple, direct, and focused on how to operate the action safely.
 
-- For general questions, ideas, or discussions, please use [GitHub Discussions](https://github.com/scarowar/terraform-branch-deploy/discussions).
+Prefer text, command examples, and small diagrams for workflow explanation. Avoid screenshots or demo videos unless they are real, reviewed, maintained, and clearly better than a diagram.
 
----
+Preview the docs locally:
 
-Thank you for helping make terraform-branch-deploy better!
+```bash
+uv run zensical serve
+```
+
+## Code Style
+
+- Python is formatted and linted with Ruff.
+- Type checks run with mypy through pre-commit.
+- Security and workflow checks run through pre-commit.
+- Keep action runtime changes small and covered by tests.
+
+## Branch Deploy Compatibility
+
+This project wraps `github/branch-deploy`. Keep that dependency pinned by full commit SHA. Update it only in a dedicated change that includes compatibility review, contract test updates if needed, and full local plus E2E validation.
+
+## Conduct
+
+By participating, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).

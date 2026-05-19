@@ -9,18 +9,53 @@ import typer
 from typer.testing import CliRunner
 
 from tf_branch_deploy.cli import (
+    ALLOWED_APPLY_CONFIG_ARG_FLAGS,
     ALLOWED_EXTRA_ARG_FLAGS,
     BLOCKED_EXTRA_ARG_FLAGS,
     DEFAULT_CONFIG_PATH,
     _ArgTokenizer,
+    _apply_with_plan,
+    _handle_apply,
     _load_and_validate_config,
     _parse_extra_args,
     _strip_shell_quotes,
+    _validate_config_args,
     _validate_extra_args,
     app,
+    set_github_output,
 )
 
 runner = CliRunner()
+
+
+def _save_plan_metadata(
+    plan_file: Path,
+    *,
+    environment: str = "int",
+    sha: str = "abc12345ff",
+    extra_args: list[str] | None = None,
+    plan_args: list[str] | None = None,
+    var_files: list[str] | None = None,
+    terraform_version: str = "1.9.8",
+    checksum: str | None = None,
+) -> None:
+    """Create valid v0.2 plan metadata for apply tests."""
+    from tf_branch_deploy.artifacts import PlanMetadata, calculate_checksum, save_plan_metadata
+
+    save_plan_metadata(
+        plan_file,
+        PlanMetadata(
+            environment=environment,
+            sha=sha,
+            checksum=checksum or calculate_checksum(plan_file),
+            extra_args=extra_args or [],
+            plan_args=plan_args or [],
+            var_files=var_files or [],
+            terraform_version=terraform_version,
+            params_hash="no-args",
+            created_at="2025-01-15T10:00:00+00:00",
+        ),
+    )
 
 
 class TestConstants:
@@ -31,6 +66,38 @@ class TestConstants:
 
     def test_default_config_path_value(self) -> None:
         assert str(DEFAULT_CONFIG_PATH) == ".tf-branch-deploy.yml"
+
+
+class TestGithubOutput:
+    """Tests for GitHub Actions output handling."""
+
+    def test_outputs_use_multiline_file_command_format(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Output values are written as data, not single-line shell assignments."""
+        output_file = tmp_path / "github-output"
+        monkeypatch.setenv("GITHUB_OUTPUT", str(output_file))
+
+        set_github_output("failure_reason", "first line\nsecond line")
+        text = output_file.read_text(encoding="utf-8")
+
+        assert text.startswith("failure_reason<<TFBD_failure_reason_")
+        assert "\nfirst line\nsecond line\n" in text
+        assert "failure_reason=first line" not in text
+
+    def test_single_line_outputs_also_use_multiline_format(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Keep one output-writing path for both trusted and untrusted values."""
+        output_file = tmp_path / "github-output"
+        monkeypatch.setenv("GITHUB_OUTPUT", str(output_file))
+
+        set_github_output("has_changes", "true")
+        text = output_file.read_text(encoding="utf-8")
+
+        assert text.startswith("has_changes<<TFBD_has_changes_")
+        assert "\ntrue\n" in text
+        assert text.count("has_changes=") == 0
 
 
 class TestParseExtraArgs:
@@ -125,6 +192,25 @@ class TestValidateExtraArgs:
         for flag in BLOCKED_EXTRA_ARG_FLAGS:
             with pytest.raises(typer.Exit):
                 _validate_extra_args([flag])
+
+
+class TestValidateConfigArgs:
+    """Tests for configured Terraform argument safety."""
+
+    def test_plan_args_accept_targets(self) -> None:
+        _validate_config_args(["-target=module.database"], [])
+
+    def test_apply_args_accept_direct_apply_flags(self) -> None:
+        args = [f"{flag}=test" for flag in sorted(ALLOWED_APPLY_CONFIG_ARG_FLAGS)]
+        _validate_config_args([], args)
+
+    def test_apply_args_reject_target(self) -> None:
+        with pytest.raises(typer.Exit):
+            _validate_config_args([], ["-target=module.database"])
+
+    def test_apply_args_reject_replace(self) -> None:
+        with pytest.raises(typer.Exit):
+            _validate_config_args([], ["-replace=aws_instance.app"])
 
 
 class TestStripShellQuotes:
@@ -380,6 +466,36 @@ class TestCompleteLifecycleCommand:
             mock_manager.post_result_comment.assert_called()
             mock_manager.remove_non_sticky_lock.assert_called_with("dev")
 
+    def test_failure_still_removes_non_sticky_lock(self, monkeypatch) -> None:
+        """Failed Terraform runs should still release non-sticky deployment locks."""
+        from unittest.mock import MagicMock, patch
+
+        monkeypatch.setenv("GITHUB_REPOSITORY", "org/repo")
+        monkeypatch.setenv("GITHUB_TOKEN", "token")
+        monkeypatch.setenv("TF_BD_DEPLOYMENT_ID", "123")
+        monkeypatch.setenv("TF_BD_ENVIRONMENT", "dev")
+        monkeypatch.setenv("TF_BD_PR_NUMBER", "10")
+
+        with patch("tf_branch_deploy.lifecycle.LifecycleManager") as mock_manager_cls:
+            mock_manager = MagicMock()
+            mock_manager_cls.return_value = mock_manager
+
+            result = runner.invoke(
+                app,
+                [
+                    "complete-lifecycle",
+                    "--status",
+                    "failure",
+                    "--failure-reason",
+                    "Terraform failed",
+                ],
+            )
+
+        assert result.exit_code == 0
+        mock_manager.update_deployment_status.assert_called_with("123", "failure", "dev")
+        mock_manager.post_result_comment.assert_called()
+        mock_manager.remove_non_sticky_lock.assert_called_with("dev")
+
 
 class TestHandleApply:
     """Tests for _handle_apply — rollback priority and plan file resolution."""
@@ -392,8 +508,6 @@ class TestHandleApply:
         stable-branch apply.
         """
         from unittest.mock import MagicMock, patch
-
-        from tf_branch_deploy.cli import _handle_apply
 
         working_dir = tmp_path / "terraform" / "modules"
         working_dir.mkdir(parents=True)
@@ -419,17 +533,17 @@ class TestHandleApply:
         """Normal apply uses the cached plan file when it exists."""
         from unittest.mock import MagicMock, patch
 
-        from tf_branch_deploy.cli import _handle_apply
-
         working_dir = tmp_path / "terraform" / "modules"
         working_dir.mkdir(parents=True)
 
         # Create the expected plan file
         plan_file = working_dir / "tfplan-int-abc12345.tfplan"
         plan_file.write_bytes(b"valid plan")
+        _save_plan_metadata(plan_file)
 
         mock_executor = MagicMock()
         mock_executor.apply.return_value = MagicMock(success=True)
+        mock_executor.version.return_value = "1.9.8"
 
         env_vars = {
             "TF_BD_IS_ROLLBACK": "false",
@@ -455,19 +569,19 @@ class TestHandleApply:
         """
         from unittest.mock import MagicMock, patch
 
-        from tf_branch_deploy.cli import _apply_with_plan
-
         working_dir = tmp_path / "terraform" / "modules"
         working_dir.mkdir(parents=True)
 
         plan_file = working_dir / "tfplan-int-abc12345.tfplan"
         plan_file.write_bytes(b"valid plan")
+        _save_plan_metadata(plan_file)
 
         mock_executor = MagicMock()
         mock_executor.apply.return_value = MagicMock(success=True)
+        mock_executor.version.return_value = "1.9.8"
 
         with patch.dict("os.environ", {}, clear=False):
-            _apply_with_plan(mock_executor, plan_file)
+            _apply_with_plan(mock_executor, plan_file, "int", "abc12345ff")
 
         call_args = mock_executor.apply.call_args
         plan_arg = call_args.kwargs.get("plan_file")
@@ -485,17 +599,17 @@ class TestHandleApply:
         """
         from unittest.mock import MagicMock, patch
 
-        from tf_branch_deploy.cli import _handle_apply
-
         working_dir = tmp_path / "terraform" / "modules"
         working_dir.mkdir(parents=True)
 
         plan_file = working_dir / "tfplan-int-abc12345.tfplan"
         plan_file.write_bytes(b"valid plan")
+        _save_plan_metadata(plan_file)
 
         mock_executor = MagicMock()
         mock_executor.apply.return_value = MagicMock(success=True)
         mock_executor.working_directory = working_dir
+        mock_executor.version.return_value = "1.9.8"
 
         env_vars = {"TF_BD_IS_ROLLBACK": "false"}
 
@@ -509,6 +623,46 @@ class TestHandleApply:
         # Verify it does NOT contain the working_dir prefix
         assert "terraform/modules" not in str(plan_arg)
 
+    def test_apply_rejects_extra_args(self, tmp_path: Path) -> None:
+        """Normal apply must not accept fresh Terraform args from comments."""
+        from click.exceptions import Exit as ClickExit
+        from unittest.mock import MagicMock, patch
+
+        working_dir = tmp_path / "terraform"
+        working_dir.mkdir()
+        plan_file = working_dir / "tfplan-int-abc12345.tfplan"
+        plan_file.write_bytes(b"valid plan")
+        _save_plan_metadata(plan_file)
+
+        mock_executor = MagicMock()
+
+        with patch.dict(
+            "os.environ",
+            {"TF_BD_IS_ROLLBACK": "false", "TF_BD_EXTRA_ARGS": "-target=module.database"},
+        ):
+            with pytest.raises(ClickExit):
+                _handle_apply(mock_executor, "int", "abc12345ff", working_dir)
+
+        mock_executor.apply.assert_not_called()
+
+    def test_rollback_rejects_extra_args(self, tmp_path: Path) -> None:
+        """Rollback is a direct stable-branch apply, not a targeted apply escape hatch."""
+        from click.exceptions import Exit as ClickExit
+        from unittest.mock import MagicMock, patch
+
+        working_dir = tmp_path / "terraform"
+        working_dir.mkdir()
+        mock_executor = MagicMock()
+
+        with patch.dict(
+            "os.environ",
+            {"TF_BD_IS_ROLLBACK": "true", "TF_BD_EXTRA_ARGS": "-target=module.database"},
+        ):
+            with pytest.raises(ClickExit):
+                _handle_apply(mock_executor, "int", "abc12345ff", working_dir)
+
+        mock_executor.apply.assert_not_called()
+
 
 class TestApplyWithPlanIntegrity:
     """Tests for plan integrity verification in _apply_with_plan."""
@@ -517,32 +671,20 @@ class TestApplyWithPlanIntegrity:
         """Checksum verified successfully via metadata sidecar."""
         from unittest.mock import MagicMock, patch
 
-        from tf_branch_deploy.artifacts import (
-            PlanMetadata,
-            calculate_checksum,
-            save_plan_metadata,
-        )
-        from tf_branch_deploy.cli import _apply_with_plan
-
         plan_file = tmp_path / "tfplan-int-abc12345.tfplan"
         plan_file.write_bytes(b"valid plan content")
-        checksum = calculate_checksum(plan_file)
-
-        metadata = PlanMetadata(
-            checksum=checksum,
+        _save_plan_metadata(
+            plan_file,
             extra_args=["-target=module.base"],
-            terraform_version="1.9.8",
-            params_hash="a1b2c3d4",
-            created_at="2025-01-15T10:00:00+00:00",
+            plan_args=["-target=module.base"],
         )
-        save_plan_metadata(plan_file, metadata)
 
         mock_executor = MagicMock()
         mock_executor.apply.return_value = MagicMock(success=True)
         mock_executor.version.return_value = "1.9.8"
 
         with patch.dict("os.environ", {}, clear=False):
-            _apply_with_plan(mock_executor, plan_file)
+            _apply_with_plan(mock_executor, plan_file, "int", "abc12345ff")
 
         # apply() must be called with just the filename (executor resolves from working_dir)
         mock_executor.apply.assert_called_once_with(plan_file=Path(plan_file.name))
@@ -553,27 +695,20 @@ class TestApplyWithPlanIntegrity:
 
         from click.exceptions import Exit as ClickExit
 
-        from tf_branch_deploy.artifacts import PlanMetadata, save_plan_metadata
-        from tf_branch_deploy.cli import _apply_with_plan
-
         plan_file = tmp_path / "tfplan-int-abc12345.tfplan"
         plan_file.write_bytes(b"valid plan content")
 
-        metadata = PlanMetadata(
+        _save_plan_metadata(
+            plan_file,
             checksum="wrong_checksum_value",
-            extra_args=[],
-            terraform_version="1.9.8",
-            params_hash="no-args",
-            created_at="2025-01-15T10:00:00+00:00",
         )
-        save_plan_metadata(plan_file, metadata)
 
         mock_executor = MagicMock()
         mock_executor.version.return_value = "1.9.8"
 
         with patch.dict("os.environ", {}, clear=False):
             with pytest.raises(ClickExit):
-                _apply_with_plan(mock_executor, plan_file)
+                _apply_with_plan(mock_executor, plan_file, "int", "abc12345ff")
 
         # apply() must NOT be called
         mock_executor.apply.assert_not_called()
@@ -584,102 +719,250 @@ class TestApplyWithPlanIntegrity:
 
         from click.exceptions import Exit as ClickExit
 
-        from tf_branch_deploy.artifacts import (
-            PlanMetadata,
-            calculate_checksum,
-            save_plan_metadata,
-        )
-        from tf_branch_deploy.cli import _apply_with_plan
-
         plan_file = tmp_path / "tfplan-int-abc12345.tfplan"
         plan_file.write_bytes(b"valid plan content")
-        checksum = calculate_checksum(plan_file)
-
-        metadata = PlanMetadata(
-            checksum=checksum,
-            extra_args=[],
-            terraform_version="1.8.0",
-            params_hash="no-args",
-            created_at="2025-01-15T10:00:00+00:00",
-        )
-        save_plan_metadata(plan_file, metadata)
+        _save_plan_metadata(plan_file, terraform_version="1.8.0")
 
         mock_executor = MagicMock()
         mock_executor.version.return_value = "1.9.8"  # Different!
 
         with patch.dict("os.environ", {}, clear=False):
             with pytest.raises(ClickExit):
-                _apply_with_plan(mock_executor, plan_file)
+                _apply_with_plan(mock_executor, plan_file, "int", "abc12345ff")
 
         mock_executor.apply.assert_not_called()
 
-    def test_legacy_env_var_checksum_still_works(self, tmp_path: Path) -> None:
-        """Without metadata sidecar, falls back to TF_BD_PLAN_CHECKSUM env var."""
+    def test_missing_metadata_aborts(self, tmp_path: Path) -> None:
+        """A saved plan without metadata is refused instead of applied."""
         from unittest.mock import MagicMock, patch
 
-        from tf_branch_deploy.artifacts import calculate_checksum
-        from tf_branch_deploy.cli import _apply_with_plan
-
-        plan_file = tmp_path / "tfplan-int-abc12345.tfplan"
-        plan_file.write_bytes(b"valid plan content")
-        checksum = calculate_checksum(plan_file)
-
-        mock_executor = MagicMock()
-        mock_executor.apply.return_value = MagicMock(success=True)
-
-        env_vars = {"TF_BD_PLAN_CHECKSUM": checksum}
-        with patch.dict("os.environ", env_vars, clear=False):
-            _apply_with_plan(mock_executor, plan_file)
-
-        mock_executor.apply.assert_called_once_with(plan_file=Path(plan_file.name))
-        """Without any verification source, warns but still applies (backward compat)."""
-        from unittest.mock import MagicMock, patch
-
-        from tf_branch_deploy.cli import _apply_with_plan
+        from click.exceptions import Exit as ClickExit
 
         plan_file = tmp_path / "tfplan-int-abc12345.tfplan"
         plan_file.write_bytes(b"valid plan content")
 
         mock_executor = MagicMock()
-        mock_executor.apply.return_value = MagicMock(success=True)
 
-        # No metadata sidecar, no env var
+        with patch.dict("os.environ", {"TF_BD_PLAN_CHECKSUM": "legacy"}, clear=False):
+            with pytest.raises(ClickExit):
+                _apply_with_plan(mock_executor, plan_file, "int", "abc12345ff")
+
+        mock_executor.apply.assert_not_called()
+
+    def test_metadata_environment_mismatch_aborts(self, tmp_path: Path) -> None:
+        """Apply cannot consume a plan created for a different environment."""
+        from unittest.mock import MagicMock, patch
+
+        from click.exceptions import Exit as ClickExit
+
+        plan_file = tmp_path / "tfplan-int-abc12345.tfplan"
+        plan_file.write_bytes(b"valid plan content")
+        _save_plan_metadata(plan_file, environment="prod")
+
+        mock_executor = MagicMock()
+
         with patch.dict("os.environ", {}, clear=False):
-            _apply_with_plan(mock_executor, plan_file)
+            with pytest.raises(ClickExit):
+                _apply_with_plan(mock_executor, plan_file, "int", "abc12345ff")
 
-        # Should still proceed with apply
-        mock_executor.apply.assert_called_once_with(plan_file=Path(plan_file.name))
+        mock_executor.apply.assert_not_called()
+
+    def test_metadata_sha_mismatch_aborts(self, tmp_path: Path) -> None:
+        """Apply cannot consume a plan created for a different commit."""
+        from unittest.mock import MagicMock, patch
+
+        from click.exceptions import Exit as ClickExit
+
+        plan_file = tmp_path / "tfplan-int-abc12345.tfplan"
+        plan_file.write_bytes(b"valid plan content")
+        _save_plan_metadata(plan_file, sha="different-sha")
+
+        mock_executor = MagicMock()
+
+        with patch.dict("os.environ", {}, clear=False):
+            with pytest.raises(ClickExit):
+                _apply_with_plan(mock_executor, plan_file, "int", "abc12345ff")
+
+        mock_executor.apply.assert_not_called()
 
     def test_tf_version_unknown_skips_check(self, tmp_path: Path) -> None:
         """When TF version is 'unknown' (either side), skip version check."""
         from unittest.mock import MagicMock, patch
 
-        from tf_branch_deploy.artifacts import (
-            PlanMetadata,
-            calculate_checksum,
-            save_plan_metadata,
-        )
-        from tf_branch_deploy.cli import _apply_with_plan
-
         plan_file = tmp_path / "tfplan-int-abc12345.tfplan"
         plan_file.write_bytes(b"valid plan content")
-        checksum = calculate_checksum(plan_file)
-
-        metadata = PlanMetadata(
-            checksum=checksum,
-            extra_args=[],
-            terraform_version="unknown",
-            params_hash="no-args",
-            created_at="2025-01-15T10:00:00+00:00",
-        )
-        save_plan_metadata(plan_file, metadata)
+        _save_plan_metadata(plan_file, terraform_version="unknown")
 
         mock_executor = MagicMock()
         mock_executor.apply.return_value = MagicMock(success=True)
         mock_executor.version.return_value = "1.9.8"
 
         with patch.dict("os.environ", {}, clear=False):
-            _apply_with_plan(mock_executor, plan_file)
+            _apply_with_plan(mock_executor, plan_file, "int", "abc12345ff")
 
         # Should proceed despite version mismatch (unknown is ignored)
         mock_executor.apply.assert_called_once()
+
+
+class TestExecuteArgumentSemantics:
+    """End-to-end CLI checks for plan/apply argument rules."""
+
+    def _write_config(self, tmp_path: Path, root_extra: str = "") -> Path:
+        config_file = tmp_path / ".tf-branch-deploy.yml"
+        config_text = dedent(f"""
+            default-environment: int
+            production-environments: [prod]
+            environments:
+              int:
+                working-directory: {tmp_path}
+              prod: {{}}
+            """)
+        if root_extra:
+            config_text += "\n" + dedent(root_extra)
+        config_file.write_text(config_text)
+        return config_file
+
+    def test_invalid_operation_fails_before_terraform_init(self, tmp_path: Path) -> None:
+        from unittest.mock import patch
+
+        config_file = self._write_config(tmp_path)
+
+        with patch("tf_branch_deploy.executor.TerraformExecutor.init") as mock_init:
+            result = runner.invoke(
+                app,
+                [
+                    "execute",
+                    "--environment",
+                    "int",
+                    "--operation",
+                    "destroy",
+                    "--sha",
+                    "abc12345ff",
+                    "--config",
+                    str(config_file),
+                ],
+            )
+
+        assert result.exit_code == 1
+        mock_init.assert_not_called()
+
+    def test_apply_extra_args_fail_before_terraform_init(self, tmp_path: Path) -> None:
+        from unittest.mock import patch
+
+        config_file = self._write_config(tmp_path)
+
+        with patch("tf_branch_deploy.executor.TerraformExecutor.init") as mock_init:
+            result = runner.invoke(
+                app,
+                [
+                    "execute",
+                    "--environment",
+                    "int",
+                    "--operation",
+                    "apply",
+                    "--sha",
+                    "abc12345ff",
+                    "--config",
+                    str(config_file),
+                    "--extra-args",
+                    "-target=module.database",
+                ],
+            )
+
+        assert result.exit_code == 1
+        mock_init.assert_not_called()
+
+    def test_config_apply_target_fails_before_terraform_init(self, tmp_path: Path) -> None:
+        from unittest.mock import patch
+
+        config_file = self._write_config(
+            tmp_path,
+            """
+            defaults:
+              apply-args:
+                args:
+                  - "-target=module.database"
+            """,
+        )
+
+        with patch("tf_branch_deploy.executor.TerraformExecutor.init") as mock_init:
+            result = runner.invoke(
+                app,
+                [
+                    "execute",
+                    "--environment",
+                    "int",
+                    "--operation",
+                    "plan",
+                    "--sha",
+                    "abc12345ff",
+                    "--config",
+                    str(config_file),
+                ],
+            )
+
+        assert result.exit_code == 1
+        mock_init.assert_not_called()
+
+    def test_plan_appends_config_and_comment_args_in_dry_run(self, tmp_path: Path) -> None:
+        config_file = self._write_config(
+            tmp_path,
+            """
+            defaults:
+              plan-args:
+                args:
+                  - "-parallelism=20"
+            """,
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "execute",
+                "--environment",
+                "int",
+                "--operation",
+                "plan",
+                "--sha",
+                "abc12345ff",
+                "--config",
+                str(config_file),
+                "--dry-run",
+                "--extra-args",
+                "-target=module.database",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "terraform plan -parallelism=20 -target=module.database" in result.stdout
+
+    def test_apply_dry_run_never_shows_apply_args_for_saved_plan(self, tmp_path: Path) -> None:
+        config_file = self._write_config(
+            tmp_path,
+            """
+            defaults:
+              apply-args:
+                args:
+                  - "-parallelism=20"
+            """,
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "execute",
+                "--environment",
+                "int",
+                "--operation",
+                "apply",
+                "--sha",
+                "abc12345ff",
+                "--config",
+                str(config_file),
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "terraform apply <saved plan file>" in result.stdout
+        assert "-parallelism=20" not in result.stdout

@@ -122,8 +122,12 @@ class TestPlanMetadata:
 
     def _make_metadata(self, **overrides: object) -> PlanMetadata:
         defaults: dict[str, object] = {
+            "environment": "int",
+            "sha": "abc12345ff",
             "checksum": "abc123def456",
             "extra_args": ["-target=module.base"],
+            "plan_args": ["-parallelism=20", "-target=module.base"],
+            "var_files": ["int.tfvars"],
             "terraform_version": "1.9.8",
             "params_hash": "a1b2c3d4",
             "created_at": "2025-01-15T10:30:00+00:00",
@@ -152,8 +156,12 @@ class TestPlanMetadata:
         loaded = load_plan_metadata(plan_file)
 
         assert loaded is not None
+        assert loaded.environment == original.environment
+        assert loaded.sha == original.sha
         assert loaded.checksum == original.checksum
         assert loaded.extra_args == original.extra_args
+        assert loaded.plan_args == original.plan_args
+        assert loaded.var_files == original.var_files
         assert loaded.terraform_version == original.terraform_version
         assert loaded.params_hash == original.params_hash
         assert loaded.created_at == original.created_at
@@ -182,19 +190,15 @@ class TestPlanMetadata:
 
         assert load_plan_metadata(plan_file) is None
 
-    def test_load_defaults_optional_fields(self, tmp_path: Path) -> None:
-        """Metadata with only required field still loads with defaults."""
+    def test_load_rejects_legacy_metadata_without_context(self, tmp_path: Path) -> None:
+        """Metadata without environment/SHA/args context is not enough to apply."""
         plan_file = tmp_path / "tfplan-int-abc12345.tfplan"
         plan_file.write_bytes(b"plan content")
 
         meta_path = plan_file.with_suffix(".meta.json")
         meta_path.write_text(json.dumps({"checksum": "abc123"}))
 
-        loaded = load_plan_metadata(plan_file)
-        assert loaded is not None
-        assert loaded.checksum == "abc123"
-        assert loaded.extra_args == []
-        assert loaded.terraform_version == "unknown"
+        assert load_plan_metadata(plan_file) is None
 
     def test_save_with_empty_extra_args(self, tmp_path: Path) -> None:
         plan_file = tmp_path / "tfplan-dev-abc12345.tfplan"

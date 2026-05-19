@@ -146,6 +146,13 @@
             }
           ],
           "default": null
+        },
+        "timeout": {
+          "default": 3600,
+          "maximum": 14400,
+          "minimum": 60,
+          "title": "Timeout",
+          "type": "integer"
         }
       },
       "title": "EnvironmentConfig",
