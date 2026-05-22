@@ -118,8 +118,15 @@ def test_sonarqube_workflow_reports_python_coverage() -> None:
     )
     properties = (REPO_ROOT / "sonar-project.properties").read_text(encoding="utf-8")
     steps = workflow["jobs"]["sonar"]["steps"]
+    job_condition = workflow["jobs"]["sonar"]["if"]
     run_commands = "\n".join(step.get("run", "") for step in steps)
 
+    assert "pull_request" in workflow[True]
+    assert "push" in workflow[True]
+    assert "workflow_dispatch" in workflow[True]
+    assert "pull_request_target" not in workflow[True]
+    assert "github.actor != 'dependabot[bot]'" in job_condition
+    assert "github.event.pull_request.head.repo.full_name == github.repository" in job_condition
     assert "uv sync --frozen --all-groups" in run_commands
     assert "--cov=src/tf_branch_deploy" in run_commands
     assert "--cov-report=xml:coverage.xml" in run_commands
