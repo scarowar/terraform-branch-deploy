@@ -111,6 +111,21 @@ def test_security_workflow_runs_zero_finding_gates() -> None:
     assert "uv run cyclonedx-py environment .venv" in run_commands
 
 
+def test_sonarqube_workflow_reports_python_coverage() -> None:
+    """SonarQube quality gates need coverage data from the CI scanner."""
+    workflow = yaml.safe_load(
+        (REPO_ROOT / ".github" / "workflows" / "sonarqube.yml").read_text(encoding="utf-8")
+    )
+    properties = (REPO_ROOT / "sonar-project.properties").read_text(encoding="utf-8")
+    steps = workflow["jobs"]["sonar"]["steps"]
+    run_commands = "\n".join(step.get("run", "") for step in steps)
+
+    assert "uv sync --frozen --all-groups" in run_commands
+    assert "--cov=src/tf_branch_deploy" in run_commands
+    assert "--cov-report=xml:coverage.xml" in run_commands
+    assert "sonar.python.coverage.reportPaths=coverage.xml" in properties
+
+
 def test_external_e2e_dispatch_is_maintainer_gated() -> None:
     """The /e2e broker should dispatch exact PR heads without running PR code."""
     workflow = yaml.safe_load(E2E_DISPATCH_WORKFLOW.read_text(encoding="utf-8"))

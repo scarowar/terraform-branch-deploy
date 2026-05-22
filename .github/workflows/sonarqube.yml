@@ -27,6 +27,22 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@803947b9bd8e9f986429fa0c5a41c367cd732b41 # v7.2.1
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-groups
+
+      - name: Generate coverage report
+        run: >
+          uv run pytest tests/
+          --cov=src/tf_branch_deploy
+          --cov-report=xml:coverage.xml
+          --cov-report=term-missing
+
       - name: Run SonarQube analysis
         uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
         env:
