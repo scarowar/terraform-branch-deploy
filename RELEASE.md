@@ -28,8 +28,12 @@ Before tagging:
 - Review Dependabot alerts.
 - Review code scanning alerts.
 - Review secret scanning alerts.
-- Resolve high and critical alerts, or record why they do not affect the release artifact.
+- Review SonarQube Cloud findings.
+- Resolve every open finding, regardless of severity, or record a narrow false-positive decision.
 - Confirm the stable branch is protected by branch protection or a repository ruleset.
+- Confirm required checks include CI, Security, CodeQL, SonarQube, Dependency Review, docs build, and an external E2E run for action runtime changes.
+
+Scanner policy must not be relaxed for a release.
 
 ## Branch Deploy Compatibility
 
@@ -42,6 +46,8 @@ Before tagging:
 ## External E2E Gate
 
 Run the external E2E suite against the exact candidate SHA or release tag. Do not validate a release from a floating `main` reference.
+
+For pull request validation, run the external E2E workflow from the test repository after the code has been reviewed. Use the exact commit SHA from the Terraform Branch Deploy pull request. Live PRs, comments, locks, and workflow runs belong in the test repository.
 
 Watch these flows explicitly:
 
@@ -57,6 +63,7 @@ Watch these flows explicitly:
 
 - Add a regression test for every critical bug fix.
 - Keep release changes small and directly tested.
+- Keep docs and maintainer instructions short, canonical, and non-duplicative.
 - Keep public commands, outputs, environment variables, plan naming, cache keys, and rollback behavior stable unless a test proves they are wrong.
 - Normal apply must use a saved `.tfplan` file.
 - Direct apply without a saved plan is reserved for rollback.

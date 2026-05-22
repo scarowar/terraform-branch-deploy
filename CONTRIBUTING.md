@@ -22,6 +22,12 @@ Do not report security vulnerabilities in public issues. See [SECURITY.md](SECUR
 4. Update docs when public commands, inputs, outputs, config, or safety behavior changes.
 5. Run the local checks before opening the pull request.
 
+## Testing Pull Requests
+
+Pull request CI runs without repository secrets. Fork pull requests cannot run live deployment tests.
+
+Run the local checks below before opening a pull request. Maintainers may run live E2E in the test repository against the exact commit SHA being reviewed. Do not add `pull_request_target` or any PR-triggered workflow that grants secrets to untrusted code.
+
 ## Local Checks
 
 ```bash
@@ -34,7 +40,7 @@ uv run zensical build --strict --clean
 
 Docs are user-facing. Keep them simple, direct, and focused on how to operate the action safely.
 
-Prefer text, command examples, and small diagrams for workflow explanation. Avoid screenshots or demo videos unless they are real, reviewed, maintained, and clearly better than a diagram.
+Use screenshots and diagrams only when they show real behavior and stay maintainable with the docs.
 
 Preview the docs locally:
 
@@ -52,6 +58,10 @@ uv run zensical serve
 ## Branch Deploy Compatibility
 
 This project wraps `github/branch-deploy`. Keep that dependency pinned by full commit SHA. Update it only in a dedicated change that includes compatibility review, contract test updates if needed, and full local plus E2E validation.
+
+## Change Scope
+
+Keep changes narrow. Prefer existing modules and docs, and link to canonical explanations instead of repeating them.
 
 ## Conduct
 

@@ -37,8 +37,6 @@ The default command set is:
 
 Plan runs `terraform init` and `terraform plan` for the selected environment. The plan output is posted to the pull request. The plan file and metadata are saved for later apply.
 
-![Terraform plan result posted by github-actions](../assets/images/workflow/02-plan-result.png)
-
 ## Apply
 
 ```text
@@ -51,8 +49,6 @@ Apply restores the saved plan for the environment and commit SHA. It does not cr
 
 Saved plan metadata is required and verified before the plan is applied. Re-plan to replace older cached plans that do not have metadata.
 
-![Terraform apply succeeded comment in GitHub](../assets/images/workflow/05-apply-succeeded.png)
-
 ## Rollback
 
 ```text
@@ -62,10 +58,6 @@ Saved plan metadata is required and verified before the plan is applied. Re-plan
 Rollback checks out the configured stable branch and runs Terraform apply directly. Use this path when the goal is to restore an environment from the stable branch rather than apply a pull request plan.
 
 Rollback does not require a saved plan.
-
-![Pull request comment running .apply main to dev](../assets/images/workflow/08-rollback-command.png)
-
-![Rollback apply result from the stable branch](../assets/images/workflow/09-rollback-succeeded.png)
 
 ## Locks
 
@@ -83,10 +75,6 @@ Locks are released automatically after deployment unless sticky lock mode is ena
 .unlock prod
 ```
 
-![Deployment lock claimed in GitHub](../assets/images/workflow/10-lock-claimed.png)
-
-![Lock details shown by .wcid](../assets/images/workflow/11-lock-details.png)
-
 ## Extra Terraform Arguments
 
 Add command-specific Terraform arguments after the configured separator. The default separator is `|`.
@@ -103,8 +91,6 @@ Common examples:
 
 Extra arguments from `.plan` are part of the saved plan. A later `.apply to <env>` applies that saved plan without needing to repeat those arguments.
 
-![Targeted Terraform plan warning in GitHub](../assets/images/workflow/06-targeted-plan-warning.png)
-
 !!! warning "Extra arguments are plan-only"
 
     A targeted plan is applied with the normal apply command:
@@ -115,8 +101,6 @@ Extra arguments from `.plan` are part of the saved plan. A later `.apply to <env
     ```
 
     The apply step uses the saved targeted plan. Terraform Branch Deploy rejects extra Terraform arguments on `.apply` and rollback commands.
-
-![Targeted plan applied with the normal apply command](../assets/images/workflow/07-targeted-apply-succeeded.png)
 
 ## Branch Deploy Mapping
 
