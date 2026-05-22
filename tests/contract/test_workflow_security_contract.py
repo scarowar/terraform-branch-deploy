@@ -3,10 +3,13 @@
 from pathlib import Path
 import re
 
+import yaml
+
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 WORKFLOW_FILES = sorted((REPO_ROOT / ".github" / "workflows").glob("*.yml"))
 ACTION_FILES = [REPO_ROOT / "action.yml"]
+PRE_COMMIT_CONFIG = REPO_ROOT / ".pre-commit-config.yaml"
 ACTION_REF_RE = re.compile(r"@[0-9a-f]{40}$")
 
 
@@ -43,3 +46,65 @@ def test_actions_are_pinned_to_full_commit_sha() -> None:
             if action_ref.startswith("./"):
                 continue
             assert ACTION_REF_RE.search(action_ref), f"{path}:{line_number} uses {action_ref}"
+
+
+def test_jobs_start_with_step_security_harden_runner() -> None:
+    """Every workflow job should begin with Step Security runtime monitoring."""
+    for path in WORKFLOW_FILES:
+        workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for job_name, job in workflow.get("jobs", {}).items():
+            steps = job.get("steps", [])
+            if not steps:
+                continue
+            first_step_uses = steps[0].get("uses", "")
+            assert first_step_uses.startswith("step-security/harden-runner@"), (
+                f"{path}:{job_name} does not start with Harden-Runner"
+            )
+
+
+def test_pre_commit_ci_is_configured_for_cloud_hygiene() -> None:
+    """pre-commit.ci should run fast hygiene while CI owns heavyweight security gates."""
+    config = yaml.safe_load(PRE_COMMIT_CONFIG.read_text(encoding="utf-8"))
+    ci_config = config.get("ci", {})
+
+    assert ci_config["autoupdate_schedule"] == "weekly"
+    assert ci_config["autofix_commit_msg"] == "style: apply pre-commit fixes"
+    assert ci_config["autoupdate_commit_msg"] == "chore: update pre-commit hooks"
+    assert {
+        "pip-audit",
+        "semgrep",
+        "zizmor",
+        "gitleaks",
+        "actionlint",
+    } <= set(ci_config["skip"])
+
+
+def test_dependency_review_blocks_low_severity_and_above() -> None:
+    """Dependency Review should fail on every vulnerability severity."""
+    workflow = yaml.safe_load(
+        (REPO_ROOT / ".github" / "workflows" / "dependency-review.yml").read_text(encoding="utf-8")
+    )
+    steps = workflow["jobs"]["dependency-review"]["steps"]
+    dependency_review = next(
+        step for step in steps if "dependency-review-action" in step.get("uses", "")
+    )
+
+    assert dependency_review["with"]["fail-on-severity"] == "low"
+
+
+def test_security_workflow_runs_zero_finding_gates() -> None:
+    """The security workflow should run deterministic scanners without severity filtering."""
+    workflow = yaml.safe_load(
+        (REPO_ROOT / ".github" / "workflows" / "security.yml").read_text(encoding="utf-8")
+    )
+    steps = workflow["jobs"]["deterministic-security"]["steps"]
+    run_commands = "\n".join(step.get("run", "") for step in steps)
+
+    assert "uv run pip-audit --strict" in run_commands
+    assert "uv run bandit -r src" in run_commands
+    assert "uv run zizmor --offline ." in run_commands
+    assert "--min-severity" not in run_commands
+    assert "uv run semgrep scan --config .semgrep.yml --error" in run_commands
+    assert "uv run pre-commit run gitleaks --all-files" in run_commands
+    assert "uv run pre-commit run actionlint --all-files" in run_commands
+    assert "uv run cyclonedx-py environment .venv" in run_commands

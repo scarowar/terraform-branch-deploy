@@ -98,7 +98,7 @@ class TestParamsHash:
         assert generate_params_hash("   ") == "no-args"
 
     def test_none_returns_no_args(self) -> None:
-        assert generate_params_hash(None) == "no-args"  # type: ignore[arg-type]
+        assert generate_params_hash(None) == "no-args"
 
     def test_deterministic(self) -> None:
         """Same args produce same hash."""

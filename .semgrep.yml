@@ -1,0 +1,42 @@
+rules:
+  - id: python-subprocess-shell-true
+    message: Run subprocess commands with argument lists, not shell=True.
+    severity: ERROR
+    languages: [python]
+    pattern-either:
+      - pattern: subprocess.run(..., shell=True, ...)
+      - pattern: subprocess.Popen(..., shell=True, ...)
+      - pattern: subprocess.call(..., shell=True, ...)
+      - pattern: subprocess.check_call(..., shell=True, ...)
+      - pattern: subprocess.check_output(..., shell=True, ...)
+
+  - id: python-os-system
+    message: Use subprocess with an argument list instead of os.system.
+    severity: ERROR
+    languages: [python]
+    pattern: os.system(...)
+
+  - id: python-unsafe-yaml-load
+    message: Use yaml.safe_load or an explicit safe loader.
+    severity: ERROR
+    languages: [python]
+    pattern: yaml.load(...)
+
+  - id: github-actions-untrusted-event-context-in-run
+    message: Do not interpolate untrusted GitHub event fields directly into workflow commands.
+    severity: ERROR
+    languages: [yaml]
+    paths:
+      include:
+        - "/.github/workflows/*.yml"
+        - "action.yml"
+    pattern-regex: "\\$\\{\\{\\s*github\\.event\\.(comment\\.body|issue\\.title|issue\\.body|pull_request\\.title|pull_request\\.body)[^}]*\\}\\}"
+
+  - id: github-actions-pull-request-target
+    message: Do not use pull_request_target for Terraform Branch Deploy workflows.
+    severity: ERROR
+    languages: [yaml]
+    paths:
+      include:
+        - "/.github/workflows/*.yml"
+    pattern-regex: "pull_request_target\\s*:"

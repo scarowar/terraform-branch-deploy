@@ -255,46 +255,15 @@ class TerraformExecutor:
         console.print("\n[bold blue]🚀 Terraform Apply[/bold blue]")
 
         args = ["terraform", "apply", TF_INPUT_FALSE, "-auto-approve"]
+        plan_arg, missing_plan_error = self._plan_arg_for_apply(plan_file)
 
-        # Resolve plan_file for existence check. The plan_file may be:
-        # 1. An absolute path (e.g., /repo/terraform/modules/tfplan-int-abc.tfplan)
-        # 2. A relative path (resolved against working_directory)
-        # 3. A bare filename (e.g., tfplan-int-abc.tfplan) — legacy callers
-        # In all cases, we resolve to an absolute path for the exists() check,
-        # then derive the path relative to working_directory for the terraform
-        # command (since subprocess runs with cwd=working_directory).
-        if plan_file:
-            if plan_file.is_absolute():
-                resolved_plan = plan_file
-            else:
-                resolved_plan = (self.working_directory / plan_file).resolve()
-        else:
-            resolved_plan = None
+        if missing_plan_error:
+            console.print(f"[red]❌ {missing_plan_error}[/red]")
+            return self._aborted_apply(missing_plan_error)
 
-        if resolved_plan and resolved_plan.exists():
-            # Pass just the filename to terraform (it runs in working_directory)
-            try:
-                relative_plan = resolved_plan.relative_to(self.working_directory.resolve())
-            except ValueError:
-                relative_plan = resolved_plan
-            args.append(str(relative_plan))
-        elif plan_file is not None:
-            # A plan file was explicitly requested but not found — abort.
-            # Never silently fall through to an untargeted apply.
-            msg = (
-                f"Plan file '{plan_file}' not found "
-                f"(resolved: '{resolved_plan}'). "
-                "Refusing to run untargeted apply."
-            )
-            console.print(f"[red]❌ {msg}[/red]")
-            return ApplyResult(
-                exit_code=1,
-                stdout="",
-                stderr=msg,
-                command=["terraform", "apply", "(aborted)"],
-            )
+        if plan_arg:
+            args.append(plan_arg)
         else:
-            # No plan file requested (e.g. rollback) — apply with var-files
             for var_file in self.var_files:
                 args.extend(["-var-file", var_file])
             args.extend(self.apply_args)
@@ -315,6 +284,45 @@ class TerraformExecutor:
             stdout=result.stdout,
             stderr=result.stderr,
             command=result.command,
+        )
+
+    def _plan_arg_for_apply(self, plan_file: Path | None) -> tuple[str | None, str | None]:
+        """Resolve an explicit saved plan into the argument Terraform should receive."""
+        if plan_file is None:
+            return None, None
+
+        resolved_plan = self._resolve_plan_path(plan_file)
+        if not resolved_plan.exists():
+            msg = (
+                f"Plan file '{plan_file}' not found "
+                f"(resolved: '{resolved_plan}'). "
+                "Refusing to run untargeted apply."
+            )
+            return None, msg
+
+        return str(self._terraform_relative_plan_path(resolved_plan)), None
+
+    def _resolve_plan_path(self, plan_file: Path) -> Path:
+        """Resolve a user-supplied plan path against the Terraform working directory."""
+        if plan_file.is_absolute():
+            return plan_file
+        return (self.working_directory / plan_file).resolve()
+
+    def _terraform_relative_plan_path(self, resolved_plan: Path) -> Path:
+        """Prefer a path relative to Terraform's working directory when possible."""
+        try:
+            return resolved_plan.relative_to(self.working_directory.resolve())
+        except ValueError:
+            return resolved_plan
+
+    @staticmethod
+    def _aborted_apply(message: str) -> ApplyResult:
+        """Return the standard result for an apply rejected before Terraform starts."""
+        return ApplyResult(
+            exit_code=1,
+            stdout="",
+            stderr=message,
+            command=["terraform", "apply", "(aborted)"],
         )
 
     def _tfcmt_available(self) -> bool:

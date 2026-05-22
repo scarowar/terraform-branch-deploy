@@ -195,9 +195,7 @@ class TestActionYmlValidity:
             if input_name not in TERRAFORM_NATIVE_INPUTS
         }
         classified_inputs = (
-            public_branch_deploy_inputs
-            | CONTROLLED_UPSTREAM_INPUTS
-            | UNSUPPORTED_UPSTREAM_INPUTS
+            public_branch_deploy_inputs | CONTROLLED_UPSTREAM_INPUTS | UNSUPPORTED_UPSTREAM_INPUTS
         )
 
         assert upstream_inputs == classified_inputs

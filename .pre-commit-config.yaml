@@ -1,3 +1,17 @@
+ci:
+  autofix_commit_msg: "style: apply pre-commit fixes"
+  autoupdate_commit_msg: "chore: update pre-commit hooks"
+  autoupdate_schedule: weekly
+  skip:
+    - actionlint
+    - bandit
+    - gitlint
+    - gitleaks
+    - mypy
+    - pip-audit
+    - semgrep
+    - zizmor
+
 # See https://pre-commit.com for more information
 repos:
   # Basic file hygiene
@@ -55,3 +69,24 @@ repos:
     rev: v0.19.1
     hooks:
       - id: gitlint
+
+  # Deterministic security gates backed by uv.lock
+  - repo: local
+    hooks:
+      - id: pip-audit
+        name: pip-audit
+        entry: bash -c 'uv export --quiet --frozen --all-groups --no-emit-project --no-editable --no-hashes --output-file /tmp/tfbd-pip-audit-requirements.txt && uv run pip-audit --strict -r /tmp/tfbd-pip-audit-requirements.txt'
+        language: system
+        pass_filenames: false
+
+      - id: semgrep
+        name: semgrep
+        entry: uv run semgrep scan --config .semgrep.yml --error --metrics=off --disable-version-check .
+        language: system
+        pass_filenames: false
+
+      - id: zizmor
+        name: zizmor
+        entry: uv run zizmor --offline .
+        language: system
+        pass_filenames: false

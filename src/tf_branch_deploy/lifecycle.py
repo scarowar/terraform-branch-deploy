@@ -223,41 +223,69 @@ class LifecycleManager:
         - ghe.com subdomains (uses GH_TOKEN)
         - Self-hosted GHE Server (uses GH_ENTERPRISE_TOKEN + GH_HOST)
         """
-        env = os.environ.copy()
-        if self.github_token:
-            # Set all token variants for maximum compatibility
-            env["GITHUB_TOKEN"] = self.github_token  # github.com
-            env["GH_TOKEN"] = self.github_token  # ghe.com
-            env["GH_ENTERPRISE_TOKEN"] = self.github_token  # Self-hosted GHE
-
-        # Set GH_HOST for GHE (required for self-hosted GHE)
-        if "GITHUB_SERVER_URL" in env:
-            from urllib.parse import urlparse
-
-            server_url = env["GITHUB_SERVER_URL"]
-            host = urlparse(server_url).netloc
-            if host and host != "github.com":
-                env["GH_HOST"] = host
-
+        env = self._github_cli_env()
         try:
             result = subprocess.run(  # nosec B603
                 cmd, capture_output=True, text=True, env=env, check=False
             )
-            if result.returncode != 0:
-                stderr = result.stderr.strip()
-                if raise_on_error:
-                    raise GitHubApiError(cmd=cmd, stderr=stderr, returncode=result.returncode)
-                if not capture_output:
-                    console.print(
-                        f"[yellow]⚠️  gh command failed (exit {result.returncode}): "
-                        f"{stderr}[/yellow]"
-                    )
-                return None
-            return result.stdout.strip()
-        except Exception as e:
-            if raise_on_error:
-                if isinstance(e, GitHubApiError):
-                    raise
-                raise GitHubApiError(cmd=cmd, stderr=str(e), returncode=1) from e
-            console.print(f"[red]Error running gh: {e}[/red]")
+        except Exception as error:
+            return self._handle_gh_exception(cmd, error, raise_on_error)
+
+        return self._handle_gh_result(cmd, result, capture_output, raise_on_error)
+
+    def _github_cli_env(self) -> dict[str, str]:
+        """Build environment variables required by gh across GitHub hosts."""
+        env = os.environ.copy()
+        if self.github_token:
+            env["GITHUB_TOKEN"] = self.github_token  # github.com
+            env["GH_TOKEN"] = self.github_token  # ghe.com
+            env["GH_ENTERPRISE_TOKEN"] = self.github_token  # Self-hosted GHE
+
+        host = self._github_enterprise_host(env)
+        if host:
+            env["GH_HOST"] = host
+        return env
+
+    @staticmethod
+    def _github_enterprise_host(env: dict[str, str]) -> str | None:
+        """Return the gh host for GitHub Enterprise Server, if configured."""
+        server_url = env.get("GITHUB_SERVER_URL")
+        if not server_url:
             return None
+
+        from urllib.parse import urlparse
+
+        host = urlparse(server_url).netloc
+        return host if host and host != "github.com" else None
+
+    def _handle_gh_result(
+        self,
+        cmd: list[str],
+        result: subprocess.CompletedProcess[str],
+        capture_output: bool,
+        raise_on_error: bool,
+    ) -> str | None:
+        """Return gh stdout or handle a non-zero gh exit."""
+        if result.returncode == 0:
+            return result.stdout.strip()
+
+        stderr = result.stderr.strip()
+        if raise_on_error:
+            raise GitHubApiError(cmd=cmd, stderr=stderr, returncode=result.returncode)
+        if not capture_output:
+            console.print(
+                f"[yellow]⚠️  gh command failed (exit {result.returncode}): {stderr}[/yellow]"
+            )
+        return None
+
+    @staticmethod
+    def _handle_gh_exception(
+        cmd: list[str],
+        error: Exception,
+        raise_on_error: bool,
+    ) -> str | None:
+        """Convert gh execution exceptions into the caller's expected shape."""
+        if raise_on_error:
+            raise GitHubApiError(cmd=cmd, stderr=str(error), returncode=1) from error
+        console.print(f"[red]Error running gh: {error}[/red]")
+        return None

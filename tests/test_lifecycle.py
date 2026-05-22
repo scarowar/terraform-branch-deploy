@@ -26,6 +26,11 @@ def _encoded_lock_metadata(sticky: str | bool) -> str:
     return base64.b64encode(data).decode("ascii")
 
 
+def _assert_relative_gh_api_args(args: list[str]) -> None:
+    """gh api calls should use relative endpoints for GitHub Enterprise support."""
+    assert all("://" not in arg for arg in args)
+
+
 class TestLifecycleManager:
     """Tests for LifecycleManager."""
 
@@ -45,7 +50,7 @@ class TestLifecycleManager:
         args = mock_run.call_args[0][0]
         assert args[:4] == ["gh", "api", "--method", "POST"]
         assert "repos/org/repo/deployments/123/statuses" in args
-        assert not any(arg.startswith("https://api.github.com") for arg in args)
+        _assert_relative_gh_api_args(args)
         assert "state=success" in args
 
     @patch("tf_branch_deploy.lifecycle.subprocess.run")
@@ -59,7 +64,7 @@ class TestLifecycleManager:
         args = mock_run.call_args[0][0]
         assert args[:4] == ["gh", "api", "--method", "DELETE"]
         assert "repos/org/repo/issues/comments/456/reactions/789" in args
-        assert not any(arg.startswith("https://api.github.com") for arg in args)
+        _assert_relative_gh_api_args(args)
 
     @patch("tf_branch_deploy.lifecycle.subprocess.run")
     def test_add_reaction(self, mock_run: MagicMock, manager: LifecycleManager) -> None:
@@ -72,7 +77,7 @@ class TestLifecycleManager:
         args = mock_run.call_args[0][0]
         assert args[:4] == ["gh", "api", "--method", "POST"]
         assert "repos/org/repo/issues/comments/456/reactions" in args
-        assert not any(arg.startswith("https://api.github.com") for arg in args)
+        _assert_relative_gh_api_args(args)
         assert "content=rocket" in args
 
     @patch("tf_branch_deploy.lifecycle.subprocess.run")
@@ -86,7 +91,7 @@ class TestLifecycleManager:
         args = mock_run.call_args[0][0]
         assert args[:4] == ["gh", "api", "--method", "POST"]
         assert "repos/org/repo/issues/100/comments" in args
-        assert not any(arg.startswith("https://api.github.com") for arg in args)
+        _assert_relative_gh_api_args(args)
         assert "body=body" in args
 
     @patch("tf_branch_deploy.lifecycle.subprocess.run")
@@ -104,7 +109,7 @@ class TestLifecycleManager:
         assert "ref=dev-branch-deploy-lock" in args
         assert "--jq" in args
         assert ".content" in args
-        assert not any(arg.startswith("https://api.github.com") for arg in args)
+        _assert_relative_gh_api_args(args)
 
     @pytest.mark.parametrize("sticky", ["false", False])
     @patch("tf_branch_deploy.lifecycle.subprocess.run")
@@ -123,7 +128,7 @@ class TestLifecycleManager:
         delete_args = mock_run.call_args_list[1][0][0]
         assert delete_args[:4] == ["gh", "api", "--method", "DELETE"]
         assert "repos/org/repo/git/refs/heads/dev-branch-deploy-lock" in delete_args
-        assert not any(arg.startswith("https://api.github.com") for arg in delete_args)
+        _assert_relative_gh_api_args(delete_args)
 
     @pytest.mark.parametrize("sticky", ["true", True])
     @patch("tf_branch_deploy.lifecycle.subprocess.run")

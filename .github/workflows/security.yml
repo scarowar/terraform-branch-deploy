@@ -1,0 +1,71 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "20 2 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic-security:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@803947b9bd8e9f986429fa0c5a41c367cd732b41 # v7.2.1
+
+      - name: Set up Python
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-groups
+
+      - name: Audit Python dependencies
+        run: |
+          uv export --quiet --frozen --all-groups --no-emit-project --no-editable --no-hashes --output-file /tmp/tfbd-pip-audit-requirements.txt
+          uv run pip-audit --strict -r /tmp/tfbd-pip-audit-requirements.txt
+
+      - name: Scan Python security issues
+        run: uv run bandit -r src
+
+      - name: Scan workflows with zizmor
+        run: uv run zizmor --offline .
+
+      - name: Scan source with Semgrep
+        run: uv run semgrep scan --config .semgrep.yml --error --metrics=off --disable-version-check .
+
+      - name: Run secret and workflow linters
+        run: |
+          uv run pre-commit run gitleaks --all-files
+          uv run pre-commit run actionlint --all-files
+
+      - name: Generate SBOM
+        run: |
+          mkdir -p sbom
+          uv run cyclonedx-py environment .venv --output-reproducible --of JSON -o sbom/cyclonedx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cyclonedx-sbom
+          path: sbom/cyclonedx.json
+          retention-days: 14

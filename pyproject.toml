@@ -33,6 +33,11 @@ dev = [
     "bandit>=1.9.2",
     "pytest-cov>=7.0.0",
     "semgrep>=1.86.0",
+    "pip-audit>=2.10.0",
+    "zizmor>=1.25.2",
+    "cyclonedx-bom>=7.3.0",
+    "idna>=3.15",
+    "pymdown-extensions>=10.21.3",
 ]
 
 [tool.ruff]

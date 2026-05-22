@@ -91,7 +91,7 @@ def generate_artifact_name(environment: str, sha: str) -> str:
     return f"tfplan-{environment}-{sha[:8]}.tfplan"
 
 
-def generate_params_hash(params: str) -> str:
+def generate_params_hash(params: str | None) -> str:
     """
     Generate a stable hash of extra terraform parameters.
 

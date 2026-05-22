@@ -45,7 +45,18 @@ class TestCompositeRuntimeContract:
         assert 'UV_PROJECT_ENVIRONMENT="${TFBD_VENV}"' in script
         assert 'uv sync --frozen --no-dev --project "${ACTION_PATH}"' in script
         assert "uv pip install" not in script
-        assert 'echo "${TFBD_VENV}/bin" >> "$GITHUB_PATH"' in script
+        assert "GITHUB_PATH" not in script
+
+        detect_step = step_by_name(action, "[Trigger] Detect Environments from Config")
+        execute_step = step_by_id(action, "tf-execute")
+        lifecycle_step = step_by_name(action, "[Execute] Complete Deployment Lifecycle")
+        expected_bin = "${{ runner.temp }}/tf-bd-venv/bin/tf-branch-deploy"
+
+        assert detect_step["env"]["TFBD_BIN"] == expected_bin
+        assert execute_step["env"]["TFBD_BIN"] == expected_bin
+        assert lifecycle_step["env"]["TFBD_BIN"] == expected_bin
+        assert '"$TFBD_BIN" execute' in execute_step["run"]
+        assert '"$TFBD_BIN" complete-lifecycle' in lifecycle_step["run"]
 
     def test_trigger_mode_exports_state_required_by_execute_mode(
         self, action: dict[str, Any]

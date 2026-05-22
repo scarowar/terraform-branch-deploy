@@ -253,7 +253,6 @@ runs:
         uv venv --clear "${TFBD_VENV}"
         UV_PROJECT_ENVIRONMENT="${TFBD_VENV}" \
           uv sync --frozen --no-dev --project "${ACTION_PATH}"
-        echo "${TFBD_VENV}/bin" >> "$GITHUB_PATH"
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
@@ -286,6 +285,7 @@ runs:
         INPUT_ENVIRONMENT_TARGETS: ${{ inputs.environment-targets }}
         INPUT_PRODUCTION_ENVIRONMENTS: ${{ inputs.production-environments }}
         INPUT_CONFIG_PATH: ${{ inputs.config-path }}
+        TFBD_BIN: ${{ runner.temp }}/tf-bd-venv/bin/tf-branch-deploy
       run: |
         write_output() {
           local name="$1"
@@ -310,9 +310,9 @@ runs:
         else
           config_path="$INPUT_CONFIG_PATH"
           if [ -f "$config_path" ]; then
-            targets=$(tf-branch-deploy environments --config "$config_path" 2>/dev/null || echo "production")
-            default=$(tf-branch-deploy get-config default-environment --config "$config_path" 2>/dev/null || echo "production")
-            production=$(tf-branch-deploy get-config production-environments --config "$config_path" 2>/dev/null || echo "production")
+            targets=$("$TFBD_BIN" environments --config "$config_path" 2>/dev/null || echo "production")
+            default=$("$TFBD_BIN" get-config default-environment --config "$config_path" 2>/dev/null || echo "production")
+            production=$("$TFBD_BIN" get-config production-environments --config "$config_path" 2>/dev/null || echo "production")
           else
             targets="production"
             default="production"
@@ -569,8 +569,9 @@ runs:
         TF_BD_EXTRA_ARGS: ${{ env.TF_BD_PARAMS }}
         INPUT_CONFIG_PATH: ${{ inputs.config-path }}
         INPUT_DRY_RUN: ${{ inputs.dry-run }}
+        TFBD_BIN: ${{ runner.temp }}/tf-bd-venv/bin/tf-branch-deploy
       run: |
-        if ! command -v tf-branch-deploy &> /dev/null; then
+        if [[ ! -x "$TFBD_BIN" ]]; then
           echo "::error::tf-branch-deploy command not found"
           exit 1
         fi
@@ -580,7 +581,7 @@ runs:
           DRY_RUN_FLAG="--dry-run"
         fi
 
-        tf-branch-deploy execute \
+        "$TFBD_BIN" execute \
           --environment "${TF_BD_ENVIRONMENT}" \
           --operation "${TF_BD_OPERATION}" \
           --sha "${TF_BD_SHA}" \
@@ -596,6 +597,7 @@ runs:
         GH_REPO: ${{ github.repository }}
         STATUS: ${{ steps.tf-execute.outcome }}
         FAILURE_REASON: ${{ steps.tf-execute.outputs.failure_reason }}
+        TFBD_BIN: ${{ runner.temp }}/tf-bd-venv/bin/tf-branch-deploy
       run: |
         if [[ "${STATUS}" == "success" ]]; then
           FINAL_STATUS="success"
@@ -603,6 +605,6 @@ runs:
           FINAL_STATUS="failure"
         fi
 
-        tf-branch-deploy complete-lifecycle \
+        "$TFBD_BIN" complete-lifecycle \
           --status "${FINAL_STATUS}" \
           --failure-reason "${FAILURE_REASON}"

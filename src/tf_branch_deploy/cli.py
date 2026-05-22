@@ -188,6 +188,83 @@ def _validate_config_args(
     _validate_args_allowed(apply_args, ALLOWED_APPLY_CONFIG_ARG_FLAGS, "apply-args")
 
 
+def _resolve_extra_plan_args(operation: str, raw_extra_args: str | None) -> list[str]:
+    """Parse and validate PR comment args for plan operations."""
+    if operation != "plan" and raw_extra_args and raw_extra_args.strip():
+        msg = (
+            "Extra Terraform arguments are only supported on plan commands. "
+            "Apply uses the saved plan, and rollback applies the stable branch directly."
+        )
+        console.print(f"[red]❌ {msg}[/red]")
+        set_github_output("failure_reason", msg)
+        raise typer.Exit(1)
+
+    if not raw_extra_args:
+        return []
+
+    parsed_args = _validate_extra_args(_parse_extra_args(raw_extra_args))
+    console.print(
+        f"[cyan]📝 Extra args from command:[/cyan] {_redact_args_for_display(parsed_args)}"
+    )
+    return parsed_args
+
+
+def _print_execution_table(
+    environment: str,
+    operation: str,
+    sha: str,
+    working_dir: Path,
+    dry_run: bool,
+    parsed_extra_args: list[str],
+) -> None:
+    """Display execution context without exposing sensitive variable values."""
+    table = Table(title="Terraform Execution")
+    table.add_column("Setting", style="cyan")
+    table.add_column("Value", style="green")
+    table.add_row("Environment", environment)
+    table.add_row("Operation", operation)
+    table.add_row("SHA", sha[:8])
+    table.add_row("Working Dir", str(working_dir))
+    table.add_row("Dry Run", str(dry_run))
+    if parsed_extra_args:
+        table.add_row(
+            "Extra Args",
+            " ".join(_redact_single_arg(arg) for arg in parsed_extra_args),
+        )
+    console.print(table)
+
+
+def _print_dry_run_commands(
+    working_dir: Path,
+    operation: str,
+    init_args: list[str],
+    plan_args: list[str],
+    apply_args: list[str],
+) -> None:
+    """Print the Terraform commands that would run in dry-run mode."""
+    console.print("\n[yellow]🧪 Dry run - commands would be:[/yellow]")
+    console.print(f"  cd {working_dir}")
+    console.print(f"  terraform init {' '.join(init_args)}")
+    if operation == "plan":
+        console.print(f"  terraform plan {' '.join(plan_args)}")
+    elif operation == "apply":
+        console.print("  terraform apply <saved plan file>")
+    else:
+        console.print(f"  terraform apply {' '.join(apply_args)}")
+
+
+def _pr_number_from_env() -> int | None:
+    """Parse TF_BD_PR_NUMBER for tfcmt comments."""
+    pr_number_str = os.environ.get("TF_BD_PR_NUMBER", "")
+    if not pr_number_str:
+        return None
+    try:
+        return int(pr_number_str)
+    except ValueError:
+        console.print(f"[yellow]⚠️ Invalid TF_BD_PR_NUMBER: {pr_number_str}, ignoring[/yellow]")
+        return None
+
+
 def _parse_extra_args(raw: str) -> list[str]:
     """Parse extra args string into list, handling shell quoting.
 
@@ -433,39 +510,10 @@ def execute(
         raise typer.Exit(1)
 
     raw_extra_args = extra_args or os.environ.get("TF_BD_EXTRA_ARGS")
-    parsed_extra_args = []
-
-    if operation != "plan" and raw_extra_args and raw_extra_args.strip():
-        msg = (
-            "Extra Terraform arguments are only supported on plan commands. "
-            "Apply uses the saved plan, and rollback applies the stable branch directly."
-        )
-        console.print(f"[red]❌ {msg}[/red]")
-        set_github_output("failure_reason", msg)
-        raise typer.Exit(1)
-
-    if raw_extra_args:
-        parsed_extra_args = _parse_extra_args(raw_extra_args)
-        parsed_extra_args = _validate_extra_args(parsed_extra_args)
-        console.print(
-            f"[cyan]📝 Extra args from command:[/cyan]"
-            f" {_redact_args_for_display(parsed_extra_args)}"
-        )
-
-    table = Table(title="Terraform Execution")
-    table.add_column("Setting", style="cyan")
-    table.add_column("Value", style="green")
-    table.add_row("Environment", environment)
-    table.add_row("Operation", operation)
-    table.add_row("SHA", sha[:8])
-    table.add_row("Working Dir", str(resolved_working_dir))
-    table.add_row("Dry Run", str(dry_run))
-    if parsed_extra_args:
-        table.add_row(
-            "Extra Args",
-            " ".join(_redact_single_arg(a) for a in parsed_extra_args),
-        )
-    console.print(table)
+    parsed_extra_args = _resolve_extra_plan_args(operation, raw_extra_args)
+    _print_execution_table(
+        environment, operation, sha, resolved_working_dir, dry_run, parsed_extra_args
+    )
 
     var_files = config.resolve_var_files(environment)
     backend_configs = config.resolve_backend_configs(environment)
@@ -480,25 +528,10 @@ def execute(
     set_github_output("is_production", str(config.is_production(environment)).lower())
 
     if dry_run:
-        console.print("\n[yellow]🧪 Dry run - commands would be:[/yellow]")
-        console.print(f"  cd {resolved_working_dir}")
-        console.print(f"  terraform init {' '.join(init_args)}")
-        if operation == "plan":
-            console.print(f"  terraform plan {' '.join(plan_args)}")
-        elif operation == "apply":
-            console.print("  terraform apply <saved plan file>")
-        else:
-            console.print(f"  terraform apply {' '.join(apply_args)}")
+        _print_dry_run_commands(resolved_working_dir, operation, init_args, plan_args, apply_args)
         return
 
     from .executor import TerraformExecutor
-
-    pr_number_str = os.environ.get("TF_BD_PR_NUMBER", "")
-    try:
-        pr_number = int(pr_number_str) if pr_number_str else None
-    except ValueError:
-        console.print(f"[yellow]⚠️ Invalid TF_BD_PR_NUMBER: {pr_number_str}, ignoring[/yellow]")
-        pr_number = None
 
     executor = TerraformExecutor(
         working_directory=resolved_working_dir,
@@ -509,7 +542,7 @@ def execute(
         apply_args=apply_args,
         github_token=os.environ.get("GITHUB_TOKEN"),
         repo=os.environ.get("GITHUB_REPOSITORY"),
-        pr_number=pr_number,
+        pr_number=_pr_number_from_env(),
         timeout=env_config.timeout,
     )
 

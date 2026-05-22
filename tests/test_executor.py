@@ -384,8 +384,8 @@ class TestRedactArgs:
 
     def test_var_value_redacted(self) -> None:
         """The value part of -var=key=value is replaced with ***."""
-        args = ["terraform", "plan", "-var=password=s3cr3t"]
-        assert _redact_args(args) == "terraform plan -var=password=***"
+        args = ["terraform", "plan", "-var=database_name=primary"]
+        assert _redact_args(args) == "terraform plan -var=database_name=***"
 
     def test_multiple_vars_redacted(self) -> None:
         """Multiple -var= args are all redacted."""
@@ -411,7 +411,7 @@ class TestRedactArgs:
 
     def test_two_token_var_redacted(self) -> None:
         """-var key=value (two tokens) redacts the value token."""
-        args = ["terraform", "plan", "-var", "password=s3cr3t"]
+        args = ["terraform", "plan", "-var", "database_name=primary"]
         assert _redact_args(args) == "terraform plan -var ***"
 
     def test_two_token_var_at_end(self) -> None:
