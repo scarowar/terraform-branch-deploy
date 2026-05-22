@@ -10,6 +10,7 @@ REPO_ROOT = Path(__file__).parent.parent.parent
 WORKFLOW_FILES = sorted((REPO_ROOT / ".github" / "workflows").glob("*.yml"))
 ACTION_FILES = [REPO_ROOT / "action.yml"]
 PRE_COMMIT_CONFIG = REPO_ROOT / ".pre-commit-config.yaml"
+E2E_DISPATCH_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "e2e-dispatch.yml"
 ACTION_REF_RE = re.compile(r"@[0-9a-f]{40}$")
 
 
@@ -108,3 +109,25 @@ def test_security_workflow_runs_zero_finding_gates() -> None:
     assert "uv run pre-commit run gitleaks --all-files" in run_commands
     assert "uv run pre-commit run actionlint --all-files" in run_commands
     assert "uv run cyclonedx-py environment .venv" in run_commands
+
+
+def test_external_e2e_dispatch_is_maintainer_gated() -> None:
+    """The /e2e broker should dispatch exact PR heads without running PR code."""
+    workflow = yaml.safe_load(E2E_DISPATCH_WORKFLOW.read_text(encoding="utf-8"))
+    workflow_text = E2E_DISPATCH_WORKFLOW.read_text(encoding="utf-8")
+    job = workflow["jobs"]["dispatch"]
+    run_commands = "\n".join(step.get("run", "") for step in job["steps"])
+
+    assert "issue_comment" in workflow[True]
+    assert "actions/checkout" not in workflow_text
+    assert "pull_request_target" not in workflow_text
+    assert "TFBD_E2E_DISPATCH_TOKEN" in workflow_text
+    assert "TFBD_STATUS_TOKEN" not in workflow_text
+    assert "/e2e" in workflow_text
+    assert "admin|maintain|write" in run_commands
+    assert "review_decision" in run_commands
+    assert 'review_decision}" != "APPROVED"' in run_commands
+    assert "gh pr checks" in run_commands
+    assert "terraform-branch-deploy/e2e" in run_commands
+    assert "current_head_sha" in run_commands
+    assert "actions/workflows/e2e-tests.yml/dispatches" in run_commands

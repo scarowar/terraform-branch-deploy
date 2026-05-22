@@ -24,9 +24,9 @@ Do not report security vulnerabilities in public issues. See [SECURITY.md](SECUR
 
 ## Testing Pull Requests
 
-Pull request CI runs without repository secrets. Fork pull requests cannot run live deployment tests.
+Pull request CI runs without repository secrets. Fork pull requests cannot run live deployment tests directly.
 
-Run the local checks below before opening a pull request. Maintainers may run live E2E in the test repository against the exact commit SHA being reviewed. Do not add `pull_request_target` or any PR-triggered workflow that grants secrets to untrusted code.
+Run the local checks below before opening a pull request. Maintainers may comment `/e2e` after review to run live E2E in the test repository against the exact commit SHA being reviewed. Do not add `pull_request_target` or any PR-triggered workflow that grants secrets to untrusted code.
 
 ## Local Checks
 

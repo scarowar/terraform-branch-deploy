@@ -47,7 +47,9 @@ Scanner policy must not be relaxed for a release.
 
 Run the external E2E suite against the exact candidate SHA or release tag. Do not validate a release from a floating `main` reference.
 
-For pull request validation, run the external E2E workflow from the test repository after the code has been reviewed. Use the exact commit SHA from the Terraform Branch Deploy pull request. Live PRs, comments, locks, and workflow runs belong in the test repository.
+For pull request validation, comment `/e2e` after the code has been reviewed. The dispatch workflow resolves the exact pull request head SHA and runs the external E2E workflow in the test repository. Live PRs, comments, locks, and workflow runs belong in the test repository.
+
+Confirm `TFBD_E2E_DISPATCH_TOKEN` is configured in this repository and `TFBD_STATUS_TOKEN` is configured in the test repository.
 
 Watch these flows explicitly:
 
