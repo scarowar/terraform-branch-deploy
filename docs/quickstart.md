@@ -174,6 +174,9 @@ To apply the stable branch directly:
 ```
 
 Rollback is intentionally separate from normal apply. It does not use a saved pull request plan.
+It applies the stable branch directly and does not accept Terraform arguments.
+Terraform does not provide a deterministic target-only undo; use a fix PR and a
+reviewed plan for surgical recovery.
 
 ## Next
 

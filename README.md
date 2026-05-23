@@ -116,7 +116,10 @@ The matching apply remains plain:
 .apply to prod
 ```
 
-Terraform Branch Deploy rejects extra Terraform arguments on apply. Those arguments belong on the plan that creates the saved plan file.
+Terraform Branch Deploy rejects extra Terraform arguments on apply and rollback.
+Those arguments belong on the plan that creates the saved plan file. Rollback
+applies the stable branch directly; Terraform does not provide a deterministic
+target-only undo operation.
 
 ## Documentation
 

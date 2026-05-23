@@ -120,6 +120,11 @@ Rollback uses the stable branch:
 
 Rollback is intentionally separate from normal apply. It applies the stable branch directly and does not require a saved pull request plan.
 
+Rollback does not accept Terraform arguments such as `-target`. A targeted apply
+is not a reversible Terraform operation; there is no deterministic "undo only
+this target" command. When recovery must be narrow, create a fix PR and use the
+normal saved-plan flow.
+
 ![Pull request comment running .apply main to dev](assets/images/workflow/08-rollback-command.png)
 
 ## Workflow Permissions

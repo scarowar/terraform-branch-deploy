@@ -687,7 +687,7 @@ class TestHandleApply:
         mock_executor.apply.assert_not_called()
 
     def test_rollback_rejects_extra_args(self, tmp_path: Path) -> None:
-        """Rollback is a direct stable-branch apply, not a targeted apply escape hatch."""
+        """Rollback is a stable-branch apply, not a target-only undo."""
         from click.exceptions import Exit as ClickExit
         from unittest.mock import MagicMock, patch
 
@@ -699,10 +699,21 @@ class TestHandleApply:
             "os.environ",
             {"TF_BD_IS_ROLLBACK": "true", "TF_BD_EXTRA_ARGS": "-target=module.database"},
         ):
-            with pytest.raises(ClickExit):
+            with (
+                pytest.raises(ClickExit),
+                patch("tf_branch_deploy.cli.set_github_output") as mock_output,
+            ):
                 _handle_apply(mock_executor, "int", "abc12345ff", working_dir)
 
         mock_executor.apply.assert_not_called()
+        mock_output.assert_called_with(
+            "failure_reason",
+            (
+                "Extra Terraform arguments are only supported on plan commands. "
+                "Apply uses the saved plan. Rollback applies the stable branch directly; "
+                "Terraform does not provide a deterministic target-only rollback."
+            ),
+        )
 
 
 class TestApplyWithPlanIntegrity:

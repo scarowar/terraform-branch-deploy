@@ -102,6 +102,11 @@ Extra arguments from `.plan` are part of the saved plan. A later `.apply to <env
 
     The apply step uses the saved targeted plan. Terraform Branch Deploy rejects extra Terraform arguments on `.apply` and rollback commands.
 
+    Targeted rollback is intentionally not supported. Terraform can converge a
+    configuration to a target, but it does not provide a deterministic
+    target-only undo. For surgical recovery, open a fix PR and use the normal
+    plan/apply flow.
+
 ## Branch Deploy Mapping
 
 Terraform Branch Deploy maps Terraform operations onto Branch Deploy command types:

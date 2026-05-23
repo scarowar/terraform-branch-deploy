@@ -95,6 +95,11 @@ Use the same simple apply command after a targeted plan:
 
 The apply should restore and apply the saved plan. If it reports no saved plan, re-run `.plan to prod | -target=module.database` and inspect the workflow logs for cache restore messages.
 
+Do not use rollback to target only part of the previous change. Rollback applies
+the stable branch directly, and Terraform does not provide a deterministic
+target-only rollback. For narrow recovery, open a fix PR and run a targeted
+plan through the normal saved-plan flow.
+
 ## Environment Not Found
 
 Environment names come from `.tf-branch-deploy.yml` unless you override them with workflow inputs.

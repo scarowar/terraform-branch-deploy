@@ -162,6 +162,12 @@ BLOCKED_EXTRA_ARG_FLAGS: frozenset[str] = frozenset(
 
 VALID_OPERATIONS: frozenset[str] = frozenset({"plan", "apply", "rollback"})
 
+NON_PLAN_EXTRA_ARGS_ERROR = (
+    "Extra Terraform arguments are only supported on plan commands. "
+    "Apply uses the saved plan. Rollback applies the stable branch directly; "
+    "Terraform does not provide a deterministic target-only rollback."
+)
+
 
 def _redact_args_for_display(args: list[str]) -> list[str]:
     """Redact argument values before showing PR-supplied or metadata args."""
@@ -229,10 +235,7 @@ def _validate_config_args(
 def _resolve_extra_plan_args(operation: str, raw_extra_args: str | None) -> list[str]:
     """Parse and validate PR comment args for plan operations."""
     if operation != "plan" and raw_extra_args and raw_extra_args.strip():
-        msg = (
-            "Extra Terraform arguments are only supported on plan commands. "
-            "Apply uses the saved plan, and rollback applies the stable branch directly."
-        )
+        msg = NON_PLAN_EXTRA_ARGS_ERROR
         console.print(f"[red]❌ {msg}[/red]")
         set_github_output("failure_reason", msg)
         raise typer.Exit(1)
@@ -685,10 +688,7 @@ def _handle_apply(
     raw_extra_args = os.environ.get("TF_BD_EXTRA_ARGS", "")
 
     if raw_extra_args.strip():
-        msg = (
-            "Extra Terraform arguments are only supported on plan commands. "
-            "Apply and rollback commands must not include Terraform arguments."
-        )
+        msg = NON_PLAN_EXTRA_ARGS_ERROR
         console.print(f"[red]❌ {msg}[/red]")
         set_github_output("failure_reason", msg)
         raise typer.Exit(1)

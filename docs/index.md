@@ -117,6 +117,10 @@ Extra Terraform arguments go after the pipe separator:
 .plan to prod | -target=module.database
 ```
 
+The matching apply remains plain. Rollback remains the stable-branch apply path;
+Terraform Branch Deploy does not offer target-only rollback because Terraform
+does not provide a deterministic inverse for a targeted apply.
+
 ## Next
 
 - [Quickstart](quickstart.md): build the first workflow.
