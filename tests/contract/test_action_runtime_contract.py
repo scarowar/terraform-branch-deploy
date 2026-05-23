@@ -58,6 +58,24 @@ class TestCompositeRuntimeContract:
         assert '"$TFBD_BIN" execute' in execute_step["run"]
         assert '"$TFBD_BIN" complete-lifecycle' in lifecycle_step["run"]
 
+    def test_uv_bootstrap_is_internal_and_enterprise_aware(self, action: dict[str, Any]) -> None:
+        """uv setup should not depend on caller repo config or GHES tokens."""
+        check_step = step_by_name(action, "Check uv")
+        setup_step = step_by_name(action, "Setup uv")
+        check_script = check_step["run"]
+
+        assert check_step["env"]["TFBD_UV_VERSION"] == "0.11.11"
+        assert "command -v uv" in check_script
+        assert "uv --version" in check_script
+        assert "needs-setup=${needs_setup}" in check_script
+
+        assert setup_step["if"] == "steps.check-uv.outputs.needs-setup == 'true'"
+        assert setup_step["uses"] == ("astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b")
+        assert setup_step["with"]["version"] == "0.11.11"
+        assert setup_step["with"]["working-directory"] == "${{ github.action_path }}"
+        assert "github.server_url == 'https://github.com'" in setup_step["with"]["github-token"]
+        assert "inputs.github-token" in setup_step["with"]["github-token"]
+
     def test_trigger_mode_exports_state_required_by_execute_mode(
         self, action: dict[str, Any]
     ) -> None:
@@ -133,13 +151,44 @@ class TestCompositeRuntimeContract:
         assert 'targets="production"' not in script
         assert 'default="production"' not in script
 
-    def test_terraform_tooling_is_execute_mode_only(self, action: dict[str, Any]) -> None:
-        """Trigger mode should not require Terraform or external tfcmt downloads."""
+    def test_terraform_tooling_is_execute_mode_only_and_skips_matching_tool(
+        self, action: dict[str, Any]
+    ) -> None:
+        """Trigger mode should not require Terraform, and execute mode should reuse matches."""
+        check_step = step_by_name(action, "Check Terraform")
         terraform_step = step_by_name(action, "Setup Terraform")
-        tfcmt_step = step_by_name(action, "Setup tfcmt")
+        check_script = check_step["run"]
 
-        assert terraform_step["if"] == "inputs.mode == 'execute'"
+        assert check_step["if"] == "inputs.mode == 'execute'"
+        assert "command -v terraform" in check_script
+        assert "terraform version -json" in check_script
+        assert "INPUT_TERRAFORM_VERSION" in check_script
+        assert (
+            terraform_step["if"]
+            == "inputs.mode == 'execute' && steps.check-terraform.outputs.needs-setup == 'true'"
+        )
+
+    def test_tfcmt_setup_reuses_preinstalled_tool_and_installs_to_runner_temp(
+        self, action: dict[str, Any]
+    ) -> None:
+        """tfcmt should be optional bootstrap tooling, not a system mutation."""
+        tfcmt_step = step_by_name(action, "Setup tfcmt")
+        script = tfcmt_step["run"]
+
         assert tfcmt_step["if"] == "inputs.mode == 'execute'"
+        assert tfcmt_step["env"]["TFBD_TOOL_DIR"] == "${{ runner.temp }}/tfbd-tools/bin"
+        assert tfcmt_step["env"]["TFCMT_ARCHIVE"] == "${{ runner.temp }}/tfcmt.tar.gz"
+        assert "command -v tfcmt" in script
+        assert "curl --fail --silent --show-error --location --retry 3" in script
+        assert "sha256sum -c --strict -" in script
+        assert 'tar xz -C "${TFBD_TOOL_DIR}" tfcmt' in script
+        assert "GITHUB_PATH" not in script
+        assert "/usr/local/bin" not in script
+        assert "Terraform will run without tfcmt PR comments" in script
+
+        execute_step = step_by_id(action, "tf-execute")
+        assert execute_step["env"]["TFBD_TOOL_DIR"] == "${{ runner.temp }}/tfbd-tools/bin"
+        assert 'export PATH="${TFBD_TOOL_DIR}:${PATH}"' in execute_step["run"]
 
     def test_execute_mode_cache_restore_and_save_are_environment_and_sha_scoped(
         self, action: dict[str, Any]

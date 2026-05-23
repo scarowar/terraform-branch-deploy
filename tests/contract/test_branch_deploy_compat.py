@@ -43,7 +43,6 @@ TERRAFORM_NATIVE_INPUTS = {
     "mode",
     "config-path",
     "terraform-version",
-    "uv-version",
     "dry-run",
 }
 
@@ -206,6 +205,13 @@ class TestActionYmlValidity:
 
         assert set(INPUT_MAPPINGS) <= public_inputs
         assert TERRAFORM_NATIVE_INPUTS <= public_inputs
+
+    def test_internal_tool_versions_are_not_public_inputs(self, our_action: dict[str, Any]) -> None:
+        """Internal bootstrap tools should not leak workaround inputs into the public API."""
+        public_inputs = set(our_action["inputs"])
+
+        assert "uv-version" not in public_inputs
+        assert "tfcmt-version" not in public_inputs
 
     def test_direct_branch_deploy_inputs_are_wired(self, our_action: dict[str, Any]) -> None:
         """Supported direct pass-through inputs must reach Branch Deploy."""

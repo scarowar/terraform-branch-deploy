@@ -206,6 +206,19 @@ Use `dry-run: true` to print commands without executing Terraform:
 
 `dry-run` only changes Terraform execution in execute mode. Trigger-mode parsing, Branch Deploy lifecycle behavior, and any earlier workflow steps can still run.
 
+## Tool Installation Fails
+
+Terraform Branch Deploy installs its internal runtime tools only when they are not already available on the runner.
+
+For self-hosted GitHub Enterprise and AWS CodeBuild runners, prefer preinstalling:
+
+- Python 3.12 or newer
+- uv
+- Terraform
+- tfcmt, when you want tfcmt-formatted plan and apply comments
+
+The action reuses matching preinstalled tools where it can. For Terraform, set `terraform-version` to the exact preinstalled version when public downloads are not available. If a runner cannot reach public download hosts, preinstall these tools or populate the runner tool cache instead of adding action inputs for internal tool versions.
+
 ## Debug Logs
 
 Enable GitHub Actions debug logging from repository settings, or set these secrets to `true`:

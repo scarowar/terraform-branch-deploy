@@ -32,13 +32,6 @@ inputs:
   terraform-version:
     description: "Terraform version to install"
     default: "latest"
-  uv-version:
-    description: |
-      Version constraint for uv to install. Use 'latest' to fetch from GitHub API (requires valid github.com token on GHEC).
-      Default: '>=0.7.0' (pinned version, avoids API call on Enterprise Cloud).
-      Examples: 'latest', '0.8.0', '>=0.7.0'
-    required: false
-    default: ">=0.7.0"
   dry-run:
     description: "Print commands without running"
     default: "false"
@@ -239,10 +232,36 @@ runs:
         print(f"✅ Python {sys.version.split()[0]}")
         EOF
 
-    - name: Setup UV
-      uses: astral-sh/setup-uv@803947b9bd8e9f986429fa0c5a41c367cd732b41
+    - name: Check uv
+      id: check-uv
+      shell: bash
+      env:
+        TFBD_UV_VERSION: "0.11.11"
+      run: |
+        set -euo pipefail
+
+        needs_setup="true"
+        if command -v uv >/dev/null 2>&1; then
+          installed_version="$(uv --version | awk '{print $2}')"
+          if [[ "${installed_version}" == "${TFBD_UV_VERSION}" ]]; then
+            needs_setup="false"
+            echo "Using preinstalled uv ${installed_version}"
+          else
+            echo "Preinstalled uv ${installed_version} does not match required ${TFBD_UV_VERSION}"
+          fi
+        else
+          echo "uv is not installed; installing ${TFBD_UV_VERSION}"
+        fi
+
+        echo "needs-setup=${needs_setup}" >> "${GITHUB_OUTPUT}"
+
+    - name: Setup uv
+      if: steps.check-uv.outputs.needs-setup == 'true'
+      uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
       with:
-        version: ${{ inputs.uv-version }}
+        version: "0.11.11"
+        working-directory: ${{ github.action_path }}
+        github-token: ${{ github.server_url == 'https://github.com' && inputs.github-token || '' }}
 
     - name: Install tf-branch-deploy
       shell: bash
@@ -254,8 +273,40 @@ runs:
         UV_PROJECT_ENVIRONMENT="${TFBD_VENV}" \
           uv sync --frozen --no-dev --project "${ACTION_PATH}"
 
-    - name: Setup Terraform
+    - name: Check Terraform
+      id: check-terraform
       if: inputs.mode == 'execute'
+      shell: bash
+      env:
+        INPUT_TERRAFORM_VERSION: ${{ inputs.terraform-version }}
+      run: |
+        set -euo pipefail
+
+        needs_setup="true"
+        requested="${INPUT_TERRAFORM_VERSION#v}"
+
+        if [[ "${INPUT_TERRAFORM_VERSION}" != "latest" ]] \
+          && [[ "${INPUT_TERRAFORM_VERSION}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]] \
+          && command -v terraform >/dev/null 2>&1; then
+          installed="$(
+            terraform version -json 2>/dev/null \
+              | python3 -c 'import json, sys; print(json.load(sys.stdin).get("terraform_version", ""))' \
+              2>/dev/null || true
+          )"
+          if [[ "${installed}" == "${requested}" ]]; then
+            needs_setup="false"
+            echo "Using preinstalled Terraform ${installed}"
+          else
+            echo "Preinstalled Terraform ${installed:-unknown} does not match requested ${requested}"
+          fi
+        else
+          echo "Terraform setup required for requested version '${INPUT_TERRAFORM_VERSION}'"
+        fi
+
+        echo "needs-setup=${needs_setup}" >> "${GITHUB_OUTPUT}"
+
+    - name: Setup Terraform
+      if: inputs.mode == 'execute' && steps.check-terraform.outputs.needs-setup == 'true'
       uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
       with:
         terraform_version: ${{ inputs.terraform-version }}
@@ -264,16 +315,38 @@ runs:
     - name: Setup tfcmt
       if: inputs.mode == 'execute'
       shell: bash
+      env:
+        TFCMT_VERSION: "v4.14.0"
+        TFCMT_SHA256: "bf0c82a40839647b20629289c9f72faa6dee931f45db26842e0818192c706309"
+        TFBD_TOOL_DIR: ${{ runner.temp }}/tfbd-tools/bin
+        TFCMT_ARCHIVE: ${{ runner.temp }}/tfcmt.tar.gz
       run: |
-        TFCMT_VERSION="v4.14.0"
-        TFCMT_SHA256="bf0c82a40839647b20629289c9f72faa6dee931f45db26842e0818192c706309"
+        set -euo pipefail
+
+        if command -v tfcmt >/dev/null 2>&1; then
+          echo "Using preinstalled tfcmt: $(command -v tfcmt)"
+          exit 0
+        fi
+
+        mkdir -p "${TFBD_TOOL_DIR}"
         TFCMT_URL="https://github.com/suzuki-shunsuke/tfcmt/releases/download/${TFCMT_VERSION}/tfcmt_linux_amd64.tar.gz"
 
-        curl -fsSL "${TFCMT_URL}" -o /tmp/tfcmt.tar.gz
-        echo "${TFCMT_SHA256}  /tmp/tfcmt.tar.gz" | sha256sum -c --strict -
-        tar xz -C /usr/local/bin tfcmt < /tmp/tfcmt.tar.gz
-        chmod +x /usr/local/bin/tfcmt
-        rm -f /tmp/tfcmt.tar.gz
+        if ! curl --fail --silent --show-error --location --retry 3 --retry-delay 2 --retry-all-errors \
+          "${TFCMT_URL}" -o "${TFCMT_ARCHIVE}"; then
+          echo "::warning::Could not download tfcmt. Terraform will run without tfcmt PR comments."
+          exit 0
+        fi
+
+        if ! printf '%s  %s\n' "${TFCMT_SHA256}" "${TFCMT_ARCHIVE}" | sha256sum -c --strict -; then
+          rm -f "${TFCMT_ARCHIVE}"
+          echo "::warning::Downloaded tfcmt archive failed checksum verification. Terraform will run without tfcmt PR comments."
+          exit 0
+        fi
+
+        tar xz -C "${TFBD_TOOL_DIR}" tfcmt < "${TFCMT_ARCHIVE}"
+        chmod +x "${TFBD_TOOL_DIR}/tfcmt"
+        rm -f "${TFCMT_ARCHIVE}"
+        "${TFBD_TOOL_DIR}/tfcmt" --version
 
     # ╔══════════════════════════════════════════════════════════════════════════╗
     # ║                           TRIGGER MODE                                   ║
@@ -578,6 +651,7 @@ runs:
         INPUT_CONFIG_PATH: ${{ inputs.config-path }}
         INPUT_DRY_RUN: ${{ inputs.dry-run }}
         TFBD_BIN: ${{ runner.temp }}/tf-bd-venv/bin/tf-branch-deploy
+        TFBD_TOOL_DIR: ${{ runner.temp }}/tfbd-tools/bin
       run: |
         if [[ ! -x "$TFBD_BIN" ]]; then
           echo "::error::tf-branch-deploy command not found"
@@ -588,6 +662,8 @@ runs:
         if [ "${INPUT_DRY_RUN}" == "true" ]; then
           DRY_RUN_FLAG="--dry-run"
         fi
+
+        export PATH="${TFBD_TOOL_DIR}:${PATH}"
 
         "$TFBD_BIN" execute \
           --environment "${TF_BD_ENVIRONMENT}" \

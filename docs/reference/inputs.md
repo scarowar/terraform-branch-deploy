@@ -23,8 +23,7 @@ Execute mode reads the `TF_BD_*` state exported by trigger mode. Do not call exe
 | Input | Default | Description |
 | --- | --- | --- |
 | `config-path` | `.tf-branch-deploy.yml` | Path to the Terraform Branch Deploy configuration file. |
-| `terraform-version` | `latest` | Terraform version installed through `hashicorp/setup-terraform`. |
-| `uv-version` | `>=0.7.0` | uv version constraint passed to `astral-sh/setup-uv`. |
+| `terraform-version` | `latest` | Terraform CLI version used in execute mode. A matching preinstalled Terraform binary is reused when possible. |
 | `dry-run` | `false` | Print Terraform commands in execute mode without running Terraform. Trigger-mode and earlier workflow steps can still run. |
 
 ## Branch Deploy Command Inputs
