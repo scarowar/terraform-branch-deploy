@@ -122,6 +122,25 @@ class TestCompositeRuntimeContract:
         assert 'OPERATION="rollback"' in script
         assert 'OPERATION="apply"' in script
 
+    def test_trigger_config_detection_fails_closed(self, action: dict[str, Any]) -> None:
+        """Trigger mode must not silently deploy to production when config is invalid."""
+        step = step_by_name(action, "[Trigger] Detect Environments from Config")
+        script = step["run"]
+
+        assert "set -euo pipefail" in script
+        assert "not found. Set config-path or environment-targets" in script
+        assert '|| echo "production"' not in script
+        assert 'targets="production"' not in script
+        assert 'default="production"' not in script
+
+    def test_terraform_tooling_is_execute_mode_only(self, action: dict[str, Any]) -> None:
+        """Trigger mode should not require Terraform or external tfcmt downloads."""
+        terraform_step = step_by_name(action, "Setup Terraform")
+        tfcmt_step = step_by_name(action, "Setup tfcmt")
+
+        assert terraform_step["if"] == "inputs.mode == 'execute'"
+        assert tfcmt_step["if"] == "inputs.mode == 'execute'"
+
     def test_execute_mode_cache_restore_and_save_are_environment_and_sha_scoped(
         self, action: dict[str, Any]
     ) -> None:

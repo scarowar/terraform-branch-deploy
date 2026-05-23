@@ -46,6 +46,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
   deployments: write
   checks: read
   statuses: read

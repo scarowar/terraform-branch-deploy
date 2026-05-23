@@ -147,6 +147,21 @@ class TestValidateExtraArgs:
         args = ["-var=key=value"]
         assert _validate_extra_args(args) == args
 
+    def test_split_value_flags_allowed(self) -> None:
+        """Common Terraform flag value forms should match Terraform CLI behavior."""
+        args = ["-var", "key=value", "-target", "module.database"]
+        assert _validate_extra_args(args) == args
+
+    def test_split_value_flag_requires_value(self) -> None:
+        """Flags that require values should not swallow the next flag."""
+        with pytest.raises(typer.Exit):
+            _validate_extra_args(["-target", "-refresh=false"])
+
+    def test_standalone_value_blocked(self) -> None:
+        """Bare values are rejected so arguments stay tied to allowlisted flags."""
+        with pytest.raises(typer.Exit):
+            _validate_extra_args(["module.database"])
+
     def test_destroy_blocked(self) -> None:
         """The -destroy flag is blocked."""
         with pytest.raises(typer.Exit):
@@ -211,6 +226,9 @@ class TestValidateConfigArgs:
     def test_apply_args_reject_replace(self) -> None:
         with pytest.raises(typer.Exit):
             _validate_config_args([], ["-replace=aws_instance.app"])
+
+    def test_apply_args_accept_split_var(self) -> None:
+        _validate_config_args([], ["-var", "key=value"])
 
 
 class TestStripShellQuotes:
@@ -527,6 +545,29 @@ class TestHandleApply:
             _handle_apply(mock_executor, "int", "abc12345ff", working_dir)
 
         # Executor.apply() must be called with NO plan_file (rollback path)
+        mock_executor.apply.assert_called_once_with()
+
+    def test_explicit_rollback_operation_takes_priority_without_env(self, tmp_path: Path) -> None:
+        """CLI rollback operation should not depend on TF_BD_IS_ROLLBACK."""
+        from unittest.mock import MagicMock, patch
+
+        working_dir = tmp_path / "terraform"
+        working_dir.mkdir()
+        stale_plan = working_dir / "tfplan-int-abc12345.tfplan"
+        stale_plan.write_bytes(b"stale plan")
+
+        mock_executor = MagicMock()
+        mock_executor.apply.return_value = MagicMock(success=True)
+
+        with patch.dict("os.environ", {}, clear=False):
+            _handle_apply(
+                mock_executor,
+                "int",
+                "abc12345ff",
+                working_dir,
+                is_rollback=True,
+            )
+
         mock_executor.apply.assert_called_once_with()
 
     def test_plan_file_used_when_not_rollback(self, tmp_path: Path) -> None:
@@ -966,3 +1007,36 @@ class TestExecuteArgumentSemantics:
         assert result.exit_code == 0
         assert "terraform apply <saved plan file>" in result.stdout
         assert "-parallelism=20" not in result.stdout
+
+    def test_rollback_dry_run_shows_direct_apply_inputs(self, tmp_path: Path) -> None:
+        config_file = self._write_config(
+            tmp_path,
+            """
+            defaults:
+              var-files:
+                paths:
+                  - terraform.tfvars
+              apply-args:
+                args:
+                  - "-parallelism=20"
+            """,
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "execute",
+                "--environment",
+                "int",
+                "--operation",
+                "rollback",
+                "--sha",
+                "abc12345ff",
+                "--config",
+                str(config_file),
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "terraform apply -var-file terraform.tfvars -parallelism=20" in result.stdout

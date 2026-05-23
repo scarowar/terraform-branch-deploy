@@ -134,6 +134,7 @@ Use workflow permissions that match the features you enable:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
   deployments: write
   checks: read
   statuses: read

@@ -130,6 +130,7 @@ Use the least permissions that still support comments, checkout, deployments, lo
 permissions:
   contents: write
   pull-requests: write
+  issues: write
   deployments: write
   checks: read
   statuses: read

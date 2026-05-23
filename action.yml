@@ -255,12 +255,14 @@ runs:
           uv sync --frozen --no-dev --project "${ACTION_PATH}"
 
     - name: Setup Terraform
+      if: inputs.mode == 'execute'
       uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
       with:
         terraform_version: ${{ inputs.terraform-version }}
         terraform_wrapper: false
 
     - name: Setup tfcmt
+      if: inputs.mode == 'execute'
       shell: bash
       run: |
         TFCMT_VERSION="v4.14.0"
@@ -287,6 +289,8 @@ runs:
         INPUT_CONFIG_PATH: ${{ inputs.config-path }}
         TFBD_BIN: ${{ runner.temp }}/tf-bd-venv/bin/tf-branch-deploy
       run: |
+        set -euo pipefail
+
         write_output() {
           local name="$1"
           local value="${2-}"
@@ -309,14 +313,18 @@ runs:
           write_output "production" "$INPUT_PRODUCTION_ENVIRONMENTS"
         else
           config_path="$INPUT_CONFIG_PATH"
-          if [ -f "$config_path" ]; then
-            targets=$("$TFBD_BIN" environments --config "$config_path" 2>/dev/null || echo "production")
-            default=$("$TFBD_BIN" get-config default-environment --config "$config_path" 2>/dev/null || echo "production")
-            production=$("$TFBD_BIN" get-config production-environments --config "$config_path" 2>/dev/null || echo "production")
-          else
-            targets="production"
-            default="production"
-            production="production"
+          if [ ! -f "$config_path" ]; then
+            echo "::error::Config file '${config_path}' not found. Set config-path or environment-targets."
+            exit 1
+          fi
+
+          targets=$("$TFBD_BIN" environments --config "$config_path")
+          default=$("$TFBD_BIN" get-config default-environment --config "$config_path")
+          production=$("$TFBD_BIN" get-config production-environments --config "$config_path")
+
+          if [ -z "$targets" ] || [ -z "$default" ]; then
+            echo "::error::.tf-branch-deploy.yml must define at least one environment and default-environment."
+            exit 1
           fi
           write_output "targets" "$targets"
           write_output "default" "$default"

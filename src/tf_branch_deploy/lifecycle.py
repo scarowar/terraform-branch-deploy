@@ -21,6 +21,11 @@ from rich.console import Console
 console = Console()
 
 
+def branch_deploy_lock_ref(environment: str) -> str:
+    """Return the lock ref name used by github/branch-deploy."""
+    return f"{environment.replace(' ', '-')}-branch-deploy-lock"
+
+
 class GitHubApiError(RuntimeError):
     """Raised when a required GitHub CLI API call fails."""
 
@@ -148,7 +153,7 @@ class LifecycleManager:
 
     def remove_non_sticky_lock(self, environment: str) -> None:
         """Remove lock if it's not sticky."""
-        lock_ref = f"{environment}-branch-deploy-lock"
+        lock_ref = branch_deploy_lock_ref(environment)
         console.print("   🔓 Checking for non-sticky lock")
 
         try:

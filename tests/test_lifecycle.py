@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tf_branch_deploy.lifecycle import LifecycleManager
+from tf_branch_deploy.lifecycle import LifecycleManager, branch_deploy_lock_ref
 
 
 def _gh_result(stdout: str = "", stderr: str = "", returncode: int = 0) -> MagicMock:
@@ -110,6 +110,11 @@ class TestLifecycleManager:
         assert "--jq" in args
         assert ".content" in args
         _assert_relative_gh_api_args(args)
+
+    def test_lock_ref_name_matches_branch_deploy_space_normalization(self) -> None:
+        """Lock cleanup must use the same branch name Branch Deploy creates."""
+        assert branch_deploy_lock_ref("dev") == "dev-branch-deploy-lock"
+        assert branch_deploy_lock_ref("team dev") == "team-dev-branch-deploy-lock"
 
     @pytest.mark.parametrize("sticky", ["false", False])
     @patch("tf_branch_deploy.lifecycle.subprocess.run")

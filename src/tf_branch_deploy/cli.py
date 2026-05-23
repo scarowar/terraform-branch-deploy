@@ -130,6 +130,25 @@ ALLOWED_APPLY_CONFIG_ARG_FLAGS: frozenset[str] = frozenset(
     }
 )
 
+ARG_FLAGS_WITH_SEPARATE_VALUES: frozenset[str] = frozenset(
+    {
+        "-target",
+        "-var",
+        "-var-file",
+        "-parallelism",
+        "-lock-timeout",
+        "-replace",
+    }
+)
+
+ARG_FLAGS_WITH_OPTIONAL_SEPARATE_VALUES: frozenset[str] = frozenset(
+    {
+        "-lock",
+        "-refresh",
+    }
+)
+
+
 BLOCKED_EXTRA_ARG_FLAGS: frozenset[str] = frozenset(
     {
         "-destroy",
@@ -156,8 +175,14 @@ def _validate_args_allowed(
 ) -> list[str]:
     """Validate args against an allowlist for a specific source."""
     validated: list[str] = []
+    i = 0
 
-    for arg in args:
+    while i < len(args):
+        arg = args[i]
+        if not arg.startswith("-"):
+            console.print(f"[red]❌ Unsupported {source} arg value without flag: {arg}[/red]")
+            raise typer.Exit(1)
+
         flag = arg.split("=", 1)[0] if "=" in arg else arg
 
         if flag in BLOCKED_EXTRA_ARG_FLAGS or flag not in allowed_flags:
@@ -166,6 +191,19 @@ def _validate_args_allowed(
             raise typer.Exit(1)
 
         validated.append(arg)
+
+        if "=" not in arg and flag in ARG_FLAGS_WITH_SEPARATE_VALUES:
+            if i + 1 >= len(args) or args[i + 1].startswith("-"):
+                console.print(f"[red]❌ Missing value for {source} arg: {flag}[/red]")
+                raise typer.Exit(1)
+            validated.append(args[i + 1])
+            i += 1
+        elif "=" not in arg and flag in ARG_FLAGS_WITH_OPTIONAL_SEPARATE_VALUES:
+            if i + 1 < len(args) and not args[i + 1].startswith("-"):
+                validated.append(args[i + 1])
+                i += 1
+
+        i += 1
 
     return validated
 
@@ -238,6 +276,7 @@ def _print_dry_run_commands(
     working_dir: Path,
     operation: str,
     init_args: list[str],
+    var_files: list[str],
     plan_args: list[str],
     apply_args: list[str],
 ) -> None:
@@ -250,7 +289,11 @@ def _print_dry_run_commands(
     elif operation == "apply":
         console.print("  terraform apply <saved plan file>")
     else:
-        console.print(f"  terraform apply {' '.join(apply_args)}")
+        rollback_args: list[str] = []
+        for var_file in var_files:
+            rollback_args.extend(["-var-file", var_file])
+        rollback_args.extend(apply_args)
+        console.print(f"  terraform apply {' '.join(rollback_args)}")
 
 
 def _pr_number_from_env() -> int | None:
@@ -528,7 +571,9 @@ def execute(
     set_github_output("is_production", str(config.is_production(environment)).lower())
 
     if dry_run:
-        _print_dry_run_commands(resolved_working_dir, operation, init_args, plan_args, apply_args)
+        _print_dry_run_commands(
+            resolved_working_dir, operation, init_args, var_files, plan_args, apply_args
+        )
         return
 
     from .executor import TerraformExecutor
@@ -557,7 +602,13 @@ def execute(
     if operation == "plan":
         _handle_plan(executor, environment, sha, plan_args, var_files)
     else:
-        _handle_apply(executor, environment, sha, resolved_working_dir)
+        _handle_apply(
+            executor,
+            environment,
+            sha,
+            resolved_working_dir,
+            is_rollback=operation == "rollback",
+        )
 
     console.print("\n[green]✅ Terraform execution complete[/green]")
 
@@ -620,12 +671,17 @@ def _handle_plan(
 
 
 def _handle_apply(
-    executor: "TerraformExecutor", environment: str, sha: str, working_dir: Path
+    executor: "TerraformExecutor",
+    environment: str,
+    sha: str,
+    working_dir: Path,
+    is_rollback: bool | None = None,
 ) -> None:
     """Handle terraform apply operation."""
     plan_filename = f"tfplan-{environment}-{sha[:8]}.tfplan"
     plan_file = working_dir / plan_filename
-    is_rollback = os.environ.get("TF_BD_IS_ROLLBACK", "false").lower() == "true"
+    if is_rollback is None:
+        is_rollback = os.environ.get("TF_BD_IS_ROLLBACK", "false").lower() == "true"
     raw_extra_args = os.environ.get("TF_BD_EXTRA_ARGS", "")
 
     if raw_extra_args.strip():
