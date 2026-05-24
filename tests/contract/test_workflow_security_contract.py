@@ -54,6 +54,11 @@ def test_jobs_start_with_step_security_harden_runner() -> None:
     for path in WORKFLOW_FILES:
         workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
         for job_name, job in workflow.get("jobs", {}).items():
+            if path == E2E_DISPATCH_WORKFLOW and job_name == "parse":
+                run_commands = "\n".join(step.get("run", "") for step in job.get("steps", []))
+                assert "gh api" not in run_commands
+                assert "actions/checkout" not in run_commands
+                continue
             steps = job.get("steps", [])
             if not steps:
                 continue
@@ -137,19 +142,29 @@ def test_external_e2e_dispatch_is_maintainer_gated() -> None:
     """The /e2e broker should dispatch exact PR heads without running PR code."""
     workflow = yaml.safe_load(E2E_DISPATCH_WORKFLOW.read_text(encoding="utf-8"))
     workflow_text = E2E_DISPATCH_WORKFLOW.read_text(encoding="utf-8")
+    parse_job = workflow["jobs"]["parse"]
     job = workflow["jobs"]["dispatch"]
+    parse_commands = "\n".join(step.get("run", "") for step in parse_job["steps"])
     run_commands = "\n".join(step.get("run", "") for step in job["steps"])
 
     assert "issue_comment" in workflow[True]
     assert "actions/checkout" not in workflow_text
     assert "pull_request_target" not in workflow_text
+    assert "issues" not in workflow["permissions"]
+    assert job["permissions"]["issues"] == "write"
+    assert job["needs"] == "parse"
     assert "TFBD_E2E_DISPATCH_TOKEN" in workflow_text
     assert "TFBD_STATUS_TOKEN" not in workflow_text
     assert "/e2e" in workflow_text
+    assert "GITHUB_EVENT_PATH" in parse_commands
+    assert "gh api" not in parse_commands
     assert "admin|maintain|write" in run_commands
-    assert "review_decision" in run_commands
-    assert 'review_decision}" != "APPROVED"' in run_commands
+    assert "reviewDecision" not in workflow_text
+    assert "review_decision" not in run_commands
     assert "gh pr checks" in run_commands
     assert "terraform-branch-deploy/e2e" in run_commands
     assert "current_head_sha" in run_commands
     assert "actions/workflows/e2e-tests.yml/dispatches" in run_commands
+    assert "issues/${PR_NUMBER}/comments" in run_commands
+    assert "issues/comments/${tracking_comment_id}" in run_commands
+    assert "tracking_comment_id" in run_commands

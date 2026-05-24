@@ -11,35 +11,30 @@ permissions:
   statuses: read
 
 jobs:
-  dispatch:
+  parse:
     if: github.event.issue.pull_request
     runs-on: ubuntu-latest
-    env:
-      SOURCE_REPOSITORY: ${{ github.repository }}
-      TARGET_REPOSITORY: scarowar/test-terraform-branch-deploy
-      PR_NUMBER: ${{ github.event.issue.number }}
-      COMMENT_ID: ${{ github.event.comment.id }}
-      COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+    outputs:
+      run: ${{ steps.command.outputs.run }}
+      stage: ${{ steps.command.outputs.stage }}
     steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
-        with:
-          egress-policy: audit
-
       - name: Parse E2E command
         id: command
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
-          COMMENT_BODY="$(
-            gh api \
-              "repos/${SOURCE_REPOSITORY}/issues/comments/${COMMENT_ID}" \
-              --jq '.body'
+          body="$(
+            python3 - <<'PY'
+          import json
+          import os
+
+          with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as event_file:
+              event = json.load(event_file)
+          print(event.get("comment", {}).get("body") or "")
+          PY
           )"
-          body="$(printf '%s' "${COMMENT_BODY}" | tr -d '\r')"
+          body="$(printf '%s' "${body}" | tr -d '\r')"
           body="${body#"${body%%[![:space:]]*}"}"
           body="${body%"${body##*[![:space:]]}"}"
 
@@ -52,13 +47,88 @@ jobs:
           echo "run=true" >> "${GITHUB_OUTPUT}"
           echo "stage=${stage}" >> "${GITHUB_OUTPUT}"
 
-      - name: Validate requester
-        if: steps.command.outputs.run == 'true'
+  dispatch:
+    needs: parse
+    if: needs.parse.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+      statuses: read
+      issues: write
+    env:
+      SOURCE_REPOSITORY: ${{ github.repository }}
+      TARGET_REPOSITORY: scarowar/test-terraform-branch-deploy
+      PR_NUMBER: ${{ github.event.issue.number }}
+      COMMENT_ID: ${{ github.event.comment.id }}
+      COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
+        with:
+          egress-policy: audit
+
+      - name: Validate and dispatch external E2E
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          DISPATCH_TOKEN: ${{ secrets.TFBD_E2E_DISPATCH_TOKEN }}
+          CERTIFICATION_STAGE: ${{ needs.parse.outputs.stage }}
         run: |
           set -euo pipefail
+
+          comment_file="${RUNNER_TEMP}/tfbd-e2e-comment.md"
+          tracking_comment_id=""
+          candidate_ref="pending"
+
+          write_comment() {
+            local status="$1"
+            local detail="$2"
+
+            cat > "${comment_file}" <<EOF
+          ### External E2E
+
+          - Stage: \`${CERTIFICATION_STAGE}\`
+          - Candidate: \`${candidate_ref}\`
+          - Requested by: @${COMMENT_AUTHOR}
+          - Status: ${status}
+
+          ${detail}
+
+          <!-- terraform-branch-deploy-e2e:${PR_NUMBER}:${COMMENT_ID} -->
+          EOF
+          }
+
+          create_tracking_comment() {
+            write_comment "queued" "Validating the pull request before dispatching the external E2E workflow."
+            tracking_comment_id="$(
+              jq -n --rawfile body "${comment_file}" '{body: $body}' |
+                gh api \
+                  --method POST \
+                  "repos/${SOURCE_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+                  --input - \
+                  --jq '.id'
+            )"
+          }
+
+          update_tracking_comment() {
+            write_comment "$1" "$2"
+            jq -n --rawfile body "${comment_file}" '{body: $body}' |
+              gh api \
+                --method PATCH \
+                "repos/${SOURCE_REPOSITORY}/issues/comments/${tracking_comment_id}" \
+                --input - >/dev/null
+          }
+
+          fail_with_comment() {
+            local message="$1"
+            echo "::error::${message}"
+            if [ -n "${tracking_comment_id}" ]; then
+              update_tracking_comment "not started" "${message}"
+            fi
+            exit 1
+          }
 
           permission="$(
             gh api \
@@ -74,51 +144,34 @@ jobs:
               ;;
           esac
 
-      - name: Validate pull request state
-        if: steps.command.outputs.run == 'true'
-        id: pr
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
+          create_tracking_comment
 
           pr_json="$(
             gh pr view "${PR_NUMBER}" \
               --repo "${SOURCE_REPOSITORY}" \
-              --json state,isDraft,baseRefName,headRefOid,reviewDecision,mergeStateStatus
+              --json state,isDraft,baseRefName,headRefOid,mergeStateStatus
           )"
 
           state="$(jq -r '.state' <<< "${pr_json}")"
           is_draft="$(jq -r '.isDraft' <<< "${pr_json}")"
           base_ref="$(jq -r '.baseRefName' <<< "${pr_json}")"
-          head_sha="$(jq -r '.headRefOid' <<< "${pr_json}")"
-          review_decision="$(jq -r '.reviewDecision // ""' <<< "${pr_json}")"
+          candidate_ref="$(jq -r '.headRefOid' <<< "${pr_json}")"
           merge_state="$(jq -r '.mergeStateStatus // ""' <<< "${pr_json}")"
 
           if [ "${state}" != "OPEN" ]; then
-            echo "::error::Pull request #${PR_NUMBER} is not open."
-            exit 1
+            fail_with_comment "Pull request #${PR_NUMBER} is not open."
           fi
 
           if [ "${is_draft}" = "true" ]; then
-            echo "::error::Pull request #${PR_NUMBER} is a draft."
-            exit 1
+            fail_with_comment "Pull request #${PR_NUMBER} is a draft."
           fi
 
           if [ "${base_ref}" != "main" ]; then
-            echo "::error::External E2E only runs for pull requests targeting main."
-            exit 1
-          fi
-
-          if [ "${review_decision}" != "APPROVED" ]; then
-            echo "::error::Pull request #${PR_NUMBER} must be approved before external E2E."
-            exit 1
+            fail_with_comment "External E2E only runs for pull requests targeting main."
           fi
 
           if [ "${merge_state}" = "DIRTY" ]; then
-            echo "::error::Pull request #${PR_NUMBER} is not mergeable."
-            exit 1
+            fail_with_comment "Pull request #${PR_NUMBER} is not mergeable."
           fi
 
           checks_json="$(
@@ -130,8 +183,7 @@ jobs:
           )"
 
           if [ -z "${checks_json}" ]; then
-            echo "::error::Could not read pull request checks."
-            exit 1
+            fail_with_comment "Could not read pull request checks."
           fi
 
           failing_checks="$(
@@ -139,9 +191,11 @@ jobs:
               <<< "${checks_json}"
           )"
           if [ -n "${failing_checks}" ]; then
-            echo "::error::Pull request checks must pass before external E2E."
-            printf '%s\n' "${failing_checks}"
-            exit 1
+            fail_with_comment "Pull request checks must pass before external E2E.
+
+          \`\`\`
+          ${failing_checks}
+          \`\`\`"
           fi
 
           current_head_sha="$(
@@ -150,33 +204,35 @@ jobs:
               --json headRefOid \
               --jq '.headRefOid'
           )"
-          if [ "${current_head_sha}" != "${head_sha}" ]; then
-            echo "::error::Pull request head changed during validation. Re-run /e2e."
-            exit 1
+          if [ "${current_head_sha}" != "${candidate_ref}" ]; then
+            fail_with_comment "Pull request head changed during validation. Re-run /e2e."
           fi
 
-          echo "head-sha=${head_sha}" >> "${GITHUB_OUTPUT}"
-
-      - name: Dispatch external E2E
-        if: steps.command.outputs.run == 'true'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.TFBD_E2E_DISPATCH_TOKEN }}
-          CANDIDATE_REF: ${{ steps.pr.outputs.head-sha }}
-          CERTIFICATION_STAGE: ${{ steps.command.outputs.stage }}
-        run: |
-          set -euo pipefail
+          if [ -z "${DISPATCH_TOKEN}" ]; then
+            fail_with_comment "TFBD_E2E_DISPATCH_TOKEN is not configured."
+          fi
 
           payload="$(
             jq -n \
               --arg ref "main" \
-              --arg candidate_ref "${CANDIDATE_REF}" \
+              --arg candidate_ref "${candidate_ref}" \
               --arg source_pr "${PR_NUMBER}" \
               --arg stage "${CERTIFICATION_STAGE}" \
-              '{ref: $ref, inputs: {candidate_ref: $candidate_ref, source_pr: $source_pr, stage: $stage}}'
+              --arg tracking_comment_id "${tracking_comment_id}" \
+              '{ref: $ref, inputs: {candidate_ref: $candidate_ref, source_pr: $source_pr, stage: $stage, tracking_comment_id: $tracking_comment_id}}'
           )"
 
-          gh api \
+          if ! dispatch_error="$(
+            GH_TOKEN="${DISPATCH_TOKEN}" gh api \
             --method POST \
             "repos/${TARGET_REPOSITORY}/actions/workflows/e2e-tests.yml/dispatches" \
-            --input - <<< "${payload}"
+            --input - <<< "${payload}" 2>&1
+          )"; then
+            fail_with_comment "Could not dispatch external E2E. Verify TFBD_E2E_DISPATCH_TOKEN has Actions: write on ${TARGET_REPOSITORY}.
+
+          \`\`\`
+          ${dispatch_error}
+          \`\`\`"
+          fi
+
+          update_tracking_comment "dispatched" "The external E2E workflow has been dispatched. This comment will be updated when the external run starts and completes."
