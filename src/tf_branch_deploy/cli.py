@@ -174,6 +174,69 @@ def _redact_args_for_display(args: list[str]) -> list[str]:
     return [_redact_single_arg(arg) for arg in args]
 
 
+def _arg_flag(arg: str) -> str:
+    """Return the flag portion of a Terraform argument."""
+    return arg.split("=", 1)[0] if "=" in arg else arg
+
+
+def _arg_has_inline_value(arg: str) -> bool:
+    """Return whether a Terraform argument carries its value with '='."""
+    return "=" in arg
+
+
+def _fail_arg_validation(message: str) -> None:
+    """Print a validation error and stop command execution."""
+    console.print(f"[red]❌ {message}[/red]")
+    raise typer.Exit(1)
+
+
+def _validate_arg_token(arg: str, source: str) -> str:
+    """Validate a single Terraform argument token and return its flag."""
+    if not arg.startswith("-"):
+        _fail_arg_validation(f"Unsupported {source} arg value without flag: {arg}")
+    return _arg_flag(arg)
+
+
+def _validate_arg_flag(
+    flag: str,
+    allowed_flags: frozenset[str],
+    source: str,
+) -> None:
+    """Validate a Terraform argument flag against the source allowlist."""
+    if flag not in BLOCKED_EXTRA_ARG_FLAGS and flag in allowed_flags:
+        return
+
+    console.print(f"[red]❌ Unsupported {source} arg: {flag}[/red]")
+    console.print(f"[red]Allowed {source} flags: {', '.join(sorted(allowed_flags))}[/red]")
+    raise typer.Exit(1)
+
+
+def _next_arg_value(args: list[str], index: int) -> str | None:
+    """Return the separate value after a flag, when one exists."""
+    value_index = index + 1
+    if value_index >= len(args) or args[value_index].startswith("-"):
+        return None
+    return args[value_index]
+
+
+def _separate_value_for_arg(
+    args: list[str],
+    index: int,
+    flag: str,
+    source: str,
+) -> str | None:
+    """Return a required or optional separate flag value."""
+    if flag in ARG_FLAGS_WITH_SEPARATE_VALUES:
+        if value := _next_arg_value(args, index):
+            return value
+        _fail_arg_validation(f"Missing value for {source} arg: {flag}")
+
+    if flag in ARG_FLAGS_WITH_OPTIONAL_SEPARATE_VALUES:
+        return _next_arg_value(args, index)
+
+    return None
+
+
 def _validate_args_allowed(
     args: list[str],
     allowed_flags: frozenset[str],
@@ -185,28 +248,13 @@ def _validate_args_allowed(
 
     while i < len(args):
         arg = args[i]
-        if not arg.startswith("-"):
-            console.print(f"[red]❌ Unsupported {source} arg value without flag: {arg}[/red]")
-            raise typer.Exit(1)
-
-        flag = arg.split("=", 1)[0] if "=" in arg else arg
-
-        if flag in BLOCKED_EXTRA_ARG_FLAGS or flag not in allowed_flags:
-            console.print(f"[red]❌ Unsupported {source} arg: {flag}[/red]")
-            console.print(f"[red]Allowed {source} flags: {', '.join(sorted(allowed_flags))}[/red]")
-            raise typer.Exit(1)
-
+        flag = _validate_arg_token(arg, source)
+        _validate_arg_flag(flag, allowed_flags, source)
         validated.append(arg)
 
-        if "=" not in arg and flag in ARG_FLAGS_WITH_SEPARATE_VALUES:
-            if i + 1 >= len(args) or args[i + 1].startswith("-"):
-                console.print(f"[red]❌ Missing value for {source} arg: {flag}[/red]")
-                raise typer.Exit(1)
-            validated.append(args[i + 1])
-            i += 1
-        elif "=" not in arg and flag in ARG_FLAGS_WITH_OPTIONAL_SEPARATE_VALUES:
-            if i + 1 < len(args) and not args[i + 1].startswith("-"):
-                validated.append(args[i + 1])
+        if not _arg_has_inline_value(arg):
+            if value := _separate_value_for_arg(args, i, flag, source):
+                validated.append(value)
                 i += 1
 
         i += 1
