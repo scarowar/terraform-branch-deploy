@@ -56,7 +56,6 @@ jobs:
       pull-requests: read
       checks: read
       statuses: read
-      issues: write
     env:
       SOURCE_REPOSITORY: ${{ github.repository }}
       TARGET_REPOSITORY: scarowar/test-terraform-branch-deploy
@@ -72,8 +71,7 @@ jobs:
       - name: Validate and dispatch external E2E
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
-          DISPATCH_TOKEN: ${{ secrets.TFBD_E2E_DISPATCH_TOKEN }}
+          GH_TOKEN: ${{ secrets.TFBD_E2E_DISPATCH_TOKEN }}
           CERTIFICATION_STAGE: ${{ needs.parse.outputs.stage }}
         run: |
           set -euo pipefail
@@ -208,7 +206,7 @@ jobs:
             fail_with_comment "Pull request head changed during validation. Re-run /e2e."
           fi
 
-          if [ -z "${DISPATCH_TOKEN}" ]; then
+          if [ -z "${GH_TOKEN}" ]; then
             fail_with_comment "TFBD_E2E_DISPATCH_TOKEN is not configured."
           fi
 
@@ -223,7 +221,7 @@ jobs:
           )"
 
           if ! dispatch_error="$(
-            GH_TOKEN="${DISPATCH_TOKEN}" gh api \
+            gh api \
             --method POST \
             "repos/${TARGET_REPOSITORY}/actions/workflows/e2e-tests.yml/dispatches" \
             --input - <<< "${payload}" 2>&1

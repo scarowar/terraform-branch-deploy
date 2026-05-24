@@ -151,13 +151,15 @@ def test_external_e2e_dispatch_is_maintainer_gated() -> None:
     assert "actions/checkout" not in workflow_text
     assert "pull_request_target" not in workflow_text
     assert "issues" not in workflow["permissions"]
-    assert job["permissions"]["issues"] == "write"
+    assert "issues" not in job["permissions"]
     assert job["needs"] == "parse"
     assert "TFBD_E2E_DISPATCH_TOKEN" in workflow_text
     assert "TFBD_STATUS_TOKEN" not in workflow_text
     assert "/e2e" in workflow_text
     assert "GITHUB_EVENT_PATH" in parse_commands
     assert "gh api" not in parse_commands
+    assert "GH_TOKEN: ${{ secrets.TFBD_E2E_DISPATCH_TOKEN }}" in workflow_text
+    assert "GH_TOKEN: ${{ github.token }}" not in workflow_text
     assert "admin|maintain|write" in run_commands
     assert "reviewDecision" not in workflow_text
     assert "review_decision" not in run_commands
