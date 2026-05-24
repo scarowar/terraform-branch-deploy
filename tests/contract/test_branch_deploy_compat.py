@@ -13,8 +13,8 @@ import pytest
 import yaml
 
 
-BRANCH_DEPLOY_VERSION = "v11.1.2"
-BRANCH_DEPLOY_SHA = "fded0351b6b79f854b335c11b3d93063461dd288"
+BRANCH_DEPLOY_VERSION = "v11.1.4"
+BRANCH_DEPLOY_SHA = "ddf8ca48e9cdb2d2c7c71dee428308b19af9313f"
 
 # Branch Deploy inputs that Terraform Branch Deploy controls instead of exposing.
 CONTROLLED_UPSTREAM_INPUTS = {
