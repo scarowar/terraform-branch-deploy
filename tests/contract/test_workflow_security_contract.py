@@ -160,12 +160,21 @@ def test_external_e2e_dispatch_is_maintainer_gated() -> None:
     assert "gh api" not in parse_commands
     assert "GH_TOKEN: ${{ secrets.TFBD_E2E_DISPATCH_TOKEN }}" in workflow_text
     assert "GH_TOKEN: ${{ github.token }}" not in workflow_text
+    assert run_commands.index('if [ -z "${GH_TOKEN}" ]; then') < run_commands.index(
+        '"repos/${SOURCE_REPOSITORY}/collaborators/${COMMENT_AUTHOR}/permission"'
+    )
+    assert run_commands.index('if [ -z "${GH_TOKEN}" ]; then') < run_commands.index(
+        '"repos/${SOURCE_REPOSITORY}/commits/${candidate_ref}/status"'
+    )
     assert "admin|maintain|write" in run_commands
     assert "reviewDecision" not in workflow_text
     assert "review_decision" not in run_commands
     assert "gh pr checks" in run_commands
     assert "terraform-branch-deploy/e2e" in run_commands
     assert "current_head_sha" in run_commands
+    assert "commits/${candidate_ref}/status" in run_commands
+    assert "already running for this pull request head" in run_commands
+    assert "already passed for this pull request head" in run_commands
     assert "actions/workflows/e2e-tests.yml/dispatches" in run_commands
     assert "issues/${PR_NUMBER}/comments" in run_commands
     assert "issues/comments/${tracking_comment_id}" in run_commands

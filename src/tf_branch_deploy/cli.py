@@ -15,6 +15,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
@@ -28,7 +29,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from .config import load_config
-from .executor import _redact_single_arg
+from .executor import _redact_args
 
 DEFAULT_CONFIG_PATH = Path(".tf-branch-deploy.yml")
 GITHUB_URL_DEFAULT = "https://github.com"
@@ -169,9 +170,17 @@ NON_PLAN_EXTRA_ARGS_ERROR = (
 )
 
 
-def _redact_args_for_display(args: list[str]) -> list[str]:
+def _package_version() -> str:
+    """Return the installed package version for command output."""
+    try:
+        return version("tf-branch-deploy")
+    except PackageNotFoundError:
+        return "unknown"
+
+
+def _redact_args_for_display(args: list[str]) -> str:
     """Redact argument values before showing PR-supplied or metadata args."""
-    return [_redact_single_arg(arg) for arg in args]
+    return _redact_args(args)
 
 
 def _arg_flag(arg: str) -> str:
@@ -316,10 +325,7 @@ def _print_execution_table(
     table.add_row("Working Dir", str(working_dir))
     table.add_row("Dry Run", str(dry_run))
     if parsed_extra_args:
-        table.add_row(
-            "Extra Args",
-            " ".join(_redact_single_arg(arg) for arg in parsed_extra_args),
-        )
+        table.add_row("Extra Args", _redact_args_for_display(parsed_extra_args))
     console.print(table)
 
 
@@ -334,9 +340,9 @@ def _print_dry_run_commands(
     """Print the Terraform commands that would run in dry-run mode."""
     console.print("\n[yellow]🧪 Dry run - commands would be:[/yellow]")
     console.print(f"  cd {working_dir}")
-    console.print(f"  terraform init {' '.join(init_args)}")
+    console.print(f"  {_redact_args(['terraform', 'init', *init_args])}")
     if operation == "plan":
-        console.print(f"  terraform plan {' '.join(plan_args)}")
+        console.print(f"  {_redact_args(['terraform', 'plan', *plan_args])}")
     elif operation == "apply":
         console.print("  terraform apply <saved plan file>")
     else:
@@ -344,7 +350,7 @@ def _print_dry_run_commands(
         for var_file in var_files:
             rollback_args.extend(["-var-file", var_file])
         rollback_args.extend(apply_args)
-        console.print(f"  terraform apply {' '.join(rollback_args)}")
+        console.print(f"  {_redact_args(['terraform', 'apply', *rollback_args])}")
 
 
 def _pr_number_from_env() -> int | None:
@@ -591,7 +597,10 @@ def execute(
       .plan to dev | -target=module.base -target=module.network
     """
     console.print(
-        Panel.fit("[bold blue]Terraform Branch Deploy[/bold blue] v0.2.0", subtitle="Execute Mode")
+        Panel.fit(
+            f"[bold blue]Terraform Branch Deploy[/bold blue] v{_package_version()}",
+            subtitle="Execute Mode",
+        )
     )
 
     config, env_config = _load_and_validate_config(config_path, environment)
@@ -636,7 +645,7 @@ def execute(
         init_args=init_args,
         plan_args=plan_args,
         apply_args=apply_args,
-        github_token=os.environ.get("GITHUB_TOKEN"),
+        github_token=os.environ.get("TFBD_GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN"),
         repo=os.environ.get("GITHUB_REPOSITORY"),
         pr_number=_pr_number_from_env(),
         timeout=env_config.timeout,
@@ -651,7 +660,7 @@ def execute(
         raise typer.Exit(1)
 
     if operation == "plan":
-        _handle_plan(executor, environment, sha, plan_args, var_files)
+        _handle_plan(executor, environment, sha, plan_args, var_files, raw_extra_args)
     else:
         _handle_apply(
             executor,
@@ -670,11 +679,28 @@ def _handle_plan(
     sha: str,
     plan_args: list[str],
     var_files: list[str],
+    raw_extra_args: str | None = None,
 ) -> None:
     """Handle terraform plan operation."""
 
     plan_file = Path(f"tfplan-{environment}-{sha[:8]}.tfplan")
     result = executor.plan(out_file=plan_file)
+    if not result.success:
+        logs_url = (
+            os.environ.get("GITHUB_SERVER_URL", GITHUB_URL_DEFAULT)
+            + "/"
+            + os.environ.get("GITHUB_REPOSITORY", "")
+            + ACTIONS_RUNS_PATH
+            + os.environ.get("GITHUB_RUN_ID", "")
+        )
+        error_msg = format_error_for_comment(
+            message="Terraform plan failed. The `terraform plan` command exited with an error.",
+            logs_url=logs_url,
+            suggestion=f"Fix any configuration errors and run `.plan to {environment}` again",
+        )
+        set_github_output("failure_reason", error_msg)
+        raise typer.Exit(1)
+
     if result.plan_file and result.checksum:
         set_github_output("plan_file", str(result.plan_file))
         set_github_output("plan_checksum", result.checksum)
@@ -683,7 +709,7 @@ def _handle_plan(
         # Save plan metadata sidecar for cross-run integrity verification
         from .artifacts import PlanMetadata, generate_params_hash, save_plan_metadata
 
-        extra_args_str = os.environ.get("TF_BD_EXTRA_ARGS", "")
+        extra_args_str = raw_extra_args or ""
         tf_version = executor.version()
         params_hash = generate_params_hash(extra_args_str)
 
@@ -703,22 +729,6 @@ def _handle_plan(
 
         set_github_output("plan_params_hash", params_hash)
         set_github_output("plan_terraform_version", tf_version)
-
-    if not result.success:
-        logs_url = (
-            os.environ.get("GITHUB_SERVER_URL", GITHUB_URL_DEFAULT)
-            + "/"
-            + os.environ.get("GITHUB_REPOSITORY", "")
-            + ACTIONS_RUNS_PATH
-            + os.environ.get("GITHUB_RUN_ID", "")
-        )
-        error_msg = format_error_for_comment(
-            message="Terraform plan failed. The `terraform plan` command exited with an error.",
-            logs_url=logs_url,
-            suggestion=f"Fix any configuration errors and run `.plan to {environment}` again",
-        )
-        set_github_output("failure_reason", error_msg)
-        raise typer.Exit(1)
 
 
 def _handle_apply(
@@ -880,7 +890,7 @@ def _apply_with_plan(
     if metadata.extra_args:
         console.print(
             "[dim]📝 Plan was created with args: "
-            f"{' '.join(_redact_args_for_display(metadata.extra_args))}[/dim]"
+            f"{_redact_args_for_display(metadata.extra_args)}[/dim]"
         )
     console.print(f"[dim]📝 Plan created at: {metadata.created_at}[/dim]")
 

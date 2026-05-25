@@ -142,7 +142,7 @@ prod:
 ## Complete Example
 
 ```yaml title=".tf-branch-deploy.yml"
-# yaml-language-server: $schema=https://raw.githubusercontent.com/scarowar/terraform-branch-deploy/main/tf-branch-deploy.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/scarowar/terraform-branch-deploy/v0/tf-branch-deploy.schema.json
 
 default-environment: dev
 production-environments: [prod, prod-eu]
@@ -198,7 +198,7 @@ Enable editor validation with the generated JSON schema.
     Add this comment to `.tf-branch-deploy.yml`:
 
     ```yaml
-    # yaml-language-server: $schema=https://raw.githubusercontent.com/scarowar/terraform-branch-deploy/main/tf-branch-deploy.schema.json
+    # yaml-language-server: $schema=https://raw.githubusercontent.com/scarowar/terraform-branch-deploy/v0/tf-branch-deploy.schema.json
     ```
 
 === "JetBrains IDEs"
@@ -212,7 +212,7 @@ Enable editor validation with the generated JSON schema.
     | File pattern | `.tf-branch-deploy.yml` |
 
     ```text
-    https://raw.githubusercontent.com/scarowar/terraform-branch-deploy/main/tf-branch-deploy.schema.json
+    https://raw.githubusercontent.com/scarowar/terraform-branch-deploy/v0/tf-branch-deploy.schema.json
     ```
 
 The action validates the configuration during execute mode. Unknown fields are rejected.

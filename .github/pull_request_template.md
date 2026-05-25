@@ -6,9 +6,9 @@ Thank you for your contribution! Please review the checklist below before submit
 
 - [ ] My pull request addresses a single issue or concern
 - [ ] I have described the changes clearly
-- [ ] I have run all pre-commit checks (`pre-commit run --all-files`)
-- [ ] I have updated documentation as needed (e.g., `README.md`)
-- [ ] I have tested the changes (if applicable)
+- [ ] I have run tests (`uv run pytest`)
+- [ ] I have run pre-commit (`uv run pre-commit run --all-files`)
+- [ ] I have built docs when documentation changed (`uv run zensical build --strict --clean`)
 - [ ] I have checked for breaking changes
 
 ## Description

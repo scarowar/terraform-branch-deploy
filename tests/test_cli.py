@@ -14,6 +14,7 @@ from tf_branch_deploy.cli import (
     BLOCKED_EXTRA_ARG_FLAGS,
     DEFAULT_CONFIG_PATH,
     _ArgTokenizer,
+    _handle_plan,
     _apply_with_plan,
     _handle_apply,
     _load_and_validate_config,
@@ -515,6 +516,53 @@ class TestCompleteLifecycleCommand:
         mock_manager.remove_non_sticky_lock.assert_called_with("dev")
 
 
+class TestHandlePlan:
+    """Tests for plan output and metadata handling."""
+
+    def test_failed_plan_does_not_emit_saved_plan_outputs_or_metadata(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A failed plan must not turn a stale plan file into a saved-plan artifact."""
+        from unittest.mock import MagicMock
+
+        from tf_branch_deploy.executor import PlanResult
+
+        output_file = tmp_path / "github-output"
+        monkeypatch.setenv("GITHUB_OUTPUT", str(output_file))
+
+        stale_plan = tmp_path / "tfplan-int-abc12345.tfplan"
+        stale_plan.write_bytes(b"stale plan")
+
+        mock_executor = MagicMock()
+        mock_executor.plan.return_value = PlanResult(
+            exit_code=1,
+            stdout="",
+            stderr="plan failed",
+            command=["terraform", "plan"],
+            has_changes=False,
+            plan_file=stale_plan,
+            checksum="not-a-real-checksum",
+        )
+
+        with pytest.raises(typer.Exit):
+            _handle_plan(
+                mock_executor,
+                "int",
+                "abc12345ff",
+                plan_args=[],
+                var_files=[],
+                raw_extra_args="",
+            )
+
+        output_text = output_file.read_text(encoding="utf-8")
+        assert "failure_reason" in output_text
+        assert "plan_file" not in output_text
+        assert "plan_checksum" not in output_text
+        assert not stale_plan.with_suffix(".meta.json").exists()
+
+
 class TestHandleApply:
     """Tests for _handle_apply — rollback priority and plan file resolution."""
 
@@ -987,6 +1035,56 @@ class TestExecuteArgumentSemantics:
 
         assert result.exit_code == 0
         assert "terraform plan -parallelism=20 -target=module.database" in result.stdout
+
+    def test_plan_dry_run_redacts_inline_var_values(self, tmp_path: Path) -> None:
+        config_file = self._write_config(tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "execute",
+                "--environment",
+                "int",
+                "--operation",
+                "plan",
+                "--sha",
+                "abc12345ff",
+                "--config",
+                str(config_file),
+                "--dry-run",
+                "--extra-args",
+                "-var=token=super-secret",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "super-secret" not in result.stdout
+        assert "-var=token=***" in result.stdout
+
+    def test_plan_dry_run_redacts_split_var_values(self, tmp_path: Path) -> None:
+        config_file = self._write_config(tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "execute",
+                "--environment",
+                "int",
+                "--operation",
+                "plan",
+                "--sha",
+                "abc12345ff",
+                "--config",
+                str(config_file),
+                "--dry-run",
+                "--extra-args",
+                "-var token=super-secret",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "super-secret" not in result.stdout
+        assert "-var ***" in result.stdout
 
     def test_apply_dry_run_never_shows_apply_args_for_saved_plan(self, tmp_path: Path) -> None:
         config_file = self._write_config(
