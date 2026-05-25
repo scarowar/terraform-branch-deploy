@@ -16,9 +16,9 @@ Do not release if action inputs, outputs, commands, or docs are out of sync.
 
 ## Version References
 
-- Update `docs/includes/version.txt` to the candidate release tag.
-- Run `scripts/update-version.sh`.
-- Confirm every public Terraform Branch Deploy action example points at the same candidate tag.
+- Public docs should keep `scarowar/terraform-branch-deploy@v0` unless a page is intentionally showing an exact release.
+- For release validation, use the exact candidate SHA or release tag in the external E2E repository.
+- If the public docs version policy changes, update `docs/includes/version.txt`, run `scripts/update-version.sh`, and review the resulting diff before committing.
 
 ## Security Gates
 
