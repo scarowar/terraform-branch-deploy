@@ -7,6 +7,7 @@ import pytest
 
 from tf_branch_deploy.executor import (
     CommandResult,
+    GITHUB_TOKEN_ENV_VARS,
     PlanResult,
     TerraformExecutor,
     _redact_args,
@@ -66,6 +67,24 @@ class TestTerraformExecutor:
         assert result.exit_code == 0
         assert result.stdout == "success output"
         mock_run.assert_called_once()
+
+    @patch("tf_branch_deploy.executor.subprocess.run")
+    def test_run_command_removes_github_tokens_from_subprocess_env(
+        self,
+        mock_run: MagicMock,
+        executor: TerraformExecutor,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Terraform subprocesses must not receive GitHub deployment tokens."""
+        for name in GITHUB_TOKEN_ENV_VARS:
+            monkeypatch.setenv(name, f"{name}-value")
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+        executor._run_command(["terraform", "plan"])
+
+        call_env = mock_run.call_args.kwargs["env"]
+        for name in GITHUB_TOKEN_ENV_VARS:
+            assert name not in call_env
 
     @patch("subprocess.run")
     def test_init_builds_correct_command(
@@ -362,10 +381,25 @@ class TestTfcmtIntegration:
 
         executor._run_with_tfcmt("plan", ["terraform", "plan"])
 
+        call_args = mock_run.call_args.args[0]
         call_env = mock_run.call_args.kwargs["env"]
         assert call_env["GITHUB_TOKEN"] == "test-token"
+        assert "TFBD_GITHUB_TOKEN" not in call_env
         assert call_env["GITHUB_API_URL"] == "https://git.company.com/api/v3"
         assert call_env["GITHUB_GRAPHQL_URL"] == "https://git.company.com/api/graphql"
+        assert call_args[-11:] == [
+            "env",
+            "-u",
+            "GITHUB_TOKEN",
+            "-u",
+            "GH_TOKEN",
+            "-u",
+            "GH_ENTERPRISE_TOKEN",
+            "-u",
+            "TFBD_GITHUB_TOKEN",
+            "terraform",
+            "plan",
+        ]
 
 
 class TestVersion:

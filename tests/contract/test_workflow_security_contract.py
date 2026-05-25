@@ -166,6 +166,9 @@ def test_external_e2e_dispatch_is_maintainer_gated() -> None:
     assert "gh pr checks" in run_commands
     assert "terraform-branch-deploy/e2e" in run_commands
     assert "current_head_sha" in run_commands
+    assert "commits/${candidate_ref}/status" in run_commands
+    assert "already running for this pull request head" in run_commands
+    assert "already passed for this pull request head" in run_commands
     assert "actions/workflows/e2e-tests.yml/dispatches" in run_commands
     assert "issues/${PR_NUMBER}/comments" in run_commands
     assert "issues/comments/${tracking_comment_id}" in run_commands

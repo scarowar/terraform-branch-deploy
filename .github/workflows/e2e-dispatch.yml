@@ -206,6 +206,26 @@ jobs:
             fail_with_comment "Pull request head changed during validation. Re-run /e2e."
           fi
 
+          status_context="terraform-branch-deploy/e2e"
+          if [ "${CERTIFICATION_STAGE}" != "all" ]; then
+            status_context="${status_context}-${CERTIFICATION_STAGE}"
+          fi
+          existing_status="$(
+            gh api \
+              "repos/${SOURCE_REPOSITORY}/commits/${candidate_ref}/status" \
+              --jq "first(.statuses[] | select(.context == \"${status_context}\") | .state) // \"\""
+          )"
+          case "${existing_status}" in
+            pending)
+              update_tracking_comment "not started" "External E2E ${CERTIFICATION_STAGE} is already running for this pull request head."
+              exit 0
+              ;;
+            success)
+              update_tracking_comment "not started" "External E2E ${CERTIFICATION_STAGE} already passed for this pull request head."
+              exit 0
+              ;;
+          esac
+
           if [ -z "${GH_TOKEN}" ]; then
             fail_with_comment "TFBD_E2E_DISPATCH_TOKEN is not configured."
           fi

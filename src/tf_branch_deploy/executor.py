@@ -2,7 +2,7 @@
 Terraform executor module.
 
 Handles terraform init, plan, and apply operations with proper
-argument resolution and PR comment posting via tfcmt.
+argument resolution and optional PR comment posting via tfcmt.
 """
 
 from __future__ import annotations
@@ -16,6 +16,12 @@ from pathlib import Path
 from rich.console import Console
 
 TF_INPUT_FALSE = "-input=false"
+GITHUB_TOKEN_ENV_VARS = (
+    "GITHUB_TOKEN",
+    "GH_TOKEN",
+    "GH_ENTERPRISE_TOKEN",
+    "TFBD_GITHUB_TOKEN",
+)
 
 console = Console()
 
@@ -125,9 +131,7 @@ class TerraformExecutor:
         env: dict[str, str] | None = None,
     ) -> CommandResult:
         """Run a command and capture output."""
-        full_env = os.environ.copy()
-        if env:
-            full_env.update(env)
+        full_env = self._subprocess_env(env)
 
         console.print(f"[dim]$ {_redact_args(args)}[/dim]")
 
@@ -332,15 +336,31 @@ class TerraformExecutor:
                 ["tfcmt", "--version"],
                 capture_output=True,
                 text=True,
+                env=self._subprocess_env(),
             )
             return result.returncode == 0
         except FileNotFoundError:
             return False
 
+    @staticmethod
+    def _subprocess_env(env: dict[str, str] | None = None) -> dict[str, str]:
+        """Build a subprocess environment that does not leak GitHub tokens to Terraform."""
+        full_env = os.environ.copy()
+        for name in GITHUB_TOKEN_ENV_VARS:
+            full_env.pop(name, None)
+        if env:
+            full_env.update(env)
+        return full_env
+
     def _run_with_tfcmt(self, operation: str, tf_args: list[str]) -> CommandResult:
         """Run terraform command wrapped with tfcmt for PR comments."""
         if not self.github_token or not self.repo or not self.pr_number:
             return self._run_command(tf_args)
+
+        scrubbed_tf_args = ["env"]
+        for name in GITHUB_TOKEN_ENV_VARS:
+            scrubbed_tf_args.extend(["-u", name])
+        scrubbed_tf_args.extend(tf_args)
 
         args = [
             "tfcmt",
@@ -352,7 +372,7 @@ class TerraformExecutor:
             str(self.pr_number),
             operation,
             "--",
-        ] + tf_args
+        ] + scrubbed_tf_args
 
         env = {"GITHUB_TOKEN": self.github_token}
         return self._run_command(args, env=env)

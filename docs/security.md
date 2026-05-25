@@ -115,7 +115,7 @@ The apply restores the saved targeted plan. It does not create a fresh plan.
 Rollback uses the stable branch:
 
 ```text
-.apply main to prod
+.apply main to dev
 ```
 
 Rollback is intentionally separate from normal apply. It applies the stable branch directly and does not require a saved pull request plan.
@@ -159,6 +159,15 @@ A workflow may do an initial default-branch checkout before trigger mode so the 
 ```
 
 This keeps cloud credentials behind Branch Deploy's command, permission, check, and lock decisions.
+
+## GitHub Token Isolation
+
+The `github-token` input is used for Branch Deploy, PR comments, deployments,
+and lifecycle cleanup. Terraform subprocesses do not receive that token as
+`GITHUB_TOKEN`.
+
+If Terraform itself needs to call the GitHub API, provide a separate,
+least-privileged credential only after trigger mode has accepted the command.
 
 For production workflows, pin third-party actions such as `actions/checkout` and cloud authentication actions by full commit SHA. The examples in these docs use version tags for readability.
 

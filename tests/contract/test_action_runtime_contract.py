@@ -241,6 +241,17 @@ class TestCompositeRuntimeContract:
         assert "TF_BD_EXTRA_ARGS: ${{ env.TF_BD_PARAMS }}" not in script
         assert "--extra-args" not in script
 
+    def test_execute_mode_does_not_expose_github_token_as_provider_env(
+        self, action: dict[str, Any]
+    ) -> None:
+        """The deployment token must not be exported as GITHUB_TOKEN during Terraform."""
+        execute_step = step_by_id(action, "tf-execute")
+        lifecycle_step = step_by_name(action, "[Execute] Complete Deployment Lifecycle")
+
+        assert "GITHUB_TOKEN" not in execute_step["env"]
+        assert execute_step["env"]["TFBD_GITHUB_TOKEN"] == "${{ inputs.github-token }}"
+        assert lifecycle_step["env"]["GITHUB_TOKEN"] == "${{ inputs.github-token }}"
+
     def test_shell_steps_do_not_interpolate_action_inputs_directly(
         self, action: dict[str, Any]
     ) -> None:
