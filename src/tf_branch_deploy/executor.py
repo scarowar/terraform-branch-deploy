@@ -372,7 +372,8 @@ class TerraformExecutor:
             str(self.pr_number),
             operation,
             "--",
-        ] + scrubbed_tf_args
+            *scrubbed_tf_args,
+        ]
 
         env = {"GITHUB_TOKEN": self.github_token}
         return self._run_command(args, env=env)
