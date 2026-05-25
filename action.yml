@@ -439,7 +439,7 @@ runs:
         admins_pat: ${{ inputs.admins-pat }}
         commit_verification: ${{ inputs.commit-verification }}
         disable_naked_commands: ${{ inputs.disable-naked-commands }}
-        # Terraform Branch Deploy v0.2.0 does not support forked PR execution.
+        # Terraform Branch Deploy does not support forked PR execution yet.
         # Fork-aware checkout and lifecycle handling will be added only with
         # explicit tests for Branch Deploy's fork outputs.
         allow_forks: "false"
