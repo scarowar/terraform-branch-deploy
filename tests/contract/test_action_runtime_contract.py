@@ -75,6 +75,7 @@ class TestCompositeRuntimeContract:
         assert setup_step["with"]["working-directory"] == "${{ github.action_path }}"
         assert "github.server_url == 'https://github.com'" in setup_step["with"]["github-token"]
         assert "inputs.github-token" in setup_step["with"]["github-token"]
+        assert "|| ''" in setup_step["with"]["github-token"]
 
     def test_trigger_mode_exports_state_required_by_execute_mode(
         self, action: dict[str, Any]

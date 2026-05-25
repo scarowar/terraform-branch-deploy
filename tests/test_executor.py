@@ -341,6 +341,32 @@ class TestTfcmtIntegration:
             call_args = mock_run.call_args[0][0]
             assert call_args == ["terraform", "plan"]
 
+    @patch("tf_branch_deploy.executor.subprocess.run")
+    def test_run_with_tfcmt_preserves_enterprise_actions_api_env(
+        self,
+        mock_run: MagicMock,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """tfcmt should inherit GitHub Actions Enterprise API endpoint variables."""
+        executor = TerraformExecutor(
+            working_directory=tmp_path,
+            github_token="test-token",
+            repo="org/repo",
+            pr_number=123,
+        )
+        monkeypatch.setenv("GITHUB_API_URL", "https://git.company.com/api/v3")
+        monkeypatch.setenv("GITHUB_GRAPHQL_URL", "https://git.company.com/api/graphql")
+
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+        executor._run_with_tfcmt("plan", ["terraform", "plan"])
+
+        call_env = mock_run.call_args.kwargs["env"]
+        assert call_env["GITHUB_TOKEN"] == "test-token"
+        assert call_env["GITHUB_API_URL"] == "https://git.company.com/api/v3"
+        assert call_env["GITHUB_GRAPHQL_URL"] == "https://git.company.com/api/graphql"
+
 
 class TestVersion:
     """Tests for TerraformExecutor.version()."""

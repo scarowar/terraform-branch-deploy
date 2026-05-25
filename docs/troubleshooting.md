@@ -224,6 +224,8 @@ For self-hosted GitHub Enterprise and AWS CodeBuild runners, prefer preinstallin
 
 The action reuses matching preinstalled tools where it can. For Terraform, set `terraform-version` to the exact preinstalled version when public downloads are not available. If a runner cannot reach public download hosts, preinstall these tools or populate the runner tool cache instead of adding action inputs for internal tool versions.
 
+On GitHub Enterprise Cloud data residency or GitHub Enterprise Server, the action still uses the workflow `github-token` for Branch Deploy, comments, deployments, and lifecycle cleanup. It does not pass that Enterprise-scoped token to uv's public GitHub release lookup.
+
 ## Debug Logs
 
 Enable GitHub Actions debug logging from repository settings, or set these secrets to `true`:

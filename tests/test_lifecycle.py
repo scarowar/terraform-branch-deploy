@@ -260,22 +260,36 @@ class TestLifecycleManager:
         assert call_env["GH_TOKEN"] == "test-token"
         assert call_env["GH_ENTERPRISE_TOKEN"] == "test-token"
 
+    @pytest.mark.parametrize(
+        ("server_url", "expected_host"),
+        [
+            ("https://company.ghe.com", "company.ghe.com"),
+            ("https://git.i.company.com", "git.i.company.com"),
+        ],
+    )
     @patch("tf_branch_deploy.lifecycle.subprocess.run")
-    def test_run_gh_sets_gh_host_for_ghe(
-        self, mock_run: MagicMock, manager: LifecycleManager
+    def test_run_gh_sets_gh_host_for_enterprise_hosts(
+        self,
+        mock_run: MagicMock,
+        manager: LifecycleManager,
+        server_url: str,
+        expected_host: str,
     ) -> None:
-        """Test that GH_HOST is set from GITHUB_SERVER_URL for self-hosted GHE."""
+        """GitHub CLI calls must target GHEC data residency and GHES hosts."""
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_run.return_value = mock_result
 
-        ghe_env = {"GITHUB_SERVER_URL": "https://git.i.company.com"}
+        ghe_env = {"GITHUB_SERVER_URL": server_url}
 
         with patch.dict(os.environ, ghe_env, clear=True):
             manager._run_gh(["gh", "api", "repos/org/repo/issues"])
 
         call_env = mock_run.call_args[1]["env"]
-        assert call_env["GH_HOST"] == "git.i.company.com"
+        assert call_env["GH_HOST"] == expected_host
+        assert call_env["GITHUB_TOKEN"] == "test-token"
+        assert call_env["GH_TOKEN"] == "test-token"
+        assert call_env["GH_ENTERPRISE_TOKEN"] == "test-token"
 
     @patch("tf_branch_deploy.lifecycle.subprocess.run")
     def test_run_gh_does_not_set_gh_host_for_github_com(
