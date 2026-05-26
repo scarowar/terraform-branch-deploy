@@ -150,7 +150,7 @@ Normal apply uses the latest successful saved plan for the same environment and 
 .apply to prod
 ```
 
-The apply command restores and applies the saved targeted plan. It does not run a fresh untargeted apply. If you run another successful plan for the same environment and commit, that newer plan supersedes the older one.
+The apply command restores and applies the saved targeted plan. It does not run a fresh untargeted apply. The restored cache key and saved metadata must agree on the plan argument hash. If you run another successful plan for the same environment and commit, that newer plan supersedes the older one.
 
 Rollback remains a direct stable-branch apply:
 

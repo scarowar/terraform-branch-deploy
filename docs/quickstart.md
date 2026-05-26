@@ -145,7 +145,7 @@ Review the plan comment. If it is correct, apply the saved plan:
 
 If new commits are pushed after planning, run `.plan to dev` again before applying.
 
-Normal apply uses the latest successful saved plan for the same environment and commit. It must not run a fresh untargeted Terraform apply.
+Normal apply uses the latest successful saved plan for the same environment and commit. The restored cache key and saved metadata must agree before Terraform runs. It must not run a fresh untargeted Terraform apply.
 
 After apply completes, the result is posted back to the pull request:
 

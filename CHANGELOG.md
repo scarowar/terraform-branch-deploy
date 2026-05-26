@@ -26,10 +26,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Targeted plans followed by plain apply use the saved targeted plan instead of running a fresh untargeted apply.
 - Deployment lifecycle completion now releases non-sticky Branch Deploy locks after successful operations.
 - Plan metadata validation now blocks stale, missing, mismatched, or tampered saved plans before apply.
+- Apply now refuses restored plans when the cache key params hash and saved metadata params hash do not match.
 
 ### Security
 
-- PR comment `-var-file` paths are restricted to relative paths inside the environment working directory.
+- PR comment `-var-file` paths are restricted to relative paths inside the environment working directory after symlink resolution.
 - Direct normal apply without a saved plan is blocked.
 - Workflow guidance now keeps privileged checkout and cloud credentials behind Branch Deploy approval.
 

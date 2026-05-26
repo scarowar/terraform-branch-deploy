@@ -43,7 +43,7 @@ Branch Deploy's model is deploy before merge:
 3. Comment `.apply to <env>` to apply the saved plan.
 4. Merge after the environment has been applied successfully.
 
-For normal applies, the action restores the latest successful saved plan for the same environment and commit SHA. Rollbacks use Branch Deploy's stable branch command shape:
+For normal applies, the action restores the latest successful saved plan for the same environment and commit SHA. The restored cache key and saved metadata must agree on the plan argument hash before Terraform runs. Rollbacks use Branch Deploy's stable branch command shape:
 
 ```text
 .apply main to prod

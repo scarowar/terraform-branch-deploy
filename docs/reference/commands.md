@@ -92,10 +92,11 @@ Common examples:
 - `.plan to dev | -var-file=env/dev.tfvars`: Adds a variable file inside the environment working directory.
 - `.plan to dev | -refresh=false`: Skips refresh for that plan.
 
-Extra arguments from `.plan` are part of the saved plan. A later `.apply to <env>` applies that saved plan without needing to repeat those arguments.
+Extra arguments from `.plan` are part of the saved plan. A later `.apply to <env>` applies that saved plan without needing to repeat those arguments. The restored cache key and saved metadata must agree on the plan argument hash before Terraform runs.
 
 PR comment `-var-file` values must be relative paths inside the environment
-working directory. Absolute paths and `..` traversal are rejected.
+working directory after symlink resolution. Absolute paths and `..` traversal
+are rejected.
 
 !!! warning "Extra arguments are plan-only"
 

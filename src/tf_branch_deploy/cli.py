@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
@@ -162,6 +163,7 @@ BLOCKED_EXTRA_ARG_FLAGS: frozenset[str] = frozenset(
 )
 
 VALID_OPERATIONS: frozenset[str] = frozenset({"plan", "apply", "rollback"})
+PLAN_CACHE_KEY_RE = re.compile(r"^(?P<params_hash>no-args|[0-9a-f]{8})-\d+-\d+$")
 
 NON_PLAN_EXTRA_ARGS_ERROR = (
     "Extra Terraform arguments are only supported on plan commands. "
@@ -262,16 +264,39 @@ def _validate_pr_var_file_path(value: str) -> None:
         _fail_arg_validation("Unsupported PR comment -var-file path traversal")
 
 
-def _validate_arg_value(flag: str, value: str, source: str) -> None:
+def _validate_pr_var_file_real_path(value: str, working_dir: Path | None) -> None:
+    """Ensure PR-supplied var files cannot escape through symlinks."""
+    if working_dir is None:
+        return
+
+    try:
+        base = working_dir.resolve(strict=False)
+        resolved = (base / value).resolve(strict=False)
+    except (OSError, RuntimeError):
+        _fail_arg_validation("Unsupported PR comment -var-file path cannot be resolved")
+        raise
+
+    if not resolved.is_relative_to(base):
+        _fail_arg_validation("Unsupported PR comment -var-file path outside working directory")
+
+
+def _validate_arg_value(
+    flag: str,
+    value: str,
+    source: str,
+    working_dir: Path | None,
+) -> None:
     """Validate a Terraform argument value when the flag needs value checks."""
     if source == "PR comment" and flag == "-var-file":
         _validate_pr_var_file_path(value)
+        _validate_pr_var_file_real_path(value, working_dir)
 
 
 def _validate_args_allowed(
     args: list[str],
     allowed_flags: frozenset[str],
     source: str,
+    working_dir: Path | None = None,
 ) -> list[str]:
     """Validate args against an allowlist for a specific source."""
     validated: list[str] = []
@@ -284,10 +309,10 @@ def _validate_args_allowed(
         validated.append(arg)
 
         if _arg_has_inline_value(arg):
-            _validate_arg_value(flag, arg.split("=", 1)[1], source)
+            _validate_arg_value(flag, arg.split("=", 1)[1], source, working_dir)
         else:
             if value := _separate_value_for_arg(args, i, flag, source):
-                _validate_arg_value(flag, value, source)
+                _validate_arg_value(flag, value, source, working_dir)
                 validated.append(value)
                 i += 1
 
@@ -296,13 +321,13 @@ def _validate_args_allowed(
     return validated
 
 
-def _validate_extra_args(args: list[str]) -> list[str]:
+def _validate_extra_args(args: list[str], working_dir: Path | None = None) -> list[str]:
     """Validate parsed extra args against the allowlist.
 
     Raises:
         typer.Exit: If any arg uses a blocked or unknown flag.
     """
-    return _validate_args_allowed(args, ALLOWED_EXTRA_ARG_FLAGS, "PR comment")
+    return _validate_args_allowed(args, ALLOWED_EXTRA_ARG_FLAGS, "PR comment", working_dir)
 
 
 def _validate_config_args(
@@ -314,7 +339,11 @@ def _validate_config_args(
     _validate_args_allowed(apply_args, ALLOWED_APPLY_CONFIG_ARG_FLAGS, "apply-args")
 
 
-def _resolve_extra_plan_args(operation: str, raw_extra_args: str | None) -> list[str]:
+def _resolve_extra_plan_args(
+    operation: str,
+    raw_extra_args: str | None,
+    working_dir: Path | None = None,
+) -> list[str]:
     """Parse and validate PR comment args for plan operations."""
     if operation != "plan" and raw_extra_args and raw_extra_args.strip():
         msg = NON_PLAN_EXTRA_ARGS_ERROR
@@ -325,11 +354,29 @@ def _resolve_extra_plan_args(operation: str, raw_extra_args: str | None) -> list
     if not raw_extra_args:
         return []
 
-    parsed_args = _validate_extra_args(_parse_extra_args(raw_extra_args))
+    parsed_args = _validate_extra_args(_parse_extra_args(raw_extra_args), working_dir)
     console.print(
         f"[cyan]📝 Extra args from command:[/cyan] {_redact_args_for_display(parsed_args)}"
     )
     return parsed_args
+
+
+def _params_hash_from_cache_key(
+    cache_key: str | None,
+    environment: str,
+    sha: str,
+) -> str | None:
+    """Extract the saved plan params hash from an actions/cache key."""
+    if not cache_key:
+        return None
+
+    prefix = f"tfplan-{environment}-{sha}-"
+    if not cache_key.startswith(prefix):
+        return None
+
+    if match := PLAN_CACHE_KEY_RE.match(cache_key.removeprefix(prefix)):
+        return match.group("params_hash")
+    return None
 
 
 def _print_execution_table(
@@ -638,7 +685,11 @@ def execute(
         raise typer.Exit(1)
 
     raw_extra_args = extra_args or os.environ.get("TF_BD_EXTRA_ARGS")
-    parsed_extra_args = _resolve_extra_plan_args(operation, raw_extra_args)
+    parsed_extra_args = _resolve_extra_plan_args(
+        operation,
+        raw_extra_args,
+        resolved_working_dir,
+    )
     _print_execution_table(
         environment, operation, sha, resolved_working_dir, dry_run, parsed_extra_args
     )
@@ -802,7 +853,18 @@ def _handle_apply(
             raise typer.Exit(1)
         console.print("[dim]📋 Rollback applied directly (no plan file)[/dim]")
     elif plan_file.exists():
-        _apply_with_plan(executor, plan_file, environment, sha)
+        expected_params_hash = _params_hash_from_cache_key(
+            os.environ.get("TF_BD_PLAN_CACHE_KEY"),
+            environment,
+            sha,
+        )
+        _apply_with_plan(
+            executor,
+            plan_file,
+            environment,
+            sha,
+            expected_params_hash=expected_params_hash,
+        )
         console.print(f"[dim]📋 Plan applied: {plan_filename}[/dim]")
     else:
         console.print(f"[red]❌ No plan file found for this SHA: {plan_file}[/red]")
@@ -826,6 +888,7 @@ def _apply_with_plan(
     plan_file: Path,
     environment: str,
     sha: str,
+    expected_params_hash: str | None = None,
 ) -> None:
     """Apply using an existing plan file with integrity verification.
 
@@ -864,6 +927,29 @@ def _apply_with_plan(
             message=(
                 f"Saved plan commit mismatch: plan was created for `{metadata.sha[:8]}`, "
                 f"but apply requested `{sha[:8]}`."
+            ),
+            suggestion=f"Create a fresh plan by running `.plan to {environment}`",
+        )
+        set_github_output("failure_reason", error_msg)
+        raise typer.Exit(1)
+
+    if expected_params_hash is None:
+        error_msg = format_error_for_comment(
+            message=(
+                "Saved plan cache identity was not found. Terraform Branch Deploy "
+                "cannot verify which plan parameters were restored."
+            ),
+            suggestion=f"Create a fresh plan by running `.plan to {environment}`",
+        )
+        set_github_output("failure_reason", error_msg)
+        raise typer.Exit(1)
+
+    if metadata.params_hash != expected_params_hash:
+        error_msg = format_error_for_comment(
+            message=(
+                "Saved plan parameter mismatch: the restored cache key identifies "
+                f"params hash `{expected_params_hash}`, but the plan metadata records "
+                f"`{metadata.params_hash}`."
             ),
             suggestion=f"Create a fresh plan by running `.plan to {environment}`",
         )

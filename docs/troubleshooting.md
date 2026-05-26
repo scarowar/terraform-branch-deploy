@@ -84,6 +84,24 @@ Fix:
 
 If new commits were pushed after planning, run the plan again. Plans are tied to the commit SHA. If you create another successful plan for the same commit and environment, apply uses that newer plan.
 
+## Saved Plan Parameter Mismatch
+
+This means the restored cache entry and saved plan metadata do not describe the same plan arguments.
+
+Fix:
+
+```text
+.plan to dev
+.apply to dev
+```
+
+If you planned with extra arguments, run that plan again and then apply normally:
+
+```text
+.plan to dev | -target=module.database
+.apply to dev
+```
+
 ## Targeted Plan Was Not Applied
 
 Use the same simple apply command after a targeted plan:

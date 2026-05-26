@@ -76,11 +76,11 @@ Terraform Branch Deploy handles the Terraform execution path after Branch Deploy
 | Normal apply | `.apply to <env>` requires the latest successful saved plan file for the environment and commit SHA. |
 | Cache miss behavior | If the saved plan is not restored, apply fails instead of running an untargeted apply. |
 | Saved plan consistency | New plans include metadata with environment, commit SHA, checksum, Terraform version, extra arguments, params hash, and creation time. |
-| Metadata verification | Apply requires valid metadata. Re-plan to replace older cached plans without metadata. |
+| Metadata verification | Apply requires valid metadata, a matching cache-key params hash, and a valid checksum. Re-plan to replace older cached plans without metadata. |
 | Targeted plans | Extra plan arguments are captured in the saved plan; apply uses that saved plan. |
 | Rollback | `.apply main to <env>` is a separate stable branch apply path and does not use a PR plan. |
 
-Saved plan files and metadata are restored from GitHub Actions cache. The metadata check helps catch mismatches between the restored plan and the current command context; it is not an independent tamper-proof artifact store.
+Saved plan files and metadata are restored from GitHub Actions cache. The cache key includes the saved plan params hash, and apply refuses a restored plan if the key and metadata disagree. The cache is not an independent tamper-proof artifact store.
 
 ## Plan Before Apply
 
@@ -106,7 +106,7 @@ Targeted plans follow the same rule:
 
 The apply restores the saved targeted plan. It does not create a fresh plan.
 
-PR comment `-var-file` values must stay inside the environment working directory. Use relative paths and do not use absolute paths or `..` traversal.
+PR comment `-var-file` values must stay inside the environment working directory after path and symlink resolution. Use relative paths and do not use absolute paths or `..` traversal.
 
 ![Targeted Terraform plan warning in GitHub](assets/images/workflow/06-targeted-plan-warning.png)
 
