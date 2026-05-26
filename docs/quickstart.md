@@ -4,6 +4,8 @@ This guide creates a pull-request driven Terraform workflow with one non-product
 
 The workflow uses Branch Deploy for pull request commands, permissions, checks, deployments, and locks. Terraform Branch Deploy runs Terraform after Branch Deploy accepts a command.
 
+In the workflow examples, replace `<terraform-branch-deploy-ref>` with the exact release tag or full commit SHA you reviewed. Use the moving `v0` tag only when you intentionally want the latest v0 release line.
+
 ## Prerequisites
 
 - A GitHub repository with Terraform code.
@@ -60,7 +62,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: scarowar/terraform-branch-deploy@v0
+      - uses: scarowar/terraform-branch-deploy@<terraform-branch-deploy-ref>
         with:
           mode: trigger
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -75,7 +77,7 @@ jobs:
 
       # Add cloud credentials here.
 
-      - uses: scarowar/terraform-branch-deploy@v0
+      - uses: scarowar/terraform-branch-deploy@<terraform-branch-deploy-ref>
         if: env.TF_BD_CONTINUE == 'true'
         with:
           mode: execute

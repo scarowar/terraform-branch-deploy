@@ -14,6 +14,7 @@ jobs:
   parse:
     if: github.event.issue.pull_request
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       run: ${{ steps.command.outputs.run }}
       stage: ${{ steps.command.outputs.stage }}
@@ -51,6 +52,7 @@ jobs:
     needs: parse
     if: needs.parse.outputs.run == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read

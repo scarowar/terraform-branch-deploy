@@ -11,7 +11,18 @@ WORKFLOW_FILES = sorted((REPO_ROOT / ".github" / "workflows").glob("*.yml"))
 ACTION_FILES = [REPO_ROOT / "action.yml"]
 PRE_COMMIT_CONFIG = REPO_ROOT / ".pre-commit-config.yaml"
 E2E_DISPATCH_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "e2e-dispatch.yml"
+CODEOWNERS = REPO_ROOT / ".github" / "CODEOWNERS"
 ACTION_REF_RE = re.compile(r"@[0-9a-f]{40}$")
+PR_COST_CONTROL_WORKFLOWS = {
+    "ci.yml",
+    "codeql.yml",
+    "dependency-review.yml",
+    "security.yml",
+    "sonarqube.yml",
+}
+PR_CONCURRENCY_GROUP = (
+    "${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
+)
 
 
 def _uses_references(path: Path) -> list[tuple[int, str]]:
@@ -26,6 +37,10 @@ def _uses_references(path: Path) -> list[tuple[int, str]]:
     return refs
 
 
+def _load_workflow(name: str) -> dict:
+    return yaml.safe_load((REPO_ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8"))
+
+
 def test_privileged_pull_request_target_is_not_used() -> None:
     """IssueOps deployments must not use the privileged pull_request_target trigger."""
     for path in WORKFLOW_FILES:
@@ -38,6 +53,13 @@ def test_repository_workflows_do_not_grant_broad_write_permissions() -> None:
         text = path.read_text(encoding="utf-8")
         assert "write-all" not in text, path
         assert "contents: write" not in text, path
+
+
+def test_repository_has_codeowners_for_review_routing() -> None:
+    """CODEOWNERS gives branch rulesets a maintainer ownership hook."""
+    owners = CODEOWNERS.read_text(encoding="utf-8")
+
+    assert "* @scarowar" in owners
 
 
 def test_actions_are_pinned_to_full_commit_sha() -> None:
@@ -66,6 +88,69 @@ def test_jobs_start_with_step_security_harden_runner() -> None:
             assert first_step_uses.startswith("step-security/harden-runner@"), (
                 f"{path}:{job_name} does not start with Harden-Runner"
             )
+
+
+def test_workflows_have_bounded_runtime() -> None:
+    """Every job should have a timeout so a stuck runner cannot burn budget."""
+    for path in WORKFLOW_FILES:
+        workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for job_name, job in workflow.get("jobs", {}).items():
+            timeout = job.get("timeout-minutes")
+            assert timeout, f"{path}:{job_name} is missing timeout-minutes"
+            assert timeout <= 25, f"{path}:{job_name} timeout is too high"
+
+
+def test_pull_request_workflows_cancel_superseded_runs() -> None:
+    """New commits should cancel stale PR runs instead of running duplicate checks."""
+    for workflow_name in PR_COST_CONTROL_WORKFLOWS:
+        workflow = _load_workflow(workflow_name)
+        concurrency = workflow["concurrency"]
+
+        assert concurrency["group"] == PR_CONCURRENCY_GROUP
+        assert concurrency["cancel-in-progress"] is True
+
+
+def test_ci_lint_keeps_fast_quality_gates() -> None:
+    """CI lint should avoid duplicating heavyweight pre-commit security hooks."""
+    workflow = _load_workflow("ci.yml")
+    steps = workflow["jobs"]["lint"]["steps"]
+    run_commands = "\n".join(step.get("run", "") for step in steps)
+
+    assert "uv run pre-commit run --all-files" not in run_commands
+    assert "uv run ruff check ." in run_commands
+    assert "uv run ruff format --check ." in run_commands
+    assert "uv run mypy --ignore-missing-imports src tests" in run_commands
+    assert "uv run zensical build --strict --clean" in run_commands
+
+
+def test_low_signal_bot_prs_skip_expensive_duplicate_checks() -> None:
+    """Automation-only PRs should not run scanners that do not add signal."""
+    codeql = _load_workflow("codeql.yml")
+    dependency_review = _load_workflow("dependency-review.yml")
+    security = _load_workflow("security.yml")
+    sonarqube = _load_workflow("sonarqube.yml")
+
+    assert "github.actor != 'dependabot[bot]'" in codeql["jobs"]["analyze"]["if"]
+    assert "github.actor != 'pre-commit-ci[bot]'" in codeql["jobs"]["analyze"]["if"]
+    assert dependency_review["jobs"]["dependency-review"]["if"] == (
+        "github.actor != 'pre-commit-ci[bot]'"
+    )
+    assert (
+        "github.actor != 'pre-commit-ci[bot]'" in security["jobs"]["deterministic-security"]["if"]
+    )
+    assert "github.actor != 'dependabot[bot]'" in sonarqube["jobs"]["sonar"]["if"]
+    assert "github.actor != 'pre-commit-ci[bot]'" in sonarqube["jobs"]["sonar"]["if"]
+
+
+def test_docs_deploy_runs_only_when_docs_surface_changes() -> None:
+    """The Pages deploy should not run on code-only pushes to main."""
+    workflow = _load_workflow("docs.yml")
+    paths = workflow[True]["push"]["paths"]
+
+    assert ".github/workflows/docs.yml" in paths
+    assert "docs/**" in paths
+    assert "tf-branch-deploy.schema.json" in paths
+    assert "zensical.toml" in paths
 
 
 def test_pre_commit_ci_is_configured_for_cloud_hygiene() -> None:
@@ -131,6 +216,7 @@ def test_sonarqube_workflow_reports_python_coverage() -> None:
     assert "workflow_dispatch" in workflow[True]
     assert "pull_request_target" not in workflow[True]
     assert "github.actor != 'dependabot[bot]'" in job_condition
+    assert "github.actor != 'pre-commit-ci[bot]'" in job_condition
     assert "github.event.pull_request.head.repo.full_name == github.repository" in job_condition
     assert "uv sync --frozen --all-groups" in run_commands
     assert "--cov=src/tf_branch_deploy" in run_commands

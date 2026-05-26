@@ -117,13 +117,13 @@ Environment names are case-sensitive. `.plan to Dev` and `.plan to dev` are diff
 The default config path is `.tf-branch-deploy.yml`. If your file lives elsewhere, set `config-path` on both action calls:
 
 ```yaml
-- uses: scarowar/terraform-branch-deploy@v0
+- uses: scarowar/terraform-branch-deploy@<terraform-branch-deploy-ref>
   with:
     mode: trigger
     github-token: ${{ secrets.GITHUB_TOKEN }}
     config-path: terraform/.tf-branch-deploy.yml
 
-- uses: scarowar/terraform-branch-deploy@v0
+- uses: scarowar/terraform-branch-deploy@<terraform-branch-deploy-ref>
   if: env.TF_BD_CONTINUE == 'true'
   with:
     mode: execute
@@ -202,7 +202,7 @@ Read the execute-mode logs. Most Terraform failures are normal Terraform problem
 Use `dry-run: true` to print commands without executing Terraform:
 
 ```yaml
-- uses: scarowar/terraform-branch-deploy@v0
+- uses: scarowar/terraform-branch-deploy@<terraform-branch-deploy-ref>
   with:
     mode: execute
     github-token: ${{ secrets.GITHUB_TOKEN }}

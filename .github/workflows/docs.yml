@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - main
+    paths:
+      - ".github/workflows/docs.yml"
+      - "docs/**"
+      - "pyproject.toml"
+      - "tf-branch-deploy.schema.json"
+      - "uv.lock"
+      - "zensical.toml"
   workflow_dispatch:
 
 concurrency:
@@ -16,6 +23,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -43,6 +51,9 @@ jobs:
       - name: Build documentation
         run: uv run zensical build --strict --clean
 
+      - name: Publish JSON schema
+        run: cp tf-branch-deploy.schema.json site/schema.json
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
@@ -51,6 +62,7 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

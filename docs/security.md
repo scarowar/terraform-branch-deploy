@@ -43,7 +43,7 @@ Do not bypass the state exported by trigger mode. Later steps should use `TF_BD_
 Recommended production-oriented defaults:
 
 ```yaml
-- uses: scarowar/terraform-branch-deploy@v0
+- uses: scarowar/terraform-branch-deploy@<terraform-branch-deploy-ref>
   with:
     mode: trigger
     github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -169,9 +169,7 @@ and lifecycle cleanup. Terraform subprocesses do not receive that token as
 If Terraform itself needs to call the GitHub API, provide a separate,
 least-privileged credential only after trigger mode has accepted the command.
 
-For production workflows, pin third-party actions such as `actions/checkout` and cloud authentication actions by full commit SHA. The examples in these docs use version tags for readability.
-
-Terraform Branch Deploy examples use `scarowar/terraform-branch-deploy@v0` so they follow the latest v0 release. For a stricter supply-chain posture, replace the tag with the full commit SHA for the release you reviewed.
+For production workflows, pin third-party actions such as `actions/checkout` and cloud authentication actions by full commit SHA. For Terraform Branch Deploy itself, use the exact release tag or full commit SHA you reviewed. Use the moving `v0` tag only when you intentionally want automatic updates within the v0 release line.
 
 ## Branch and Fork Settings
 

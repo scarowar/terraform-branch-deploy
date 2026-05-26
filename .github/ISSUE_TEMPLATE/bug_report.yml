@@ -44,7 +44,7 @@ body:
     attributes:
       label: "Action version"
       description: "Which terraform-branch-deploy tag or commit SHA are you using?"
-      placeholder: "v0 or a full commit SHA"
+      placeholder: "v0.2.0 or a full commit SHA"
     validations:
       required: false
   - type: textarea
@@ -59,7 +59,7 @@ body:
           deploy:
             runs-on: ubuntu-latest
             steps:
-              - uses: scarowar/terraform-branch-deploy@v0
+              - uses: scarowar/terraform-branch-deploy@<terraform-branch-deploy-ref>
                 with:
                   mode: trigger
                   github-token: ${{ secrets.GITHUB_TOKEN }}
