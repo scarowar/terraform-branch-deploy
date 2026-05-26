@@ -16,9 +16,9 @@ Do not release if action inputs, outputs, commands, or docs are out of sync.
 
 ## Version References
 
-- Public docs should keep `scarowar/terraform-branch-deploy@v0` unless a page is intentionally showing an exact release.
+- Public docs should use `scarowar/terraform-branch-deploy@<terraform-branch-deploy-ref>` in reusable examples and explain that users must choose a reviewed release tag, full commit SHA, or intentionally moving major tag.
 - For release validation, use the exact candidate SHA or release tag in the external E2E repository.
-- If the public docs version policy changes, update `docs/includes/version.txt`, run `scripts/update-version.sh`, and review the resulting diff before committing.
+- Do not use floating `main` for release validation or production examples.
 
 ## Security Gates
 
@@ -31,6 +31,7 @@ Before tagging:
 - Review SonarQube Cloud findings.
 - Resolve every open finding, regardless of severity, or record a narrow false-positive decision.
 - Confirm the stable branch is protected by branch protection or a repository ruleset.
+- Confirm CODEOWNERS is active for maintainer-owned workflow and action changes.
 - Confirm required checks include CI, Security, CodeQL, SonarQube, Dependency Review, docs build, and an external E2E run for action runtime changes.
 
 Scanner policy must not be relaxed for a release.

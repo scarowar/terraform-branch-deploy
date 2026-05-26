@@ -121,7 +121,7 @@ Terraform Branch Deploy maps Terraform operations onto Branch Deploy command typ
 The command triggers can be renamed with action inputs:
 
 ```yaml
-- uses: scarowar/terraform-branch-deploy@v0
+- uses: scarowar/terraform-branch-deploy@<terraform-branch-deploy-ref>
   with:
     mode: trigger
     github-token: ${{ secrets.GITHUB_TOKEN }}

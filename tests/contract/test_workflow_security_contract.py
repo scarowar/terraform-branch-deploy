@@ -11,6 +11,7 @@ WORKFLOW_FILES = sorted((REPO_ROOT / ".github" / "workflows").glob("*.yml"))
 ACTION_FILES = [REPO_ROOT / "action.yml"]
 PRE_COMMIT_CONFIG = REPO_ROOT / ".pre-commit-config.yaml"
 E2E_DISPATCH_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "e2e-dispatch.yml"
+CODEOWNERS = REPO_ROOT / ".github" / "CODEOWNERS"
 ACTION_REF_RE = re.compile(r"@[0-9a-f]{40}$")
 
 
@@ -38,6 +39,13 @@ def test_repository_workflows_do_not_grant_broad_write_permissions() -> None:
         text = path.read_text(encoding="utf-8")
         assert "write-all" not in text, path
         assert "contents: write" not in text, path
+
+
+def test_repository_has_codeowners_for_review_routing() -> None:
+    """CODEOWNERS gives branch rulesets a maintainer ownership hook."""
+    owners = CODEOWNERS.read_text(encoding="utf-8")
+
+    assert "* @scarowar" in owners
 
 
 def test_actions_are_pinned_to_full_commit_sha() -> None:

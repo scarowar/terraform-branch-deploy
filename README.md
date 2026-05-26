@@ -126,6 +126,7 @@ target-only undo operation.
 | Resource | Use it for |
 | --- | --- |
 | [Quickstart](https://scarowar.github.io/terraform-branch-deploy/quickstart/) | First working workflow. |
+| [Upgrading](https://scarowar.github.io/terraform-branch-deploy/upgrading/) | Changes to review before moving between releases. |
 | [How It Works](https://scarowar.github.io/terraform-branch-deploy/concepts/modes/) | How the two action modes fit in one job. |
 | [Configuration](https://scarowar.github.io/terraform-branch-deploy/configuration/) | Environment and Terraform settings. |
 | [Commands](https://scarowar.github.io/terraform-branch-deploy/reference/commands/) | PR comment command reference. |

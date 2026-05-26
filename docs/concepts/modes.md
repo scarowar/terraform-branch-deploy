@@ -35,7 +35,7 @@ flowchart TD
 Use trigger mode before checkout of the target ref and before cloud credentials:
 
 ```yaml
-- uses: scarowar/terraform-branch-deploy@v0
+- uses: scarowar/terraform-branch-deploy@<terraform-branch-deploy-ref>
   with:
     mode: trigger
     github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -64,7 +64,7 @@ See [Environment Variables](../reference/environment-vars.md) for the complete l
 Use execute mode after checking out `TF_BD_REF` and configuring credentials:
 
 ```yaml
-- uses: scarowar/terraform-branch-deploy@v0
+- uses: scarowar/terraform-branch-deploy@<terraform-branch-deploy-ref>
   if: env.TF_BD_CONTINUE == 'true'
   with:
     mode: execute
@@ -85,7 +85,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: scarowar/terraform-branch-deploy@v0
+      - uses: scarowar/terraform-branch-deploy@<terraform-branch-deploy-ref>
         with:
           mode: trigger
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -104,7 +104,7 @@ jobs:
           role-to-assume: arn:aws:iam::123456789012:role/terraform
           aws-region: us-east-1
 
-      - uses: scarowar/terraform-branch-deploy@v0
+      - uses: scarowar/terraform-branch-deploy@<terraform-branch-deploy-ref>
         if: env.TF_BD_CONTINUE == 'true'
         with:
           mode: execute

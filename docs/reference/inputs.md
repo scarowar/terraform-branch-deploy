@@ -98,10 +98,12 @@ Terraform Branch Deploy exposes the Branch Deploy inputs listed above. Other Bra
 
 Forked pull request execution and Branch Deploy's alternate merge workflows are not enabled by this action.
 
+If you are upgrading from v0.1.0 or an older pinned commit, see [Upgrading](../upgrading.md) before changing workflow inputs.
+
 ## Minimal Example
 
 ```yaml
-- uses: scarowar/terraform-branch-deploy@v0
+- uses: scarowar/terraform-branch-deploy@<terraform-branch-deploy-ref>
   with:
     mode: trigger
     github-token: ${{ secrets.GITHUB_TOKEN }}
