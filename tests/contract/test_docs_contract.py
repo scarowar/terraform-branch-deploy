@@ -104,3 +104,27 @@ def test_release_docs_match_action_ref_policy() -> None:
     assert "scarowar/terraform-branch-deploy@<terraform-branch-deploy-ref>" in release
     assert "docs/includes/version.txt" not in release
     assert "scripts/update-version.sh" not in release
+
+
+def test_changelog_is_public_release_history() -> None:
+    """The changelog should stay factual and user-facing."""
+    changelog_path = ROOT / "CHANGELOG.md"
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    changelog = changelog_path.read_text(encoding="utf-8")
+    lowered = changelog.lower()
+
+    assert changelog_path.exists()
+    assert "[Changelog](CHANGELOG.md)" in readme
+    assert "## [0.2.0]" in changelog
+    assert "## [0.1.0]" in changelog
+    for phrase in [
+        "conversation",
+        "agent",
+        "200%",
+        "ai-generated",
+        "we haven't",
+        "for now",
+        "future work",
+        "deferred",
+    ]:
+        assert phrase not in lowered

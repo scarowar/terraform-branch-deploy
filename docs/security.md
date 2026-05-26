@@ -73,7 +73,7 @@ Terraform Branch Deploy handles the Terraform execution path after Branch Deploy
 | Area | Control |
 | --- | --- |
 | Environment scope | Execute mode validates the requested environment against `.tf-branch-deploy.yml`. |
-| Normal apply | `.apply to <env>` requires a saved plan file for the environment and commit SHA. |
+| Normal apply | `.apply to <env>` requires the latest successful saved plan file for the environment and commit SHA. |
 | Cache miss behavior | If the saved plan is not restored, apply fails instead of running an untargeted apply. |
 | Saved plan consistency | New plans include metadata with environment, commit SHA, checksum, Terraform version, extra arguments, params hash, and creation time. |
 | Metadata verification | Apply requires valid metadata. Re-plan to replace older cached plans without metadata. |
@@ -91,7 +91,7 @@ Normal apply should be:
 .apply to prod
 ```
 
-The saved plan is tied to the environment and commit SHA. If new commits are pushed, run the plan again.
+The saved plan is tied to the environment and commit SHA. If new commits are pushed, run the plan again. If you run another successful plan for the same environment and commit, that newer saved plan supersedes the older one.
 
 !!! warning "Do not use apply as a second plan"
 
@@ -105,6 +105,8 @@ Targeted plans follow the same rule:
 ```
 
 The apply restores the saved targeted plan. It does not create a fresh plan.
+
+PR comment `-var-file` values must stay inside the environment working directory. Use relative paths and do not use absolute paths or `..` traversal.
 
 ![Targeted Terraform plan warning in GitHub](assets/images/workflow/06-targeted-plan-warning.png)
 

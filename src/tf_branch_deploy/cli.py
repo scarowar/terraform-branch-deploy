@@ -16,7 +16,7 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum
 from importlib.metadata import PackageNotFoundError, version
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING, Annotated
 
 if TYPE_CHECKING:
@@ -246,6 +246,28 @@ def _separate_value_for_arg(
     return None
 
 
+def _validate_pr_var_file_path(value: str) -> None:
+    """Restrict PR-supplied var files to paths inside the Terraform root."""
+    path = value.strip()
+    if not path:
+        _fail_arg_validation("Missing value for PR comment arg: -var-file")
+
+    if path == "~" or path.startswith("~/") or path.startswith("~\\"):
+        _fail_arg_validation("Unsupported PR comment -var-file path outside working directory")
+
+    if PurePosixPath(path).is_absolute() or PureWindowsPath(path).is_absolute():
+        _fail_arg_validation("Unsupported PR comment -var-file absolute path")
+
+    if ".." in PurePosixPath(path).parts or ".." in PureWindowsPath(path).parts:
+        _fail_arg_validation("Unsupported PR comment -var-file path traversal")
+
+
+def _validate_arg_value(flag: str, value: str, source: str) -> None:
+    """Validate a Terraform argument value when the flag needs value checks."""
+    if source == "PR comment" and flag == "-var-file":
+        _validate_pr_var_file_path(value)
+
+
 def _validate_args_allowed(
     args: list[str],
     allowed_flags: frozenset[str],
@@ -261,8 +283,11 @@ def _validate_args_allowed(
         _validate_arg_flag(flag, allowed_flags, source)
         validated.append(arg)
 
-        if not _arg_has_inline_value(arg):
+        if _arg_has_inline_value(arg):
+            _validate_arg_value(flag, arg.split("=", 1)[1], source)
+        else:
             if value := _separate_value_for_arg(args, i, flag, source):
+                _validate_arg_value(flag, value, source)
                 validated.append(value)
                 i += 1
 
@@ -892,6 +917,7 @@ def _apply_with_plan(
             "[dim]📝 Plan was created with args: "
             f"{_redact_args_for_display(metadata.extra_args)}[/dim]"
         )
+    console.print(f"[dim]📝 Plan params hash: {metadata.params_hash}[/dim]")
     console.print(f"[dim]📝 Plan created at: {metadata.created_at}[/dim]")
 
     # Pass only the filename to the executor — not the full path.

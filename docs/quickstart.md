@@ -147,7 +147,7 @@ If new commits are pushed after planning, run `.plan to dev` again before applyi
 
 !!! warning "Apply the saved plan"
 
-    Normal apply uses the saved plan for the same environment and commit. It must not run a fresh untargeted Terraform apply.
+    Normal apply uses the latest successful saved plan for the same environment and commit. It must not run a fresh untargeted Terraform apply.
 
 After apply completes, the result is posted back to the pull request:
 
@@ -166,6 +166,9 @@ The matching apply command stays the same:
 ```
 
 The saved targeted plan is restored and applied. Terraform Branch Deploy rejects extra Terraform arguments on apply.
+
+If you run another successful plan for the same environment and commit, that
+newer plan is the one a later apply uses.
 
 ## 5. Roll Back
 

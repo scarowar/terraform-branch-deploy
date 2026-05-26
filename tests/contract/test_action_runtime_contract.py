@@ -15,6 +15,13 @@ def action() -> dict[str, Any]:
         return yaml.safe_load(f)
 
 
+@pytest.fixture
+def action_text() -> str:
+    """Load action.yml as text so comments remain testable."""
+    action_path = Path(__file__).parent.parent.parent / "action.yml"
+    return action_path.read_text(encoding="utf-8")
+
+
 def step_by_name(action: dict[str, Any], name: str) -> dict[str, Any]:
     """Return an action step by name."""
     for step in action["runs"]["steps"]:
@@ -192,12 +199,13 @@ class TestCompositeRuntimeContract:
         assert 'export PATH="${TFBD_TOOL_DIR}:${PATH}"' in execute_step["run"]
 
     def test_execute_mode_cache_restore_and_save_are_environment_and_sha_scoped(
-        self, action: dict[str, Any]
+        self, action: dict[str, Any], action_text: str
     ) -> None:
         """A plan from another environment or SHA must not be restored."""
         restore_step = step_by_name(action, "[Execute] Restore Cached Plan")
         save_step = step_by_name(action, "[Execute] Cache Plan File")
 
+        assert "latest successful plan" in action_text
         assert restore_step["uses"].startswith("actions/cache/restore@")
         assert restore_step["if"] == "inputs.mode == 'execute' && env.TF_BD_OPERATION == 'apply'"
         restore_paths = restore_step["with"]["path"].splitlines()

@@ -610,8 +610,9 @@ runs:
         echo "✅ State validated: ${TF_BD_ENVIRONMENT} / ${TF_BD_OPERATION}"
 
     # Restore cached plan for apply operations.
-    # Uses prefix matching via restore-keys to find the most recent plan
-    # for this environment and commit. Each plan run has a unique key
+    # Uses prefix matching via restore-keys to find the latest successful plan
+    # for this environment and commit. A newer successful plan supersedes older
+    # plans for the same environment and commit. Each plan run has a unique key
     # (run_id + run_attempt), preventing cache collision when re-planning.
     #
     # ACCEPTED RISK: actions/cache is evictable (10GB repo limit) and

@@ -39,6 +39,7 @@ def _save_plan_metadata(
     var_files: list[str] | None = None,
     terraform_version: str = "1.9.8",
     checksum: str | None = None,
+    params_hash: str = "no-args",
 ) -> None:
     """Create valid v0.2 plan metadata for apply tests."""
     from tf_branch_deploy.artifacts import PlanMetadata, calculate_checksum, save_plan_metadata
@@ -53,7 +54,7 @@ def _save_plan_metadata(
             plan_args=plan_args or [],
             var_files=var_files or [],
             terraform_version=terraform_version,
-            params_hash="no-args",
+            params_hash=params_hash,
             created_at="2025-01-15T10:00:00+00:00",
         ),
     )
@@ -148,6 +149,34 @@ class TestValidateExtraArgs:
         args = ["-var=key=value"]
         assert _validate_extra_args(args) == args
 
+    def test_var_file_relative_path_allowed(self) -> None:
+        """PR comment -var-file accepts relative paths inside the Terraform root."""
+        args = ["-var-file=env/dev.tfvars", "-var-file", "./shared.tfvars"]
+        assert _validate_extra_args(args) == args
+
+    @pytest.mark.parametrize(
+        "arg",
+        [
+            "-var-file=/etc/passwd",
+            r"-var-file=C:\secret.tfvars",
+            r"-var-file=\\server\share\secret.tfvars",
+            "-var-file=../secret.tfvars",
+            "-var-file=env/../../secret.tfvars",
+            "-var-file=~/secret.tfvars",
+            "-var-file=",
+        ],
+    )
+    def test_var_file_unsafe_paths_blocked(self, arg: str) -> None:
+        """PR comment -var-file must not read outside the working directory."""
+        with pytest.raises(typer.Exit):
+            _validate_extra_args([arg])
+
+    @pytest.mark.parametrize("path", ["/etc/passwd", "../secret.tfvars", "env\\..\\secret.tfvars"])
+    def test_var_file_unsafe_split_paths_blocked(self, path: str) -> None:
+        """Split -var-file values get the same path validation as inline values."""
+        with pytest.raises(typer.Exit):
+            _validate_extra_args(["-var-file", path])
+
     def test_split_value_flags_allowed(self) -> None:
         """Common Terraform flag value forms should match Terraform CLI behavior."""
         args = ["-var", "key=value", "-target", "module.database"]
@@ -227,6 +256,10 @@ class TestValidateConfigArgs:
     def test_apply_args_reject_replace(self) -> None:
         with pytest.raises(typer.Exit):
             _validate_config_args([], ["-replace=aws_instance.app"])
+
+    def test_config_args_do_not_use_pr_var_file_path_policy(self) -> None:
+        """Trusted repo config may still use shared var files outside an env dir."""
+        _validate_config_args(["-var-file=../shared/common.tfvars"], [])
 
     def test_apply_args_accept_split_var(self) -> None:
         _validate_config_args([], ["-var", "key=value"])
@@ -788,6 +821,35 @@ class TestApplyWithPlanIntegrity:
 
         # apply() must be called with just the filename (executor resolves from working_dir)
         mock_executor.apply.assert_called_once_with(plan_file=Path(plan_file.name))
+
+    def test_apply_surfaces_saved_plan_args_and_hash(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Apply should show the saved plan identity before using it."""
+        from unittest.mock import MagicMock, patch
+
+        plan_file = tmp_path / "tfplan-int-abc12345.tfplan"
+        plan_file.write_bytes(b"valid plan content")
+        _save_plan_metadata(
+            plan_file,
+            extra_args=["-target=module.base"],
+            plan_args=["-target=module.base"],
+            params_hash="a1b2c3d4",
+        )
+
+        mock_executor = MagicMock()
+        mock_executor.apply.return_value = MagicMock(success=True)
+        mock_executor.version.return_value = "1.9.8"
+
+        with patch.dict("os.environ", {}, clear=False):
+            _apply_with_plan(mock_executor, plan_file, "int", "abc12345ff")
+
+        output = capsys.readouterr().out
+        assert "Plan was created with args:" in output
+        assert "-target=module.base" in output
+        assert "Plan params hash: a1b2c3d4" in output
 
     def test_checksum_mismatch_aborts(self, tmp_path: Path) -> None:
         """Checksum mismatch from metadata sidecar aborts with exit code 1."""
