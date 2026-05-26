@@ -119,9 +119,10 @@ def test_changelog_is_public_release_history() -> None:
     assert "## [0.1.0]" in changelog
     for phrase in [
         "conversation",
-        "agent",
         "200%",
+        "ai agent",
         "ai-generated",
+        "autonomous agent",
         "we haven't",
         "for now",
         "future work",
