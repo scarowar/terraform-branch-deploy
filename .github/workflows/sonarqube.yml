@@ -10,15 +10,21 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   sonar:
     if: >
       github.event_name != 'pull_request' ||
       (
         github.actor != 'dependabot[bot]' &&
+        github.actor != 'pre-commit-ci[bot]' &&
         github.event.pull_request.head.repo.full_name == github.repository
       )
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:

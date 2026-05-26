@@ -39,6 +39,10 @@ These outputs are available from the execute-mode step.
 
 ## Example
 
+!!! note "Action reference"
+
+    Replace `<terraform-branch-deploy-ref>` with the exact release tag or full commit SHA you reviewed. See [Quickstart](../quickstart.md) for the recommended workflow shape.
+
 ```yaml
 - uses: scarowar/terraform-branch-deploy@<terraform-branch-deploy-ref>
   id: trigger

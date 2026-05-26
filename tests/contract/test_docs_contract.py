@@ -85,6 +85,17 @@ def test_docs_do_not_force_moving_major_action_ref() -> None:
     assert "exact release tag or full commit SHA" in markdown
 
 
+def test_reference_examples_explain_action_ref_placeholder() -> None:
+    """Reference examples should be clear when users land on them directly."""
+    commands = (ROOT / "docs" / "reference" / "commands.md").read_text(encoding="utf-8")
+    outputs = (ROOT / "docs" / "reference" / "outputs.md").read_text(encoding="utf-8")
+
+    for page in [commands, outputs]:
+        assert "scarowar/terraform-branch-deploy@<terraform-branch-deploy-ref>" in page
+        assert "Replace `<terraform-branch-deploy-ref>`" in page
+        assert "exact release tag or full commit SHA" in page
+
+
 def test_release_docs_match_action_ref_policy() -> None:
     """Release instructions must match the public docs action-ref policy."""
     release = (ROOT / "RELEASE.md").read_text(encoding="utf-8")

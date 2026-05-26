@@ -120,6 +120,10 @@ Terraform Branch Deploy maps Terraform operations onto Branch Deploy command typ
 
 The command triggers can be renamed with action inputs:
 
+!!! tip "Action reference"
+
+    Replace `<terraform-branch-deploy-ref>` with the exact release tag or full commit SHA you reviewed. See [Quickstart](../quickstart.md#2-add-the-workflow) for workflow pinning guidance.
+
 ```yaml
 - uses: scarowar/terraform-branch-deploy@<terraform-branch-deploy-ref>
   with:
