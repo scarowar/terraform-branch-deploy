@@ -14,10 +14,11 @@ from tf_branch_deploy.cli import (
     BLOCKED_EXTRA_ARG_FLAGS,
     DEFAULT_CONFIG_PATH,
     _ArgTokenizer,
-    _handle_plan,
     _apply_with_plan,
     _handle_apply,
+    _handle_plan,
     _load_and_validate_config,
+    _params_hash_from_cache_key,
     _parse_extra_args,
     _strip_shell_quotes,
     _validate_config_args,
@@ -39,6 +40,7 @@ def _save_plan_metadata(
     var_files: list[str] | None = None,
     terraform_version: str = "1.9.8",
     checksum: str | None = None,
+    params_hash: str = "no-args",
 ) -> None:
     """Create valid v0.2 plan metadata for apply tests."""
     from tf_branch_deploy.artifacts import PlanMetadata, calculate_checksum, save_plan_metadata
@@ -53,7 +55,7 @@ def _save_plan_metadata(
             plan_args=plan_args or [],
             var_files=var_files or [],
             terraform_version=terraform_version,
-            params_hash="no-args",
+            params_hash=params_hash,
             created_at="2025-01-15T10:00:00+00:00",
         ),
     )
@@ -148,6 +150,79 @@ class TestValidateExtraArgs:
         args = ["-var=key=value"]
         assert _validate_extra_args(args) == args
 
+    def test_var_file_relative_path_allowed(self) -> None:
+        """PR comment -var-file accepts relative paths inside the Terraform root."""
+        args = ["-var-file=env/dev.tfvars", "-var-file", "./shared.tfvars"]
+        assert _validate_extra_args(args) == args
+
+    def test_var_file_missing_relative_path_inside_working_dir_allowed(
+        self, tmp_path: Path
+    ) -> None:
+        """A repo-local var file path does not have to exist before Terraform reads it."""
+        working_dir = tmp_path / "terraform"
+        working_dir.mkdir()
+
+        args = ["-var-file=env/dev.tfvars"]
+
+        assert _validate_extra_args(args, working_dir) == args
+
+    def test_var_file_symlink_directory_escape_blocked(self, tmp_path: Path) -> None:
+        """PR comment -var-file must not escape through a symlinked directory."""
+        working_dir = tmp_path / "terraform"
+        outside_dir = tmp_path / "outside"
+        working_dir.mkdir()
+        outside_dir.mkdir()
+
+        symlink_dir = working_dir / "linked"
+        try:
+            symlink_dir.symlink_to(outside_dir, target_is_directory=True)
+        except OSError:
+            pytest.skip("symlinks are not supported on this filesystem")
+
+        with pytest.raises(typer.Exit):
+            _validate_extra_args(["-var-file=linked/secret.tfvars"], working_dir)
+
+    def test_var_file_symlink_file_escape_blocked(self, tmp_path: Path) -> None:
+        """PR comment -var-file must not escape through a symlinked file."""
+        working_dir = tmp_path / "terraform"
+        outside_dir = tmp_path / "outside"
+        working_dir.mkdir()
+        outside_dir.mkdir()
+        outside_file = outside_dir / "secret.tfvars"
+        outside_file.write_text('token = "secret"\n', encoding="utf-8")
+
+        symlink_file = working_dir / "secret.tfvars"
+        try:
+            symlink_file.symlink_to(outside_file)
+        except OSError:
+            pytest.skip("symlinks are not supported on this filesystem")
+
+        with pytest.raises(typer.Exit):
+            _validate_extra_args(["-var-file=secret.tfvars"], working_dir)
+
+    @pytest.mark.parametrize(
+        "arg",
+        [
+            "-var-file=/etc/passwd",
+            r"-var-file=C:\secret.tfvars",
+            r"-var-file=\\server\share\secret.tfvars",
+            "-var-file=../secret.tfvars",
+            "-var-file=env/../../secret.tfvars",
+            "-var-file=~/secret.tfvars",
+            "-var-file=",
+        ],
+    )
+    def test_var_file_unsafe_paths_blocked(self, arg: str) -> None:
+        """PR comment -var-file must not read outside the working directory."""
+        with pytest.raises(typer.Exit):
+            _validate_extra_args([arg])
+
+    @pytest.mark.parametrize("path", ["/etc/passwd", "../secret.tfvars", "env\\..\\secret.tfvars"])
+    def test_var_file_unsafe_split_paths_blocked(self, path: str) -> None:
+        """Split -var-file values get the same path validation as inline values."""
+        with pytest.raises(typer.Exit):
+            _validate_extra_args(["-var-file", path])
+
     def test_split_value_flags_allowed(self) -> None:
         """Common Terraform flag value forms should match Terraform CLI behavior."""
         args = ["-var", "key=value", "-target", "module.database"]
@@ -228,8 +303,36 @@ class TestValidateConfigArgs:
         with pytest.raises(typer.Exit):
             _validate_config_args([], ["-replace=aws_instance.app"])
 
+    def test_config_args_do_not_use_pr_var_file_path_policy(self) -> None:
+        """Trusted repo config may still use shared var files outside an env dir."""
+        _validate_config_args(["-var-file=../shared/common.tfvars"], [])
+
     def test_apply_args_accept_split_var(self) -> None:
         _validate_config_args([], ["-var", "key=value"])
+
+
+class TestPlanCacheKey:
+    """Tests for extracting saved plan identity from actions/cache keys."""
+
+    @pytest.mark.parametrize("params_hash", ["no-args", "a1b2c3d4"])
+    def test_extracts_params_hash_from_valid_key(self, params_hash: str) -> None:
+        cache_key = f"tfplan-int-abc12345ff-{params_hash}-123456789-1"
+
+        assert _params_hash_from_cache_key(cache_key, "int", "abc12345ff") == params_hash
+
+    @pytest.mark.parametrize(
+        "cache_key",
+        [
+            None,
+            "",
+            "tfplan-prod-abc12345ff-no-args-123456789-1",
+            "tfplan-int-different-no-args-123456789-1",
+            "tfplan-int-abc12345ff-123456789-1",
+            "tfplan-int-abc12345ff-not-a-hash-123456789-1",
+        ],
+    )
+    def test_returns_none_for_missing_or_untrusted_key(self, cache_key: str | None) -> None:
+        assert _params_hash_from_cache_key(cache_key, "int", "abc12345ff") is None
 
 
 class TestStripShellQuotes:
@@ -636,6 +739,7 @@ class TestHandleApply:
 
         env_vars = {
             "TF_BD_IS_ROLLBACK": "false",
+            "TF_BD_PLAN_CACHE_KEY": "tfplan-int-abc12345ff-no-args-123-1",
         }
 
         with patch.dict("os.environ", env_vars):
@@ -670,7 +774,13 @@ class TestHandleApply:
         mock_executor.version.return_value = "1.9.8"
 
         with patch.dict("os.environ", {}, clear=False):
-            _apply_with_plan(mock_executor, plan_file, "int", "abc12345ff")
+            _apply_with_plan(
+                mock_executor,
+                plan_file,
+                "int",
+                "abc12345ff",
+                expected_params_hash="no-args",
+            )
 
         call_args = mock_executor.apply.call_args
         plan_arg = call_args.kwargs.get("plan_file")
@@ -700,7 +810,10 @@ class TestHandleApply:
         mock_executor.working_directory = working_dir
         mock_executor.version.return_value = "1.9.8"
 
-        env_vars = {"TF_BD_IS_ROLLBACK": "false"}
+        env_vars = {
+            "TF_BD_IS_ROLLBACK": "false",
+            "TF_BD_PLAN_CACHE_KEY": "tfplan-int-abc12345ff-no-args-123-1",
+        }
 
         with patch.dict("os.environ", env_vars):
             _handle_apply(mock_executor, "int", "abc12345ff", working_dir)
@@ -711,6 +824,31 @@ class TestHandleApply:
         assert str(plan_arg) == "tfplan-int-abc12345.tfplan"
         # Verify it does NOT contain the working_dir prefix
         assert "terraform/modules" not in str(plan_arg)
+
+    def test_handle_apply_rejects_cache_metadata_params_mismatch(self, tmp_path: Path) -> None:
+        """Apply refuses a restored plan when cache key and metadata disagree."""
+        from click.exceptions import Exit as ClickExit
+        from unittest.mock import MagicMock, patch
+
+        working_dir = tmp_path / "terraform"
+        working_dir.mkdir()
+
+        plan_file = working_dir / "tfplan-int-abc12345.tfplan"
+        plan_file.write_bytes(b"valid plan")
+        _save_plan_metadata(plan_file, params_hash="a1b2c3d4")
+
+        mock_executor = MagicMock()
+
+        env_vars = {
+            "TF_BD_IS_ROLLBACK": "false",
+            "TF_BD_PLAN_CACHE_KEY": "tfplan-int-abc12345ff-deadbeef-123-1",
+        }
+
+        with patch.dict("os.environ", env_vars):
+            with pytest.raises(ClickExit):
+                _handle_apply(mock_executor, "int", "abc12345ff", working_dir)
+
+        mock_executor.apply.assert_not_called()
 
     def test_apply_rejects_extra_args(self, tmp_path: Path) -> None:
         """Normal apply must not accept fresh Terraform args from comments."""
@@ -784,10 +922,93 @@ class TestApplyWithPlanIntegrity:
         mock_executor.version.return_value = "1.9.8"
 
         with patch.dict("os.environ", {}, clear=False):
-            _apply_with_plan(mock_executor, plan_file, "int", "abc12345ff")
+            _apply_with_plan(
+                mock_executor,
+                plan_file,
+                "int",
+                "abc12345ff",
+                expected_params_hash="no-args",
+            )
 
         # apply() must be called with just the filename (executor resolves from working_dir)
         mock_executor.apply.assert_called_once_with(plan_file=Path(plan_file.name))
+
+    def test_apply_surfaces_saved_plan_args_and_hash(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Apply should show the saved plan identity before using it."""
+        from unittest.mock import MagicMock, patch
+
+        plan_file = tmp_path / "tfplan-int-abc12345.tfplan"
+        plan_file.write_bytes(b"valid plan content")
+        _save_plan_metadata(
+            plan_file,
+            extra_args=["-target=module.base"],
+            plan_args=["-target=module.base"],
+            params_hash="a1b2c3d4",
+        )
+
+        mock_executor = MagicMock()
+        mock_executor.apply.return_value = MagicMock(success=True)
+        mock_executor.version.return_value = "1.9.8"
+
+        with patch.dict("os.environ", {}, clear=False):
+            _apply_with_plan(
+                mock_executor,
+                plan_file,
+                "int",
+                "abc12345ff",
+                expected_params_hash="a1b2c3d4",
+            )
+
+        output = capsys.readouterr().out
+        assert "Plan was created with args:" in output
+        assert "-target=module.base" in output
+        assert "Plan params hash: a1b2c3d4" in output
+
+    def test_saved_plan_cache_identity_required(self, tmp_path: Path) -> None:
+        """Apply must know which cache key restored the plan before using it."""
+        from unittest.mock import MagicMock, patch
+
+        from click.exceptions import Exit as ClickExit
+
+        plan_file = tmp_path / "tfplan-int-abc12345.tfplan"
+        plan_file.write_bytes(b"valid plan content")
+        _save_plan_metadata(plan_file)
+
+        mock_executor = MagicMock()
+
+        with patch.dict("os.environ", {}, clear=False):
+            with pytest.raises(ClickExit):
+                _apply_with_plan(mock_executor, plan_file, "int", "abc12345ff")
+
+        mock_executor.apply.assert_not_called()
+
+    def test_saved_plan_params_hash_mismatch_aborts(self, tmp_path: Path) -> None:
+        """A restored cache entry cannot apply a plan with different PR args."""
+        from unittest.mock import MagicMock, patch
+
+        from click.exceptions import Exit as ClickExit
+
+        plan_file = tmp_path / "tfplan-int-abc12345.tfplan"
+        plan_file.write_bytes(b"valid plan content")
+        _save_plan_metadata(plan_file, params_hash="a1b2c3d4")
+
+        mock_executor = MagicMock()
+
+        with patch.dict("os.environ", {}, clear=False):
+            with pytest.raises(ClickExit):
+                _apply_with_plan(
+                    mock_executor,
+                    plan_file,
+                    "int",
+                    "abc12345ff",
+                    expected_params_hash="deadbeef",
+                )
+
+        mock_executor.apply.assert_not_called()
 
     def test_checksum_mismatch_aborts(self, tmp_path: Path) -> None:
         """Checksum mismatch from metadata sidecar aborts with exit code 1."""
@@ -808,7 +1029,13 @@ class TestApplyWithPlanIntegrity:
 
         with patch.dict("os.environ", {}, clear=False):
             with pytest.raises(ClickExit):
-                _apply_with_plan(mock_executor, plan_file, "int", "abc12345ff")
+                _apply_with_plan(
+                    mock_executor,
+                    plan_file,
+                    "int",
+                    "abc12345ff",
+                    expected_params_hash="no-args",
+                )
 
         # apply() must NOT be called
         mock_executor.apply.assert_not_called()
@@ -828,7 +1055,13 @@ class TestApplyWithPlanIntegrity:
 
         with patch.dict("os.environ", {}, clear=False):
             with pytest.raises(ClickExit):
-                _apply_with_plan(mock_executor, plan_file, "int", "abc12345ff")
+                _apply_with_plan(
+                    mock_executor,
+                    plan_file,
+                    "int",
+                    "abc12345ff",
+                    expected_params_hash="no-args",
+                )
 
         mock_executor.apply.assert_not_called()
 
@@ -845,7 +1078,13 @@ class TestApplyWithPlanIntegrity:
 
         with patch.dict("os.environ", {"TF_BD_PLAN_CHECKSUM": "legacy"}, clear=False):
             with pytest.raises(ClickExit):
-                _apply_with_plan(mock_executor, plan_file, "int", "abc12345ff")
+                _apply_with_plan(
+                    mock_executor,
+                    plan_file,
+                    "int",
+                    "abc12345ff",
+                    expected_params_hash="no-args",
+                )
 
         mock_executor.apply.assert_not_called()
 
@@ -863,7 +1102,13 @@ class TestApplyWithPlanIntegrity:
 
         with patch.dict("os.environ", {}, clear=False):
             with pytest.raises(ClickExit):
-                _apply_with_plan(mock_executor, plan_file, "int", "abc12345ff")
+                _apply_with_plan(
+                    mock_executor,
+                    plan_file,
+                    "int",
+                    "abc12345ff",
+                    expected_params_hash="no-args",
+                )
 
         mock_executor.apply.assert_not_called()
 
@@ -881,7 +1126,13 @@ class TestApplyWithPlanIntegrity:
 
         with patch.dict("os.environ", {}, clear=False):
             with pytest.raises(ClickExit):
-                _apply_with_plan(mock_executor, plan_file, "int", "abc12345ff")
+                _apply_with_plan(
+                    mock_executor,
+                    plan_file,
+                    "int",
+                    "abc12345ff",
+                    expected_params_hash="no-args",
+                )
 
         mock_executor.apply.assert_not_called()
 
@@ -898,7 +1149,13 @@ class TestApplyWithPlanIntegrity:
         mock_executor.version.return_value = "1.9.8"
 
         with patch.dict("os.environ", {}, clear=False):
-            _apply_with_plan(mock_executor, plan_file, "int", "abc12345ff")
+            _apply_with_plan(
+                mock_executor,
+                plan_file,
+                "int",
+                "abc12345ff",
+                expected_params_hash="no-args",
+            )
 
         # Should proceed despite version mismatch (unknown is ignored)
         mock_executor.apply.assert_called_once()

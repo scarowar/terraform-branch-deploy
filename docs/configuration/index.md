@@ -41,7 +41,7 @@ For safer workflows, use `disable-naked-commands: true` in the action inputs so 
 
 Paths are resolved relative to the environment `working-directory`.
 
-Normal apply is intentionally plan-file based: `.apply to <env>` restores the saved plan for the same environment and commit SHA, then passes that plan file to Terraform. It does not add `var-files` or `apply-args` again. Extra Terraform arguments from PR comments are accepted only on `.plan`.
+Normal apply is intentionally plan-file based: `.apply to <env>` restores the latest successful saved plan for the same environment and commit SHA, then passes that plan file to Terraform. The restored cache key and saved metadata must agree on the plan argument hash. It does not add `var-files` or `apply-args` again. Extra Terraform arguments from PR comments are accepted only on `.plan`.
 
 Rollback applies the stable branch directly. It does not accept PR comment
 arguments such as `-target`, because Terraform does not provide a deterministic

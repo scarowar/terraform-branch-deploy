@@ -143,14 +143,14 @@ Prefer `TF_BD_*` environment variables after trigger mode. If your workflow used
 
 ### Terraform Behavior
 
-Normal apply uses the saved plan for the same environment and commit SHA:
+Normal apply uses the latest successful saved plan for the same environment and commit SHA:
 
 ```text
 .plan to prod | -target=module.database
 .apply to prod
 ```
 
-The apply command restores and applies the saved targeted plan. It does not run a fresh untargeted apply.
+The apply command restores and applies the saved targeted plan. It does not run a fresh untargeted apply. The restored cache key and saved metadata must agree on the plan argument hash. If you run another successful plan for the same environment and commit, that newer plan supersedes the older one.
 
 Rollback remains a direct stable-branch apply:
 

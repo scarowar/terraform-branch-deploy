@@ -42,7 +42,7 @@ Terraform Branch Deploy brings that model to Terraform:
 | --- | --- | --- |
 | Plan | `.plan to dev` | Runs `terraform plan`, posts the result, and saves the plan for the commit and environment. |
 | Review | Read the plan comment | Review additions, changes, destroys, and warnings before applying. |
-| Apply | `.apply to dev` | Restores and applies the saved plan. |
+| Apply | `.apply to dev` | Restores and applies the latest successful saved plan. |
 | Roll back | `.apply main to prod` | Applies the stable branch directly. |
 
 A normal pull request workflow stays inside GitHub:
@@ -74,7 +74,10 @@ For targeted plans, keep apply simple:
 .apply to prod
 ```
 
-The apply step uses the saved targeted plan. It does not create a new untargeted apply, and extra Terraform arguments are rejected on apply.
+The apply step uses the saved targeted plan. It does not create a new untargeted apply, and extra Terraform arguments are rejected on apply. The restored cache key and saved metadata must agree before Terraform runs.
+
+If you run another successful plan for the same environment and commit, that
+newer plan is the one a later apply uses.
 
 **Targeted plans keep their Terraform arguments in the saved plan**
 
@@ -105,7 +108,7 @@ Then comment on a pull request:
 | Command | Purpose |
 | --- | --- |
 | `.plan to <env>` | Run `terraform plan`, post the result, and save the plan. |
-| `.apply to <env>` | Apply the saved plan for the same environment and commit. |
+| `.apply to <env>` | Apply the latest successful saved plan for the same environment and commit. |
 | `.apply main to <env>` | Roll back by applying the stable branch directly. |
 | `.lock <env>` | Lock an environment. |
 | `.unlock <env>` | Release a lock. |

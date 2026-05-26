@@ -7,7 +7,7 @@ The default command set is:
 | Command | Purpose |
 | --- | --- |
 | `.plan to <env>` | Run `terraform plan`, post the result, and save the plan. |
-| `.apply to <env>` | Apply the saved plan for the same environment and commit. |
+| `.apply to <env>` | Apply the latest successful saved plan for the same environment and commit. |
 | `.apply main to <env>` | Roll back by applying the stable branch directly. |
 | `.lock <env>` | Lock one environment. |
 | `.unlock <env>` | Unlock one environment. |
@@ -45,9 +45,11 @@ Plan runs `terraform init` and `terraform plan` for the selected environment. Th
 
 A normal apply requires a saved plan. If new commits are pushed after planning, run `.plan to <env>` again.
 
-Apply restores the saved plan for the environment and commit SHA. It does not create a fresh plan during a normal apply.
+Apply restores the latest successful saved plan for the environment and commit SHA. It does not create a fresh plan during a normal apply.
 
 Saved plan metadata is required and verified before the plan is applied. Re-plan to replace older cached plans that do not have metadata.
+
+If you run multiple successful plans for the same environment and commit, the newest successful plan is the one a later apply uses.
 
 ## Rollback
 
@@ -87,9 +89,14 @@ Common examples:
 
 - `.plan to dev | -target=module.api`: Plans only `module.api`.
 - `.plan to dev | -var='replicas=3'`: Adds a Terraform variable.
+- `.plan to dev | -var-file=env/dev.tfvars`: Adds a variable file inside the environment working directory.
 - `.plan to dev | -refresh=false`: Skips refresh for that plan.
 
-Extra arguments from `.plan` are part of the saved plan. A later `.apply to <env>` applies that saved plan without needing to repeat those arguments.
+Extra arguments from `.plan` are part of the saved plan. A later `.apply to <env>` applies that saved plan without needing to repeat those arguments. The restored cache key and saved metadata must agree on the plan argument hash before Terraform runs.
+
+PR comment `-var-file` values must be relative paths inside the environment
+working directory after symlink resolution. Absolute paths and `..` traversal
+are rejected.
 
 !!! warning "Extra arguments are plan-only"
 

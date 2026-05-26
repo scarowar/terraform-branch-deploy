@@ -43,7 +43,7 @@ Branch Deploy's model is deploy before merge:
 3. Comment `.apply to <env>` to apply the saved plan.
 4. Merge after the environment has been applied successfully.
 
-For normal applies, the action restores the saved plan for the same environment and commit SHA. Rollbacks use Branch Deploy's stable branch command shape:
+For normal applies, the action restores the latest successful saved plan for the same environment and commit SHA. The restored cache key and saved metadata must agree on the plan argument hash before Terraform runs. Rollbacks use Branch Deploy's stable branch command shape:
 
 ```text
 .apply main to prod
@@ -98,7 +98,7 @@ After reviewing the plan, apply it:
 | Command | Purpose |
 | --- | --- |
 | `.plan to <env>` | Run `terraform plan`, post the result, and save the plan. |
-| `.apply to <env>` | Apply the saved plan for the same environment and commit. |
+| `.apply to <env>` | Apply the latest successful saved plan for the same environment and commit. |
 | `.apply main to <env>` | Roll back by applying the stable branch directly. |
 | `.lock <env>` | Lock an environment. |
 | `.unlock <env>` | Release a lock. |
@@ -121,12 +121,16 @@ Those arguments belong on the plan that creates the saved plan file. Rollback
 applies the stable branch directly; Terraform does not provide a deterministic
 target-only undo operation.
 
+If you run another successful plan for the same environment and commit, that
+newer plan is the one a later `.apply to <env>` uses.
+
 ## Documentation
 
 | Resource | Use it for |
 | --- | --- |
 | [Quickstart](https://scarowar.github.io/terraform-branch-deploy/quickstart/) | First working workflow. |
 | [Upgrading](https://scarowar.github.io/terraform-branch-deploy/upgrading/) | Changes to review before moving between releases. |
+| [Changelog](CHANGELOG.md) | Versioned release history. |
 | [How It Works](https://scarowar.github.io/terraform-branch-deploy/concepts/modes/) | How the two action modes fit in one job. |
 | [Configuration](https://scarowar.github.io/terraform-branch-deploy/configuration/) | Environment and Terraform settings. |
 | [Commands](https://scarowar.github.io/terraform-branch-deploy/reference/commands/) | PR comment command reference. |

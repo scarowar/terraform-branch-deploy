@@ -15,6 +15,13 @@ def action() -> dict[str, Any]:
         return yaml.safe_load(f)
 
 
+@pytest.fixture
+def action_text() -> str:
+    """Load action.yml as text so comments remain testable."""
+    action_path = Path(__file__).parent.parent.parent / "action.yml"
+    return action_path.read_text(encoding="utf-8")
+
+
 def step_by_name(action: dict[str, Any], name: str) -> dict[str, Any]:
     """Return an action step by name."""
     for step in action["runs"]["steps"]:
@@ -192,12 +199,16 @@ class TestCompositeRuntimeContract:
         assert 'export PATH="${TFBD_TOOL_DIR}:${PATH}"' in execute_step["run"]
 
     def test_execute_mode_cache_restore_and_save_are_environment_and_sha_scoped(
-        self, action: dict[str, Any]
+        self, action: dict[str, Any], action_text: str
     ) -> None:
-        """A plan from another environment or SHA must not be restored."""
+        """A plan from another environment, SHA, or params hash must not be restored."""
         restore_step = step_by_name(action, "[Execute] Restore Cached Plan")
         save_step = step_by_name(action, "[Execute] Cache Plan File")
+        execute_step = step_by_id(action, "tf-execute")
 
+        assert "latest successful plan" in action_text
+        assert "params hash" in action_text
+        assert restore_step["id"] == "restore-plan"
         assert restore_step["uses"].startswith("actions/cache/restore@")
         assert restore_step["if"] == "inputs.mode == 'execute' && env.TF_BD_OPERATION == 'apply'"
         restore_paths = restore_step["with"]["path"].splitlines()
@@ -205,18 +216,28 @@ class TestCompositeRuntimeContract:
         assert "**/tfplan-${{ env.TF_BD_ENVIRONMENT }}-*.meta.json" in restore_paths
         assert (
             restore_step["with"]["key"]
-            == "tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}"
+            == "tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}-no-args-${{ github.run_id }}-${{ github.run_attempt }}"
         )
         assert (
             "tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}-"
             in restore_step["with"]["restore-keys"]
         )
+        assert (
+            execute_step["env"]["TF_BD_PLAN_CACHE_KEY"]
+            == "${{ steps.restore-plan.outputs.cache-matched-key }}"
+        )
 
-        assert save_step["uses"].startswith("actions/cache@")
-        assert save_step["if"] == "inputs.mode == 'execute' && env.TF_BD_OPERATION == 'plan'"
+        assert save_step["uses"].startswith("actions/cache/save@")
+        assert (
+            save_step["if"]
+            == "inputs.mode == 'execute' && env.TF_BD_OPERATION == 'plan' && steps.tf-execute.outputs.plan_params_hash != ''"
+        )
         save_paths = save_step["with"]["path"].splitlines()
         assert save_paths == restore_paths
-        assert save_step["with"]["key"] == restore_step["with"]["key"]
+        assert (
+            save_step["with"]["key"]
+            == "tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}-${{ steps.tf-execute.outputs.plan_params_hash }}-${{ github.run_id }}-${{ github.run_attempt }}"
+        )
 
     def test_lifecycle_completion_runs_on_success_and_failure_with_ghe_context(
         self, action: dict[str, Any]

@@ -67,6 +67,7 @@ Watch these flows explicitly:
 - Add a regression test for every critical bug fix.
 - Keep release changes small and directly tested.
 - Keep docs and maintainer instructions short, canonical, and non-duplicative.
+- Draft release notes from `CHANGELOG.md` and the tag diff. Keep them factual and user-facing.
 - Keep public commands, outputs, environment variables, plan naming, cache keys, and rollback behavior stable unless a test proves they are wrong.
 - Normal apply must use a saved `.tfplan` file.
 - Direct apply without a saved plan is reserved for rollback.

@@ -82,7 +82,25 @@ Fix:
 .apply to dev
 ```
 
-If new commits were pushed after planning, run the plan again. Plans are tied to the commit SHA.
+If new commits were pushed after planning, run the plan again. Plans are tied to the commit SHA. If you create another successful plan for the same commit and environment, apply uses that newer plan.
+
+## Saved Plan Parameter Mismatch
+
+This means the restored cache entry and saved plan metadata do not describe the same plan arguments.
+
+Fix:
+
+```text
+.plan to dev
+.apply to dev
+```
+
+If you planned with extra arguments, run that plan again and then apply normally:
+
+```text
+.plan to dev | -target=module.database
+.apply to dev
+```
 
 ## Targeted Plan Was Not Applied
 
@@ -93,7 +111,7 @@ Use the same simple apply command after a targeted plan:
 .apply to prod
 ```
 
-The apply should restore and apply the saved plan. If it reports no saved plan, re-run `.plan to prod | -target=module.database` and inspect the workflow logs for cache restore messages.
+The apply should restore and apply the latest successful saved plan. If it reports no saved plan, re-run `.plan to prod | -target=module.database` and inspect the workflow logs for cache restore messages.
 
 Do not use rollback to target only part of the previous change. Rollback applies
 the stable branch directly, and Terraform does not provide a deterministic
