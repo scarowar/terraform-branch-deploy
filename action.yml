@@ -623,7 +623,7 @@ runs:
     # metadata sidecar checksum and params hash verified in the CLI.
     - name: "[Execute] Restore Cached Plan"
       id: restore-plan
-      uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       if: inputs.mode == 'execute' && env.TF_BD_OPERATION == 'apply'
       with:
         path: |
@@ -669,7 +669,7 @@ runs:
     # The key includes the params hash emitted by the CLI so apply can prove
     # the restored plan matches the Terraform arguments used for planning.
     - name: "[Execute] Cache Plan File"
-      uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       if: inputs.mode == 'execute' && env.TF_BD_OPERATION == 'plan' && steps.tf-execute.outputs.plan_params_hash != ''
       with:
         path: |
