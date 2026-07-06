@@ -2,6 +2,7 @@
 
 import io
 import json
+import subprocess
 import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -17,6 +18,9 @@ from tf_branch_deploy.artifacts import (
     generate_artifact_name,
     generate_params_hash,
     load_plan_metadata,
+    plan_artifact_name_from_intent,
+    plan_artifact_prefix,
+    plan_intent_prefix,
     save_plan_metadata,
     verify_checksum,
 )
@@ -221,7 +225,7 @@ class TestPlanMetadata:
 
 
 class TestPlanArtifactStore:
-    """Tests for listing and downloading plan workflow artifacts."""
+    """Tests for intent resolution and plan artifact download."""
 
     ENV = "int"
     SHA = "abc12345ff0000000000000000000000000000ff"
@@ -234,9 +238,14 @@ class TestPlanArtifactStore:
         expired: bool = False,
         repo_id: int | None = 100,
         head_repo_id: int | None = 100,
-        run_id: int = 555,
+        run_id: int | None = None,
         created_at: str = "2026-07-06T00:00:00Z",
     ) -> dict:
+        if run_id is None:
+            # Default the uploading run id to the one embedded in the name so
+            # fixtures pass the spoof cross-check unless a test overrides it.
+            tail = name.rsplit("-", 2)
+            run_id = int(tail[1]) if len(tail) == 3 and tail[1].isdigit() else 0
         return {
             "id": artifact_id,
             "name": name,
@@ -250,77 +259,124 @@ class TestPlanArtifactStore:
             },
         }
 
-    def _valid_name(self, params_hash: str = "no-args", run: str = "123-1") -> str:
+    def _intent_name(self, params_hash: str = "no-args", run: str = "123-1") -> str:
+        return f"tfplan-intent-{self.ENV}-{self.SHA}-{params_hash}-{run}"
+
+    def _plan_name(self, params_hash: str = "no-args", run: str = "123-1") -> str:
         return f"tfplan-{self.ENV}-{self.SHA}-{params_hash}-{run}"
 
     @staticmethod
     def _list_response(*artifacts: dict) -> MagicMock:
         return MagicMock(returncode=0, stdout=json.dumps({"artifacts": list(artifacts)}))
 
-    def test_find_latest_returns_first_match_newest_first(self) -> None:
+    def test_resolve_latest_intent_sorts_numerically_not_by_api_order(self) -> None:
+        """Selection must not rely on the API's undocumented list order."""
         store = PlanArtifactStore(repo="owner/repo", github_token="tok")
-        newest = self._artifact(self._valid_name(run="222-1"), artifact_id=2)
-        older = self._artifact(self._valid_name(run="111-1"), artifact_id=1)
+        oldest = self._artifact(self._intent_name(run="111-1"), artifact_id=1)
+        newest = self._artifact(self._intent_name(run="333-1"), artifact_id=3)
+        middle = self._artifact(self._intent_name(run="222-2"), artifact_id=2)
 
         with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
-            run_mock.return_value = self._list_response(newest, older)
-            candidate = store.find_latest(self.ENV, self.SHA)
+            # Deliberately unordered: oldest first, newest in the middle.
+            run_mock.side_effect = [
+                self._list_response(oldest, newest, middle),
+                self._list_response(),
+            ]
+            intent = store.resolve_latest_intent(self.ENV, self.SHA)
 
-        assert candidate is not None
-        assert candidate.id == 2
-        assert candidate.name == self._valid_name(run="222-1")
-        assert candidate.workflow_run_id == 555
+        assert intent is not None
+        assert intent.run_id == 333
+        assert intent.params_hash == "no-args"
 
-    def test_find_latest_rejects_fork_uploaded_artifacts(self) -> None:
-        """A fork-PR run can upload artifacts into the base repo — never apply those."""
+    def test_resolve_latest_intent_prefers_higher_run_attempt(self) -> None:
         store = PlanArtifactStore(repo="owner/repo", github_token="tok")
-        spoofed = self._artifact(self._valid_name(), head_repo_id=999)
-        missing_provenance = dict(self._artifact(self._valid_name()), workflow_run=None)
+        first = self._artifact(self._intent_name(run="123-1"), artifact_id=1)
+        retry = self._artifact(self._intent_name(run="123-2"), artifact_id=2)
+
+        with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
+            run_mock.side_effect = [
+                self._list_response(retry, first),
+                self._list_response(),
+            ]
+            intent = store.resolve_latest_intent(self.ENV, self.SHA)
+
+        assert intent is not None
+        assert intent.run_attempt == 2
+
+    def test_resolve_latest_intent_rejects_fork_uploaded_records(self) -> None:
+        """A fork-PR run can upload artifacts into the base repo - never trust those."""
+        store = PlanArtifactStore(repo="owner/repo", github_token="tok")
+        spoofed = self._artifact(self._intent_name(), head_repo_id=999)
+        missing_provenance = dict(self._artifact(self._intent_name()), workflow_run=None)
 
         with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
             run_mock.side_effect = [
                 self._list_response(spoofed, missing_provenance),
                 self._list_response(),
             ]
-            assert store.find_latest(self.ENV, self.SHA) is None
+            assert store.resolve_latest_intent(self.ENV, self.SHA) is None
 
-    def test_find_latest_skips_expired_and_malformed_names(self) -> None:
+    def test_resolve_latest_intent_rejects_run_id_spoof(self) -> None:
+        """A name claiming a different run than its uploader is spoofed."""
         store = PlanArtifactStore(repo="owner/repo", github_token="tok")
-        expired = self._artifact(self._valid_name(), expired=True)
-        wrong_env = self._artifact(f"tfplan-prod-{self.SHA}-no-args-123-1")
-        malformed = self._artifact(f"tfplan-{self.ENV}-{self.SHA}-not-a-hash-123-1")
+        spoofed = self._artifact(self._intent_name(run="999-1"), run_id=123)
+
+        with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
+            run_mock.side_effect = [
+                self._list_response(spoofed),
+                self._list_response(),
+            ]
+            assert store.resolve_latest_intent(self.ENV, self.SHA) is None
+
+    def test_resolve_latest_intent_skips_expired_and_malformed_names(self) -> None:
+        store = PlanArtifactStore(repo="owner/repo", github_token="tok")
+        expired = self._artifact(self._intent_name(), expired=True)
+        wrong_env = self._artifact(f"tfplan-intent-prod-{self.SHA}-no-args-123-1")
+        plan_not_intent = self._artifact(self._plan_name())
+        malformed = self._artifact(f"tfplan-intent-{self.ENV}-{self.SHA}-nope-123-1")
         unrelated = self._artifact("coverage-report")
 
         with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
             run_mock.side_effect = [
-                self._list_response(expired, wrong_env, malformed, unrelated),
+                self._list_response(expired, wrong_env, plan_not_intent, malformed, unrelated),
                 self._list_response(),
             ]
-            assert store.find_latest(self.ENV, self.SHA) is None
+            assert store.resolve_latest_intent(self.ENV, self.SHA) is None
 
-    def test_find_latest_paginates_until_match(self) -> None:
+    def test_resolve_latest_intent_collects_across_pages(self) -> None:
         store = PlanArtifactStore(repo="owner/repo", github_token="tok")
-        match = self._artifact(self._valid_name())
+        page1_match = self._artifact(self._intent_name(run="111-1"), artifact_id=1)
+        page2_match = self._artifact(self._intent_name(run="222-1"), artifact_id=2)
 
         with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
             run_mock.side_effect = [
-                self._list_response(self._artifact("unrelated")),
-                self._list_response(match),
+                self._list_response(page1_match),
+                self._list_response(page2_match),
+                self._list_response(),
             ]
-            candidate = store.find_latest(self.ENV, self.SHA)
+            intent = store.resolve_latest_intent(self.ENV, self.SHA)
 
-        assert candidate is not None
-        assert run_mock.call_count == 2
+        assert intent is not None
+        assert intent.run_id == 222
         assert "page=2" in run_mock.call_args_list[1].args[0][2]
 
-    def test_find_latest_returns_none_when_no_artifacts(self) -> None:
+    def test_resolve_latest_intent_returns_none_when_no_artifacts(self) -> None:
         store = PlanArtifactStore(repo="owner/repo", github_token="tok")
 
         with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
             run_mock.return_value = self._list_response()
-            assert store.find_latest(self.ENV, self.SHA) is None
+            assert store.resolve_latest_intent(self.ENV, self.SHA) is None
 
-    def test_find_latest_raises_when_listing_fails(self) -> None:
+    def test_resolve_latest_intent_raises_when_page_cap_exhausted(self) -> None:
+        """A truncated search must never masquerade as 'no plan'."""
+        store = PlanArtifactStore(repo="owner/repo", github_token="tok")
+
+        with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
+            run_mock.return_value = self._list_response(self._artifact("unrelated"))
+            with pytest.raises(PlanArtifactError, match="truncated"):
+                store.resolve_latest_intent(self.ENV, self.SHA)
+
+    def test_resolve_latest_intent_raises_when_listing_fails(self) -> None:
         """A failed listing (e.g. missing actions: read) is not the same as no plan."""
         store = PlanArtifactStore(repo="owner/repo", github_token="tok")
 
@@ -329,7 +385,44 @@ class TestPlanArtifactStore:
                 returncode=1, stdout="", stderr="HTTP 403: Resource not accessible"
             )
             with pytest.raises(PlanArtifactError, match="Failed to list workflow artifacts"):
-                store.find_latest(self.ENV, self.SHA)
+                store.resolve_latest_intent(self.ENV, self.SHA)
+
+    def test_resolve_latest_intent_raises_on_timeout(self) -> None:
+        store = PlanArtifactStore(repo="owner/repo", github_token="tok")
+
+        with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
+            run_mock.side_effect = subprocess.TimeoutExpired(cmd=["gh"], timeout=60)
+            with pytest.raises(PlanArtifactError, match="Timed out listing"):
+                store.resolve_latest_intent(self.ENV, self.SHA)
+
+    def test_find_exact_uses_name_filter_and_matches(self) -> None:
+        store = PlanArtifactStore(repo="owner/repo", github_token="tok")
+        name = self._plan_name()
+        match = self._artifact(name, artifact_id=7)
+
+        with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
+            run_mock.return_value = self._list_response(match)
+            candidate = store.find_exact(name, self.ENV, self.SHA)
+
+        assert candidate is not None
+        assert candidate.id == 7
+        assert f"name={name}" in run_mock.call_args.args[0][2]
+
+    def test_find_exact_returns_none_when_absent(self) -> None:
+        store = PlanArtifactStore(repo="owner/repo", github_token="tok")
+
+        with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
+            run_mock.return_value = self._list_response()
+            assert store.find_exact(self._plan_name(), self.ENV, self.SHA) is None
+
+    def test_find_exact_rejects_fork_uploaded_plan(self) -> None:
+        store = PlanArtifactStore(repo="owner/repo", github_token="tok")
+        name = self._plan_name()
+        spoofed = self._artifact(name, head_repo_id=999)
+
+        with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
+            run_mock.return_value = self._list_response(spoofed)
+            assert store.find_exact(name, self.ENV, self.SHA) is None
 
     def _zip_bytes(self, *members: tuple[str, bytes]) -> bytes:
         buf = io.BytesIO()
@@ -341,13 +434,16 @@ class TestPlanArtifactStore:
     def _candidate(self) -> PlanArtifactCandidate:
         return PlanArtifactCandidate(
             id=7,
-            name=self._valid_name(),
+            name=self._plan_name(),
             created_at="2026-07-06T00:00:00Z",
             expired=False,
             size_in_bytes=42,
             repository_id=100,
             head_repository_id=100,
-            workflow_run_id=555,
+            workflow_run_id=123,
+            params_hash="no-args",
+            run_id=123,
+            run_attempt=1,
         )
 
     def test_download_and_extract_restores_plan_files(self, tmp_path: Path) -> None:
@@ -368,7 +464,7 @@ class TestPlanArtifactStore:
         assert (tmp_path / f"tfplan-{self.ENV}-abc12345.tfplan").read_bytes() == b"plan bytes"
 
     def test_download_and_extract_flattens_stored_paths(self, tmp_path: Path) -> None:
-        """Stored member paths are never trusted — extraction is by basename only."""
+        """Stored member paths are never trusted - extraction is by basename only."""
         store = PlanArtifactStore(repo="owner/repo", github_token="tok")
         zip_bytes = self._zip_bytes(
             (f"nested/dir/tfplan-{self.ENV}-abc12345.tfplan", b"plan bytes"),
@@ -417,3 +513,29 @@ class TestPlanArtifactStore:
             run_mock.return_value = MagicMock(returncode=1, stdout=b"", stderr=b"HTTP 410: Gone")
             with pytest.raises(PlanArtifactError, match="Failed to download plan artifact"):
                 store.download_and_extract(self._candidate(), tmp_path, self.ENV)
+
+    def test_download_timeout_raises(self, tmp_path: Path) -> None:
+        store = PlanArtifactStore(repo="owner/repo", github_token="tok")
+
+        with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
+            run_mock.side_effect = subprocess.TimeoutExpired(cmd=["gh"], timeout=120)
+            with pytest.raises(PlanArtifactError, match="Timed out downloading"):
+                store.download_and_extract(self._candidate(), tmp_path, self.ENV)
+
+
+class TestIntentNameHelpers:
+    """Tests for intent-record naming helpers."""
+
+    def test_plan_artifact_name_from_intent_round_trip(self) -> None:
+        sha = "abc12345ff0000000000000000000000000000ff"
+        intent = f"tfplan-intent-dev-{sha}-a1b2c3d4-555-2"
+
+        assert (
+            plan_artifact_name_from_intent(intent, "dev", sha) == f"tfplan-dev-{sha}-a1b2c3d4-555-2"
+        )
+
+    def test_intent_prefix_is_distinct_from_plan_prefix(self) -> None:
+        sha = "abc12345ff0000000000000000000000000000ff"
+
+        assert plan_intent_prefix("dev", sha) != plan_artifact_prefix("dev", sha)
+        assert plan_intent_prefix("dev", sha).startswith("tfplan-intent-dev-")

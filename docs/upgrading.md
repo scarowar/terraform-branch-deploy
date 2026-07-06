@@ -47,6 +47,10 @@ Saved plan artifacts expire after `plan-retention-days` (default `7`, matching t
 
 If a plan cannot be uploaded as an artifact, the plan run fails and posts a PR comment instead of reporting success for a plan that a later apply could never find.
 
+### Apply Is Bound to the Latest Plan Command
+
+Every plan run records an intent artifact before Terraform runs, and `.apply` resolves the plan only through the newest intent record. If your most recent `.plan` for an environment and commit failed — for example, a targeted plan that errored — `.apply` refuses with an actionable comment instead of silently applying an older plan created with different arguments. This closes the failure class where a superseded plan (for example, one with different `-target` arguments) could be applied after a newer plan failed to persist. Re-run `.plan` and wait for it to succeed before applying.
+
 ### Branch Deploy v11.1.5
 
 The embedded `github/branch-deploy` is updated from v11.1.4 to v11.1.5 (dependency updates and upstream documentation hardening). No command behavior changes.

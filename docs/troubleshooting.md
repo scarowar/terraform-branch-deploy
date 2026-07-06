@@ -88,6 +88,17 @@ Fix:
 
 If new commits were pushed after planning, run the plan again. Plans are tied to the commit SHA. If you create another successful plan for the same commit and environment, apply uses that newer plan.
 
+## Most Recent Plan Did Not Produce an Applyable Plan
+
+This means the latest `.plan` for the environment and commit failed after starting, or is still running. Terraform Branch Deploy refuses to fall back to an older, superseded plan — applying anything other than the plan you most recently requested is how unintended infrastructure changes happen.
+
+Fix: check the failed plan run's logs, then re-run the plan and wait for it to succeed:
+
+```text
+.plan to dev
+.apply to dev
+```
+
 ## Saved Plan Parameter Mismatch
 
 This means the restored plan artifact and saved plan metadata do not describe the same plan arguments.

@@ -18,14 +18,21 @@ import tempfile
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from urllib.parse import quote
 
 from .lifecycle import github_cli_env
 
 logger = logging.getLogger(__name__)
 
-PLAN_ARTIFACT_NAME_RE = re.compile(r"^(?P<params_hash>no-args|[0-9a-f]{8})-\d+-\d+$")
+PLAN_ARTIFACT_NAME_RE = re.compile(
+    r"^(?P<params_hash>no-args|[0-9a-f]{8})-(?P<run_id>\d+)-(?P<run_attempt>\d+)$"
+)
+
+PLAN_META_SUFFIX = ".meta.json"
 
 MAX_ARTIFACT_LIST_PAGES = 10
+GH_LIST_TIMEOUT_SECONDS = 60
+GH_DOWNLOAD_TIMEOUT_SECONDS = 120
 
 
 @dataclass(frozen=True)
@@ -130,6 +137,22 @@ def plan_artifact_prefix(environment: str, sha: str) -> str:
     return f"tfplan-{environment}-{sha}-"
 
 
+def plan_intent_prefix(environment: str, sha: str) -> str:
+    """Return the workflow artifact name prefix for a plan intent record.
+
+    Intent records are uploaded before Terraform runs and share the plan
+    artifact's name suffix, so the intent deterministically names the exact
+    plan artifact the run was meant to produce.
+    """
+    return f"tfplan-intent-{environment}-{sha}-"
+
+
+def plan_artifact_name_from_intent(intent_name: str, environment: str, sha: str) -> str:
+    """Return the exact plan artifact name declared by an intent record."""
+    suffix = intent_name.removeprefix(plan_intent_prefix(environment, sha))
+    return plan_artifact_prefix(environment, sha) + suffix
+
+
 def params_hash_from_artifact_name(
     name: str | None,
     environment: str,
@@ -162,7 +185,7 @@ def save_plan_metadata(plan_file: Path, metadata: PlanMetadata) -> Path:
     Returns:
         Path to the created .meta.json file.
     """
-    meta_path = plan_file.with_suffix(".meta.json")
+    meta_path = plan_file.with_suffix(PLAN_META_SUFFIX)
     meta_path.write_text(
         json.dumps(
             {
@@ -192,7 +215,7 @@ def load_plan_metadata(plan_file: Path) -> PlanMetadata | None:
     Returns:
         PlanMetadata if sidecar exists and is valid, None otherwise.
     """
-    meta_path = plan_file.with_suffix(".meta.json")
+    meta_path = plan_file.with_suffix(PLAN_META_SUFFIX)
     if not meta_path.exists():
         return None
     try:
@@ -229,6 +252,9 @@ class PlanArtifactCandidate:
     repository_id: int | None
     head_repository_id: int | None
     workflow_run_id: int | None
+    params_hash: str
+    run_id: int
+    run_attempt: int
 
 
 @dataclass
@@ -242,27 +268,56 @@ class PlanArtifactStore:
     repo: str
     github_token: str | None = None
 
-    def find_latest(self, environment: str, sha: str) -> PlanArtifactCandidate | None:
-        """Return the newest valid plan artifact for this environment and commit.
+    def resolve_latest_intent(self, environment: str, sha: str) -> PlanArtifactCandidate | None:
+        """Return the newest valid plan intent record for this environment and commit.
 
-        The artifacts API returns newest-first, so the first accepted match is
-        the latest plan — a newer successful plan supersedes older plans for
-        the same environment and commit. Fork-uploaded and expired artifacts
-        are rejected. Returns None when no valid artifact exists; raises
-        PlanArtifactError when the API cannot be queried at all.
+        Intents are uploaded at the start of every plan run, so the newest
+        intent identifies the plan the most recent `.plan` command was meant
+        to produce — even when that run later failed. Selection is an explicit
+        numeric sort by (run_id, run_attempt); the API's list order is never
+        relied upon. Fork-uploaded and expired records are rejected. Returns
+        None when no intent exists; raises PlanArtifactError when the listing
+        fails or is truncated by the page cap, so an incomplete search can
+        never masquerade as "no plan".
         """
+        candidates = self._collect(plan_intent_prefix(environment, sha))
+        if not candidates:
+            return None
+        return max(candidates, key=lambda c: (c.run_id, c.run_attempt))
+
+    def find_exact(self, name: str, environment: str, sha: str) -> PlanArtifactCandidate | None:
+        """Return the plan artifact with exactly this name, if it exists and is valid.
+
+        Uses the API's exact-name filter, then applies the same provenance and
+        expiry checks as intent resolution. When re-runs produced several
+        artifacts with the same name, the highest artifact id (newest) wins.
+        """
+        prefix = plan_artifact_prefix(environment, sha)
+        candidates = [
+            candidate
+            for raw in self._list_page(1, name=name)
+            if (candidate := self._accept(raw, prefix)) is not None and candidate.name == name
+        ]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda c: c.id)
+
+    def _collect(self, prefix: str) -> list[PlanArtifactCandidate]:
+        """Collect all valid candidates matching a name prefix across pages."""
+        candidates: list[PlanArtifactCandidate] = []
         for page in range(1, MAX_ARTIFACT_LIST_PAGES + 1):
             artifacts = self._list_page(page)
             if not artifacts:
-                return None
+                return candidates
             for raw in artifacts:
-                candidate = self._accept(raw, environment, sha)
+                candidate = self._accept(raw, prefix)
                 if candidate is not None:
-                    return candidate
-        logger.warning(
-            "Stopped searching for plan artifacts after %d pages", MAX_ARTIFACT_LIST_PAGES
+                    candidates.append(candidate)
+        raise PlanArtifactError(
+            f"Artifact search truncated after {MAX_ARTIFACT_LIST_PAGES * 100} artifacts; "
+            "cannot reliably determine the latest plan intent. Reduce artifact volume "
+            "or retention in this repository."
         )
-        return None
 
     def download_and_extract(
         self,
@@ -306,19 +361,24 @@ class PlanArtifactStore:
             raise PlanArtifactError(f"Plan artifact '{candidate.name}' contained no plan files")
         return extracted
 
-    def _list_page(self, page: int) -> list[dict]:
-        cmd = [
-            "gh",
-            "api",
-            f"repos/{self.repo}/actions/artifacts?per_page=100&page={page}",
-        ]
-        result = subprocess.run(  # nosec B603
-            cmd,
-            capture_output=True,
-            text=True,
-            env=github_cli_env(self.github_token),
-            check=False,
-        )
+    def _list_page(self, page: int, name: str | None = None) -> list[dict]:
+        endpoint = f"repos/{self.repo}/actions/artifacts?per_page=100&page={page}"
+        if name:
+            endpoint += f"&name={quote(name)}"
+        cmd = ["gh", "api", endpoint]
+        try:
+            result = subprocess.run(  # nosec B603
+                cmd,
+                capture_output=True,
+                text=True,
+                env=github_cli_env(self.github_token),
+                check=False,
+                timeout=GH_LIST_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as e:
+            raise PlanArtifactError(
+                f"Timed out listing workflow artifacts after {GH_LIST_TIMEOUT_SECONDS}s"
+            ) from e
         if result.returncode != 0:
             raise PlanArtifactError(
                 f"Failed to list workflow artifacts (gh exit {result.returncode}): "
@@ -340,12 +400,19 @@ class PlanArtifactStore:
             "api",
             f"repos/{self.repo}/actions/artifacts/{candidate.id}/zip",
         ]
-        result = subprocess.run(  # nosec B603
-            cmd,
-            capture_output=True,
-            env=github_cli_env(self.github_token),
-            check=False,
-        )
+        try:
+            result = subprocess.run(  # nosec B603
+                cmd,
+                capture_output=True,
+                env=github_cli_env(self.github_token),
+                check=False,
+                timeout=GH_DOWNLOAD_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as e:
+            raise PlanArtifactError(
+                f"Timed out downloading plan artifact '{candidate.name}' "
+                f"after {GH_DOWNLOAD_TIMEOUT_SECONDS}s"
+            ) from e
         if result.returncode != 0:
             stderr = result.stderr.decode(errors="replace").strip()
             raise PlanArtifactError(
@@ -355,9 +422,12 @@ class PlanArtifactStore:
         return result.stdout
 
     @staticmethod
-    def _accept(raw: dict, environment: str, sha: str) -> PlanArtifactCandidate | None:
+    def _accept(raw: dict, prefix: str) -> PlanArtifactCandidate | None:
         name = raw.get("name", "")
-        if params_hash_from_artifact_name(name, environment, sha) is None:
+        if not name.startswith(prefix):
+            return None
+        match = PLAN_ARTIFACT_NAME_RE.match(name.removeprefix(prefix))
+        if match is None:
             return None
         if raw.get("expired"):
             logger.warning("Skipping expired plan artifact: %s", name)
@@ -377,6 +447,18 @@ class PlanArtifactStore:
             )
             return None
 
+        run_id = int(match.group("run_id"))
+        if workflow_run.get("id") != run_id:
+            # The run id embedded in the name must match the run that actually
+            # uploaded the artifact — a mismatch means the name was spoofed.
+            logger.warning(
+                "Rejected plan artifact '%s': name claims run %d but it was uploaded by run %s",
+                name,
+                run_id,
+                workflow_run.get("id"),
+            )
+            return None
+
         return PlanArtifactCandidate(
             id=raw["id"],
             name=name,
@@ -386,6 +468,9 @@ class PlanArtifactStore:
             repository_id=repository_id,
             head_repository_id=head_repository_id,
             workflow_run_id=workflow_run.get("id"),
+            params_hash=match.group("params_hash"),
+            run_id=run_id,
+            run_attempt=int(match.group("run_attempt")),
         )
 
     @staticmethod
@@ -396,8 +481,8 @@ class PlanArtifactStore:
                 f"Plan artifact '{artifact_name}' contains an unsafe path: {member_name!r}"
             )
         basename = pure.name
-        if not basename.startswith(f"tfplan-{environment}-") or not (
-            basename.endswith(".tfplan") or basename.endswith(".meta.json")
+        if not basename.startswith(f"tfplan-{environment}-") or not basename.endswith(
+            (".tfplan", PLAN_META_SUFFIX)
         ):
             raise PlanArtifactError(
                 f"Plan artifact '{artifact_name}' contains an unexpected file: {member_name!r}"

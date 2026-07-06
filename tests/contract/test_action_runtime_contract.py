@@ -204,6 +204,8 @@ class TestCompositeRuntimeContract:
         """A plan from another environment, SHA, or params hash must not be restored."""
         restore_step = step_by_name(action, "[Execute] Restore Saved Plan")
         save_step = step_by_name(action, "[Execute] Save Plan Artifact")
+        declare_step = step_by_name(action, "[Execute] Declare Plan Intent")
+        save_intent_step = step_by_name(action, "[Execute] Save Plan Intent")
         execute_step = step_by_id(action, "tf-execute")
 
         # Plans must never touch actions/cache: since 2026-06-26 cache tokens
@@ -212,6 +214,27 @@ class TestCompositeRuntimeContract:
         assert "provenance" in action_text
         assert "immutable" in action_text
         assert "params hash" in action_text
+        assert "superseded plan" in action_text
+
+        # The intent record is declared and persisted BEFORE Terraform runs,
+        # so a failed plan attempt blocks apply instead of letting an older,
+        # superseded plan through.
+        assert declare_step["id"] == "declare-intent"
+        assert declare_step["if"] == "inputs.mode == 'execute' && env.TF_BD_OPERATION == 'plan'"
+        assert declare_step["env"]["TF_BD_EXTRA_ARGS"] == "${{ env.TF_BD_PARAMS }}"
+        assert "declare-plan-intent" in declare_step["run"]
+        assert save_intent_step["id"] == "save-intent"
+        assert save_intent_step["uses"].startswith("actions/upload-artifact@")
+        assert save_intent_step["if"] == "inputs.mode == 'execute' && env.TF_BD_OPERATION == 'plan'"
+        assert (
+            save_intent_step["with"]["name"]
+            == "${{ steps.declare-intent.outputs.intent_artifact_name }}"
+        )
+        assert save_intent_step["with"]["path"] == "${{ steps.declare-intent.outputs.intent_file }}"
+        assert save_intent_step["with"]["if-no-files-found"] == "error"
+        assert save_intent_step["with"]["retention-days"] == "${{ inputs.plan-retention-days }}"
+        steps = action["runs"]["steps"]
+        assert steps.index(save_intent_step) < steps.index(execute_step)
 
         assert restore_step["id"] == "restore-plan"
         assert restore_step["if"] == "inputs.mode == 'execute' && env.TF_BD_OPERATION == 'apply'"
@@ -237,9 +260,11 @@ class TestCompositeRuntimeContract:
         save_paths = save_step["with"]["path"].splitlines()
         assert "**/tfplan-${{ env.TF_BD_ENVIRONMENT }}-*.tfplan" in save_paths
         assert "**/tfplan-${{ env.TF_BD_ENVIRONMENT }}-*.meta.json" in save_paths
+        # The plan artifact name shares the intent's params hash so the
+        # intent record always names the exact plan this run produced.
         assert (
             save_step["with"]["name"]
-            == "tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}-${{ steps.tf-execute.outputs.plan_params_hash }}-${{ github.run_id }}-${{ github.run_attempt }}"
+            == "tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}-${{ steps.declare-intent.outputs.params_hash }}-${{ github.run_id }}-${{ github.run_attempt }}"
         )
         # A plan that cannot be persisted must fail the step loudly.
         assert save_step["with"]["if-no-files-found"] == "error"
@@ -256,8 +281,14 @@ class TestCompositeRuntimeContract:
         assert step["env"]["GH_REPO"] == "${{ github.repository }}"
         assert step["env"]["STATUS"] == "${{ steps.tf-execute.outcome }}"
         assert step["env"]["FAILURE_REASON"] == "${{ steps.tf-execute.outputs.failure_reason }}"
-        # Plan persistence and restore failures must surface in the PR comment.
+        # Plan persistence, intent, and restore failures must surface in the
+        # PR comment.
         assert step["env"]["SAVE_PLAN_OUTCOME"] == "${{ steps.save-plan.outcome }}"
+        assert step["env"]["SAVE_INTENT_OUTCOME"] == "${{ steps.save-intent.outcome }}"
+        assert (
+            step["env"]["DECLARE_INTENT_FAILURE_REASON"]
+            == "${{ steps.declare-intent.outputs.failure_reason }}"
+        )
         assert (
             step["env"]["RESTORE_FAILURE_REASON"]
             == "${{ steps.restore-plan.outputs.failure_reason }}"
@@ -265,6 +296,8 @@ class TestCompositeRuntimeContract:
         script = step["run"]
         assert 'SAVE_PLAN_OUTCOME}" != "failure"' in script
         assert "could not be uploaded as a workflow artifact" in script
+        assert 'SAVE_INTENT_OUTCOME}" == "failure"' in script
+        assert 'FAILURE_REASON="${DECLARE_INTENT_FAILURE_REASON}"' in script
         assert 'FAILURE_REASON="${RESTORE_FAILURE_REASON}"' in script
 
     def test_execute_mode_passes_pr_comment_params_without_shell_expansion(

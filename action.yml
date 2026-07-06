@@ -612,20 +612,57 @@ runs:
 
         echo "✅ State validated: ${TF_BD_ENVIRONMENT} / ${TF_BD_OPERATION}"
 
+    # Declare which plan this run intends to produce BEFORE Terraform runs.
+    # The intent record's name carries env/sha/params-hash/run-id, and apply
+    # resolves plans only through the newest intent — so if this plan run
+    # later fails, apply is blocked instead of silently falling back to an
+    # older, superseded plan (the incident class where a stale targeted plan
+    # was applied after a newer plan failed to persist).
+    - name: "[Execute] Declare Plan Intent"
+      id: declare-intent
+      if: inputs.mode == 'execute' && env.TF_BD_OPERATION == 'plan'
+      shell: bash
+      env:
+        TF_BD_EXTRA_ARGS: ${{ env.TF_BD_PARAMS }}
+        INPUT_CONFIG_PATH: ${{ inputs.config-path }}
+        TFBD_BIN: ${{ runner.temp }}/tf-bd-venv/bin/tf-branch-deploy
+      run: |
+        if [[ ! -x "$TFBD_BIN" ]]; then
+          echo "::error::tf-branch-deploy command not found"
+          exit 1
+        fi
+
+        "$TFBD_BIN" declare-plan-intent \
+          --environment "${TF_BD_ENVIRONMENT}" \
+          --sha "${TF_BD_SHA}" \
+          --config "${INPUT_CONFIG_PATH}"
+
+    # Persist the intent record before Terraform runs. If this upload fails,
+    # the job stops here — planning without a recorded intent would let a
+    # later apply fall back to a superseded plan.
+    - name: "[Execute] Save Plan Intent"
+      id: save-intent
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      if: inputs.mode == 'execute' && env.TF_BD_OPERATION == 'plan'
+      with:
+        name: ${{ steps.declare-intent.outputs.intent_artifact_name }}
+        path: ${{ steps.declare-intent.outputs.intent_file }}
+        if-no-files-found: error
+        retention-days: ${{ inputs.plan-retention-days }}
+
     # Restore the saved plan for apply operations from a workflow artifact.
-    # The CLI lists repository artifacts named tfplan-{env}-{sha}-*, keeps only
-    # artifacts uploaded by a workflow run of this repository (fork uploads are
-    # rejected), skips expired artifacts, and downloads the newest match into
-    # the environment working directory. A newer successful plan supersedes
-    # older plans for the same environment and commit. Each plan run has a
-    # unique artifact name (params hash + run_id + run_attempt).
+    # The CLI resolves the newest plan intent record (explicit numeric sort
+    # by run id/attempt), then requires the EXACT plan artifact that intent
+    # names. Fork-uploaded and expired artifacts are rejected; a name whose
+    # embedded run id does not match its uploading run is rejected as spoofed.
     #
     # TRUST MODEL: workflow artifacts are immutable once uploaded and are
-    # provenance-checked here. A missing artifact aborts the apply with an
-    # actionable PR comment rather than falling through to an untargeted
-    # apply. Plan integrity is further protected by the metadata sidecar
-    # checksum and params hash verified in the CLI. Requires `actions: read`
-    # on the workflow token.
+    # provenance-checked here. Apply resolves the plan only through the
+    # newest intent record, so a superseded plan is never applied; a missing
+    # or failed latest plan attempt aborts the apply with an actionable PR
+    # comment rather than falling through to an older plan. Plan integrity is
+    # further protected by the metadata sidecar checksum and params hash
+    # verified in the CLI. Requires `actions: read` on the workflow token.
     - name: "[Execute] Restore Saved Plan"
       id: restore-plan
       if: inputs.mode == 'execute' && env.TF_BD_OPERATION == 'apply'
@@ -691,7 +728,7 @@ runs:
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       if: inputs.mode == 'execute' && env.TF_BD_OPERATION == 'plan' && steps.tf-execute.outputs.plan_params_hash != ''
       with:
-        name: tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}-${{ steps.tf-execute.outputs.plan_params_hash }}-${{ github.run_id }}-${{ github.run_attempt }}
+        name: tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}-${{ steps.declare-intent.outputs.params_hash }}-${{ github.run_id }}-${{ github.run_attempt }}
         path: |
           **/tfplan-${{ env.TF_BD_ENVIRONMENT }}-*.tfplan
           **/tfplan-${{ env.TF_BD_ENVIRONMENT }}-*.meta.json
@@ -708,6 +745,8 @@ runs:
         STATUS: ${{ steps.tf-execute.outcome }}
         FAILURE_REASON: ${{ steps.tf-execute.outputs.failure_reason }}
         SAVE_PLAN_OUTCOME: ${{ steps.save-plan.outcome }}
+        SAVE_INTENT_OUTCOME: ${{ steps.save-intent.outcome }}
+        DECLARE_INTENT_FAILURE_REASON: ${{ steps.declare-intent.outputs.failure_reason }}
         RESTORE_FAILURE_REASON: ${{ steps.restore-plan.outputs.failure_reason }}
         TFBD_BIN: ${{ runner.temp }}/tf-bd-venv/bin/tf-branch-deploy
       run: |
@@ -722,6 +761,12 @@ runs:
 
         if [[ -z "${FAILURE_REASON}" && "${SAVE_PLAN_OUTCOME}" == "failure" ]]; then
           FAILURE_REASON="Terraform plan succeeded, but the plan file could not be uploaded as a workflow artifact, so a later apply would not find it. Check the workflow logs for the upload error, then run the plan again."
+        fi
+        if [[ -z "${FAILURE_REASON}" && -n "${DECLARE_INTENT_FAILURE_REASON}" ]]; then
+          FAILURE_REASON="${DECLARE_INTENT_FAILURE_REASON}"
+        fi
+        if [[ -z "${FAILURE_REASON}" && "${SAVE_INTENT_OUTCOME}" == "failure" ]]; then
+          FAILURE_REASON="The plan intent record could not be uploaded as a workflow artifact, so planning stopped before Terraform ran. Check the workflow logs for the upload error, then run the plan again."
         fi
         if [[ -z "${FAILURE_REASON}" && -n "${RESTORE_FAILURE_REASON}" ]]; then
           FAILURE_REASON="${RESTORE_FAILURE_REASON}"

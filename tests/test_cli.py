@@ -1409,7 +1409,7 @@ class TestExecuteArgumentSemantics:
 
 
 class TestRestorePlanCommand:
-    """Tests for the restore-plan command (artifact-based plan restore)."""
+    """Tests for the restore-plan command (intent-resolved plan restore)."""
 
     SHA = "abc12345ff0000000000000000000000000000ff"  # sha[:8] == abc12345
 
@@ -1434,18 +1434,38 @@ class TestRestorePlanCommand:
         monkeypatch.setenv("GITHUB_TOKEN", "test-token")
         return output_file
 
-    def _candidate(self):
+    def _intent(self, params_hash: str = "no-args", run_id: int = 123, run_attempt: int = 1):
+        from tf_branch_deploy.artifacts import PlanArtifactCandidate
+
+        return PlanArtifactCandidate(
+            id=6,
+            name=f"tfplan-intent-dev-{self.SHA}-{params_hash}-{run_id}-{run_attempt}",
+            created_at="2026-07-06T00:00:00Z",
+            expired=False,
+            size_in_bytes=2,
+            repository_id=100,
+            head_repository_id=100,
+            workflow_run_id=run_id,
+            params_hash=params_hash,
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+
+    def _plan_candidate(self, params_hash: str = "no-args", run_id: int = 123):
         from tf_branch_deploy.artifacts import PlanArtifactCandidate
 
         return PlanArtifactCandidate(
             id=7,
-            name=f"tfplan-dev-{self.SHA}-no-args-123-1",
+            name=f"tfplan-dev-{self.SHA}-{params_hash}-{run_id}-1",
             created_at="2026-07-06T00:00:00Z",
             expired=False,
             size_in_bytes=42,
             repository_id=100,
             head_repository_id=100,
-            workflow_run_id=555,
+            workflow_run_id=run_id,
+            params_hash=params_hash,
+            run_id=run_id,
+            run_attempt=1,
         )
 
     def _invoke(self, config_file: Path, working_dir: Path):
@@ -1473,10 +1493,11 @@ class TestRestorePlanCommand:
         working_dir.mkdir()
         config_file = self._write_config(tmp_path, working_dir)
         output_file = self._setup_env(tmp_path, monkeypatch)
-        candidate = self._candidate()
+        plan_candidate = self._plan_candidate()
 
         store = MagicMock()
-        store.find_latest.return_value = candidate
+        store.resolve_latest_intent.return_value = self._intent()
+        store.find_exact.return_value = plan_candidate
 
         def fake_extract(cand, dest_dir, environment):
             plan = dest_dir / "tfplan-dev-abc12345.tfplan"
@@ -1491,13 +1512,16 @@ class TestRestorePlanCommand:
             result = self._invoke(config_file, working_dir)
 
         assert result.exit_code == 0
-        store.find_latest.assert_called_once_with("dev", self.SHA)
+        store.resolve_latest_intent.assert_called_once_with("dev", self.SHA)
+        store.find_exact.assert_called_once_with(
+            f"tfplan-dev-{self.SHA}-no-args-123-1", "dev", self.SHA
+        )
         text = output_file.read_text(encoding="utf-8")
         assert "artifact_name<<" in text
-        assert candidate.name in text
+        assert plan_candidate.name in text
         assert "failure_reason" not in text
 
-    def test_no_artifact_found_sets_actionable_failure_reason(
+    def test_no_intent_found_sets_actionable_failure_reason(
         self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
     ) -> None:
         from unittest.mock import MagicMock, patch
@@ -1508,7 +1532,7 @@ class TestRestorePlanCommand:
         output_file = self._setup_env(tmp_path, monkeypatch)
 
         store = MagicMock()
-        store.find_latest.return_value = None
+        store.resolve_latest_intent.return_value = None
 
         with patch("tf_branch_deploy.artifacts.PlanArtifactStore", return_value=store):
             result = self._invoke(config_file, working_dir)
@@ -1518,6 +1542,36 @@ class TestRestorePlanCommand:
         assert "failure_reason<<" in text
         assert "No saved plan artifact found" in text
         assert ".plan to dev" in text
+
+    def test_superseded_plan_is_never_applied(
+        self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
+        """The incident guardrail: latest plan attempt failed => apply must refuse.
+
+        An older plan (different -target) still exists as an artifact, but the
+        newest intent record points at a plan that was never uploaded. Restore
+        must hard-fail instead of falling back to the superseded plan.
+        """
+        from unittest.mock import MagicMock, patch
+
+        working_dir = tmp_path / "terraform"
+        working_dir.mkdir()
+        config_file = self._write_config(tmp_path, working_dir)
+        output_file = self._setup_env(tmp_path, monkeypatch)
+
+        store = MagicMock()
+        store.resolve_latest_intent.return_value = self._intent(params_hash="deadbeef", run_id=999)
+        store.find_exact.return_value = None  # latest attempt has no plan artifact
+
+        with patch("tf_branch_deploy.artifacts.PlanArtifactStore", return_value=store):
+            result = self._invoke(config_file, working_dir)
+
+        assert result.exit_code == 1
+        store.download_and_extract.assert_not_called()
+        text = output_file.read_text(encoding="utf-8")
+        assert "did not produce an applyable plan" in text
+        assert "run 999" in text
+        assert "superseded" in text
 
     def test_listing_failure_mentions_actions_read_permission(
         self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
@@ -1532,7 +1586,7 @@ class TestRestorePlanCommand:
         output_file = self._setup_env(tmp_path, monkeypatch)
 
         store = MagicMock()
-        store.find_latest.side_effect = PlanArtifactError("HTTP 403")
+        store.resolve_latest_intent.side_effect = PlanArtifactError("HTTP 403")
 
         with patch("tf_branch_deploy.artifacts.PlanArtifactStore", return_value=store):
             result = self._invoke(config_file, working_dir)
@@ -1555,7 +1609,8 @@ class TestRestorePlanCommand:
         output_file = self._setup_env(tmp_path, monkeypatch)
 
         store = MagicMock()
-        store.find_latest.return_value = self._candidate()
+        store.resolve_latest_intent.return_value = self._intent()
+        store.find_exact.return_value = self._plan_candidate()
         store.download_and_extract.side_effect = PlanArtifactError("zip corrupt")
 
         with patch("tf_branch_deploy.artifacts.PlanArtifactStore", return_value=store):
@@ -1576,7 +1631,8 @@ class TestRestorePlanCommand:
         output_file = self._setup_env(tmp_path, monkeypatch)
 
         store = MagicMock()
-        store.find_latest.return_value = self._candidate()
+        store.resolve_latest_intent.return_value = self._intent()
+        store.find_exact.return_value = self._plan_candidate()
         store.download_and_extract.return_value = []
 
         with patch("tf_branch_deploy.artifacts.PlanArtifactStore", return_value=store):
@@ -1600,3 +1656,103 @@ class TestRestorePlanCommand:
         assert result.exit_code == 1
         text = output_file.read_text(encoding="utf-8")
         assert "failure_reason<<" in text
+
+
+class TestDeclarePlanIntentCommand:
+    """Tests for the declare-plan-intent command."""
+
+    SHA = "abc12345ff0000000000000000000000000000ff"
+
+    def _write_config(self, tmp_path: Path) -> Path:
+        config_file = tmp_path / ".tf-branch-deploy.yml"
+        config_file.write_text(
+            dedent("""
+            default-environment: dev
+            production-environments: [prod]
+            environments:
+              dev: {}
+              prod: {}
+            """)
+        )
+        return config_file
+
+    def _invoke_in(self, tmp_path: Path, config_file: Path):
+        import os as _os
+
+        cwd = _os.getcwd()
+        _os.chdir(tmp_path)
+        try:
+            return runner.invoke(
+                app,
+                [
+                    "declare-plan-intent",
+                    "--environment",
+                    "dev",
+                    "--sha",
+                    self.SHA,
+                    "--config",
+                    str(config_file),
+                ],
+            )
+        finally:
+            _os.chdir(cwd)
+
+    def test_declares_intent_with_params_hash_and_run_identity(
+        self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
+        output_file = tmp_path / "github-output"
+        monkeypatch.setenv("GITHUB_OUTPUT", str(output_file))
+        monkeypatch.setenv("GITHUB_RUN_ID", "555")
+        monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+        monkeypatch.setenv("TF_BD_EXTRA_ARGS", "-target=module.base")
+        config_file = self._write_config(tmp_path)
+
+        result = self._invoke_in(tmp_path, config_file)
+
+        assert result.exit_code == 0
+        from tf_branch_deploy.artifacts import generate_params_hash
+
+        params_hash = generate_params_hash("-target=module.base")
+        text = output_file.read_text(encoding="utf-8")
+        assert f"tfplan-intent-dev-{self.SHA}-{params_hash}-555-2" in text
+        assert "params_hash<<" in text
+        assert "intent_artifact_name<<" in text
+
+        intent_file = tmp_path / "tfplan-intent-dev-abc12345.json"
+        assert intent_file.exists()
+        intent = json.loads(intent_file.read_text())
+        assert intent["params_hash"] == params_hash
+        assert intent["run_id"] == 555
+        assert intent["run_attempt"] == 2
+
+    def test_no_args_plan_uses_no_args_hash(
+        self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
+        output_file = tmp_path / "github-output"
+        monkeypatch.setenv("GITHUB_OUTPUT", str(output_file))
+        monkeypatch.setenv("GITHUB_RUN_ID", "555")
+        monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "1")
+        monkeypatch.delenv("TF_BD_EXTRA_ARGS", raising=False)
+        config_file = self._write_config(tmp_path)
+
+        result = self._invoke_in(tmp_path, config_file)
+
+        assert result.exit_code == 0
+        text = output_file.read_text(encoding="utf-8")
+        assert f"tfplan-intent-dev-{self.SHA}-no-args-555-1" in text
+
+    def test_missing_run_identity_fails_with_reason(
+        self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
+        output_file = tmp_path / "github-output"
+        monkeypatch.setenv("GITHUB_OUTPUT", str(output_file))
+        monkeypatch.delenv("GITHUB_RUN_ID", raising=False)
+        monkeypatch.delenv("GITHUB_RUN_ATTEMPT", raising=False)
+        config_file = self._write_config(tmp_path)
+
+        result = self._invoke_in(tmp_path, config_file)
+
+        assert result.exit_code == 1
+        text = output_file.read_text(encoding="utf-8")
+        assert "failure_reason<<" in text
+        assert "GITHUB_RUN_ID" in text

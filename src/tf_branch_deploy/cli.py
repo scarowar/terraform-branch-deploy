@@ -629,6 +629,69 @@ def complete_lifecycle(
     console.print("\n[green]✅ Lifecycle complete[/green]")
 
 
+@app.command(name="declare-plan-intent")
+def declare_plan_intent(
+    environment: Annotated[str, typer.Option("--environment", "-e", help="Target environment")],
+    sha: Annotated[str, typer.Option("--sha", "-s", help="Git commit SHA")],
+    config_path: Annotated[
+        Path, typer.Option("--config", "-c", help="Path to .tf-branch-deploy.yml")
+    ] = DEFAULT_CONFIG_PATH,
+) -> None:
+    """Declare the plan this run intends to produce, before Terraform runs.
+
+    Writes an intent file and outputs the intent artifact name (uploaded by
+    action.yml as `tfplan-intent-{env}-{sha}-{params_hash}-{run_id}-{run_attempt}`)
+    plus the params hash. Apply resolves plans only through the newest intent
+    record, so a plan run that later fails blocks apply instead of letting an
+    older, superseded plan through — the guardrail against applying a plan
+    that does not match the latest plan command.
+    """
+    from .artifacts import generate_params_hash, plan_intent_prefix
+
+    console.print(
+        Panel.fit(
+            f"[bold blue]Terraform Branch Deploy[/bold blue] v{_package_version()}",
+            subtitle="Declare Plan Intent",
+        )
+    )
+
+    _load_and_validate_config(config_path, environment)
+
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "")
+    if not run_id.isdigit() or not run_attempt.isdigit():
+        msg = (
+            "GITHUB_RUN_ID/GITHUB_RUN_ATTEMPT not available; cannot record the "
+            "plan intent. Review the workflow logs for details."
+        )
+        console.print(f"[red]❌ {msg}[/red]")
+        set_github_output("failure_reason", msg)
+        raise typer.Exit(1)
+
+    params_hash = generate_params_hash(os.environ.get("TF_BD_EXTRA_ARGS"))
+    intent_name = f"{plan_intent_prefix(environment, sha)}{params_hash}-{run_id}-{run_attempt}"
+
+    intent_file = Path(f"tfplan-intent-{environment}-{sha[:8]}.json")
+    intent_file.write_text(
+        json.dumps(
+            {
+                "environment": environment,
+                "sha": sha,
+                "params_hash": params_hash,
+                "run_id": int(run_id),
+                "run_attempt": int(run_attempt),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            },
+            indent=2,
+        )
+    )
+
+    console.print(f"[green]✅ Plan intent declared:[/green] {intent_name}")
+    set_github_output("params_hash", params_hash)
+    set_github_output("intent_artifact_name", intent_name)
+    set_github_output("intent_file", str(intent_file))
+
+
 @app.command(name="restore-plan")
 def restore_plan(
     environment: Annotated[str, typer.Option("--environment", "-e", help="Target environment")],
@@ -642,13 +705,20 @@ def restore_plan(
 ) -> None:
     """Restore the saved plan workflow artifact for an apply operation.
 
-    Locates the newest plan artifact for this environment and commit,
-    verifies its workflow-run provenance, and extracts the plan and
-    metadata sidecar into the environment working directory. Every
-    failure sets a failure_reason output so the lifecycle step posts
-    an actionable PR comment — a missing plan never fails silently.
+    Resolves the newest plan intent record for this environment and commit,
+    then requires the exact plan artifact that intent names — so apply can
+    only ever use the plan produced by the most recent `.plan` command, and
+    a failed latest attempt blocks apply instead of falling back to a
+    superseded plan. Every failure sets a failure_reason output so the
+    lifecycle step posts an actionable PR comment — nothing fails silently.
     """
-    from .artifacts import PlanArtifactError, PlanArtifactStore, generate_artifact_name
+    from .artifacts import (
+        PLAN_META_SUFFIX,
+        PlanArtifactError,
+        PlanArtifactStore,
+        generate_artifact_name,
+        plan_artifact_name_from_intent,
+    )
 
     console.print(
         Panel.fit(
@@ -674,7 +744,7 @@ def restore_plan(
     store = PlanArtifactStore(repo=repo, github_token=token)
 
     try:
-        candidate = store.find_latest(environment, sha)
+        intent = store.resolve_latest_intent(environment, sha)
     except PlanArtifactError as e:
         console.print(f"[red]❌ {e}[/red]")
         error_msg = format_error_for_comment(
@@ -692,15 +762,15 @@ def restore_plan(
         set_github_output("failure_reason", error_msg)
         raise typer.Exit(1) from None
 
-    if candidate is None:
+    if intent is None:
         console.print(
             f"[red]❌ No saved plan artifact found for commit {sha[:8]} in {environment}[/red]"
         )
         error_msg = format_error_for_comment(
             message=(
                 f"No saved plan artifact found for commit `{sha[:8]}` in `{environment}`. "
-                "You attempted to apply changes, but no saved plan exists for this commit. "
-                "Plan artifacts expire after the configured retention period "
+                "You attempted to apply changes, but no plan has been created for this "
+                "commit. Plan artifacts expire after the configured retention period "
                 "(`plan-retention-days`, default 7 days), and plans created with "
                 "terraform-branch-deploy v0.2.x or earlier are not restored."
             ),
@@ -709,6 +779,44 @@ def restore_plan(
                 f"- For rollback to stable: `.apply main to {environment}`"
             ),
             suggestion=f"Run `.plan to {environment}` first, then `.apply to {environment}`",
+        )
+        set_github_output("failure_reason", error_msg)
+        raise typer.Exit(1)
+
+    console.print(
+        f"[green]✅ Latest plan intent:[/green] {intent.name} "
+        f"[dim](created {intent.created_at}, run {intent.run_id} attempt {intent.run_attempt})[/dim]"
+    )
+
+    plan_name = plan_artifact_name_from_intent(intent.name, environment, sha)
+    try:
+        candidate = store.find_exact(plan_name, environment, sha)
+    except PlanArtifactError as e:
+        console.print(f"[red]❌ {e}[/red]")
+        error_msg = format_error_for_comment(
+            message=f"Could not look up the saved plan artifact `{plan_name}`.",
+            logs_url=_workflow_logs_url(),
+            suggestion=f"Create a fresh plan by running `.plan to {environment}`",
+        )
+        set_github_output("failure_reason", error_msg)
+        raise typer.Exit(1) from None
+
+    if candidate is None:
+        console.print(
+            f"[red]❌ Latest plan attempt (run {intent.run_id}) has no plan artifact[/red]"
+        )
+        error_msg = format_error_for_comment(
+            message=(
+                f"The most recent `.plan` for `{environment}` (run {intent.run_id}) "
+                "did not produce an applyable plan — it may have failed or may still "
+                "be running. Terraform Branch Deploy refuses to fall back to an older, "
+                "superseded plan."
+            ),
+            logs_url=_workflow_logs_url(),
+            suggestion=(
+                f"Re-run `.plan to {environment}` and wait for it to succeed "
+                f"before running `.apply to {environment}`"
+            ),
         )
         set_github_output("failure_reason", error_msg)
         raise typer.Exit(1)
@@ -732,7 +840,7 @@ def restore_plan(
         raise typer.Exit(1) from None
 
     plan_file = resolved_working_dir / generate_artifact_name(environment, sha)
-    meta_file = plan_file.with_suffix(".meta.json")
+    meta_file = plan_file.with_suffix(PLAN_META_SUFFIX)
     if not plan_file.exists() or not meta_file.exists():
         console.print(f"[red]❌ Artifact did not contain the expected plan: {plan_file}[/red]")
         error_msg = format_error_for_comment(

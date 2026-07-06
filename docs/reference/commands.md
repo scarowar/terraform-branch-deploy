@@ -7,7 +7,7 @@ The default command set is:
 | Command | Purpose |
 | --- | --- |
 | `.plan to <env>` | Run `terraform plan`, post the result, and save the plan. |
-| `.apply to <env>` | Apply the latest successful saved plan for the same environment and commit. |
+| `.apply to <env>` | Apply exactly the plan produced by the most recent `.plan` for the same environment and commit. |
 | `.apply main to <env>` | Roll back by applying the stable branch directly. |
 | `.lock <env>` | Lock one environment. |
 | `.unlock <env>` | Unlock one environment. |
@@ -45,11 +45,11 @@ Plan runs `terraform init` and `terraform plan` for the selected environment. Th
 
 A normal apply requires a saved plan. If new commits are pushed after planning, run `.plan to <env>` again.
 
-Apply restores the latest successful saved plan for the environment and commit SHA. It does not create a fresh plan during a normal apply.
+Apply resolves the plan through the newest plan intent record for the environment and commit SHA, and applies exactly the plan that intent names. It does not create a fresh plan during a normal apply.
 
 Saved plan metadata is required and verified before the plan is applied. Re-plan to replace older saved plans that do not have metadata.
 
-If you run multiple successful plans for the same environment and commit, the newest successful plan is the one a later apply uses.
+If you run multiple plans for the same environment and commit, a later apply uses only the plan from the most recent plan command. If that most recent plan failed, apply refuses instead of falling back to an older plan - re-run the plan first.
 
 ## Rollback
 
