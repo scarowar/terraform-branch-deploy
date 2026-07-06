@@ -30,9 +30,16 @@ PLAN_ARTIFACT_NAME_RE = re.compile(
 
 PLAN_META_SUFFIX = ".meta.json"
 
+ARTIFACTS_PER_PAGE = 100
 MAX_ARTIFACT_LIST_PAGES = 10
 GH_LIST_TIMEOUT_SECONDS = 60
 GH_DOWNLOAD_TIMEOUT_SECONDS = 120
+
+# Plan zips are downloaded into memory and extracted member-by-member; these
+# bounds keep a corrupted or malicious artifact (e.g. a decompression bomb)
+# from exhausting runner memory or disk. Real Terraform plans are far smaller.
+MAX_ARTIFACT_DOWNLOAD_BYTES = 512 * 1024 * 1024
+MAX_EXTRACTED_MEMBER_BYTES = 512 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -294,27 +301,32 @@ class PlanArtifactStore:
         """
         prefix = plan_artifact_prefix(environment, sha)
         candidates = [
-            candidate
-            for raw in self._list_page(1, name=name)
-            if (candidate := self._accept(raw, prefix)) is not None and candidate.name == name
+            candidate for candidate in self._collect(prefix, name=name) if candidate.name == name
         ]
         if not candidates:
             return None
         return max(candidates, key=lambda c: c.id)
 
-    def _collect(self, prefix: str) -> list[PlanArtifactCandidate]:
-        """Collect all valid candidates matching a name prefix across pages."""
+    def _collect(self, prefix: str, name: str | None = None) -> list[PlanArtifactCandidate]:
+        """Collect all valid candidates matching a name prefix across pages.
+
+        The listing is complete once a page is empty or the API-reported
+        total_count has been covered — a short or final page is never mistaken
+        for truncation. Only a genuinely unfinished scan raises, so an
+        incomplete search can never masquerade as "no plan".
+        """
         candidates: list[PlanArtifactCandidate] = []
         for page in range(1, MAX_ARTIFACT_LIST_PAGES + 1):
-            artifacts = self._list_page(page)
-            if not artifacts:
-                return candidates
+            artifacts, total_count = self._list_page(page, name=name)
             for raw in artifacts:
                 candidate = self._accept(raw, prefix)
                 if candidate is not None:
                     candidates.append(candidate)
+            if not artifacts or page * ARTIFACTS_PER_PAGE >= total_count:
+                return candidates
         raise PlanArtifactError(
-            f"Artifact search truncated after {MAX_ARTIFACT_LIST_PAGES * 100} artifacts; "
+            "Artifact search truncated after "
+            f"{MAX_ARTIFACT_LIST_PAGES * ARTIFACTS_PER_PAGE} artifacts; "
             "cannot reliably determine the latest plan intent. Reduce artifact volume "
             "or retention in this repository."
         )
@@ -329,9 +341,15 @@ class PlanArtifactStore:
 
         Archive members are extracted by basename only (upload-artifact flattens
         paths to the least common ancestor, so stored paths are not trusted).
-        Members with absolute paths, traversal components, or unexpected names
-        abort the restore.
+        Members with absolute paths, traversal components, unexpected names, or
+        decompression-bomb sizes abort the restore.
         """
+        if candidate.size_in_bytes > MAX_ARTIFACT_DOWNLOAD_BYTES:
+            raise PlanArtifactError(
+                f"Plan artifact '{candidate.name}' is {candidate.size_in_bytes} bytes, "
+                f"exceeding the {MAX_ARTIFACT_DOWNLOAD_BYTES}-byte safety limit"
+            )
+
         zip_bytes = self._download_zip(candidate)
         extracted: list[Path] = []
         try:
@@ -342,6 +360,13 @@ class PlanArtifactStore:
                     for member in archive.infolist():
                         if member.is_dir():
                             continue
+                        if member.file_size > MAX_EXTRACTED_MEMBER_BYTES:
+                            raise PlanArtifactError(
+                                f"Plan artifact '{candidate.name}' member "
+                                f"{member.filename!r} would extract to "
+                                f"{member.file_size} bytes, exceeding the "
+                                f"{MAX_EXTRACTED_MEMBER_BYTES}-byte safety limit"
+                            )
                         basename = self._safe_member_basename(
                             member.filename, environment, candidate.name
                         )
@@ -361,8 +386,9 @@ class PlanArtifactStore:
             raise PlanArtifactError(f"Plan artifact '{candidate.name}' contained no plan files")
         return extracted
 
-    def _list_page(self, page: int, name: str | None = None) -> list[dict]:
-        endpoint = f"repos/{self.repo}/actions/artifacts?per_page=100&page={page}"
+    def _list_page(self, page: int, name: str | None = None) -> tuple[list[dict], int]:
+        """Return one page of artifacts plus the API-reported total count."""
+        endpoint = f"repos/{self.repo}/actions/artifacts?per_page={ARTIFACTS_PER_PAGE}&page={page}"
         if name:
             endpoint += f"&name={quote(name)}"
         cmd = ["gh", "api", endpoint]
@@ -389,9 +415,10 @@ class PlanArtifactStore:
         except json.JSONDecodeError as e:
             raise PlanArtifactError(f"Failed to parse workflow artifacts response: {e}") from e
         artifacts = payload.get("artifacts", [])
-        if not isinstance(artifacts, list):
+        total_count = payload.get("total_count", 0)
+        if not isinstance(artifacts, list) or not isinstance(total_count, int):
             raise PlanArtifactError("Unexpected workflow artifacts response shape")
-        return artifacts
+        return artifacts, total_count
 
     def _download_zip(self, candidate: PlanArtifactCandidate) -> bytes:
         # Binary stdout: artifact zips must not go through text decoding.

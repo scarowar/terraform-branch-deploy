@@ -23,13 +23,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A plan that cannot be persisted now fails the plan run with an actionable PR comment instead of silently succeeding and leaving a later apply unable to find the plan.
 - Artifact selection no longer relies on the GitHub API's undocumented list order; the latest plan intent is chosen by an explicit numeric sort of workflow run identifiers.
 - GitHub API calls during artifact listing and download now carry explicit timeouts, converting network stalls into loud failures instead of hung jobs.
-- A truncated artifact search (page cap) now fails the restore instead of reporting "no plan found".
+- A truncated artifact search (page cap) now fails the restore instead of reporting "no plan found"; listing completion is determined from the API-reported total count, so a short or final page is never mistaken for truncation.
 
 ### Security
 
 - Plan artifact restore rejects artifacts uploaded by workflow runs of fork repositories, closing a plan-spoofing vector; workflow artifacts are also immutable once uploaded, unlike cache entries.
 - Artifact names claiming a workflow run other than the one that uploaded them are rejected as spoofed.
 - Artifact extraction never trusts archive member paths: absolute paths, traversal components, and unexpected file names abort the restore.
+- Decompression-bomb guards: oversized artifacts are refused before download, and archive members whose uncompressed size exceeds a safety limit abort the restore.
 
 ## [0.2.0] - 2026-05-26
 

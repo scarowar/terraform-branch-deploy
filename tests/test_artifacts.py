@@ -266,8 +266,12 @@ class TestPlanArtifactStore:
         return f"tfplan-{self.ENV}-{self.SHA}-{params_hash}-{run}"
 
     @staticmethod
-    def _list_response(*artifacts: dict) -> MagicMock:
-        return MagicMock(returncode=0, stdout=json.dumps({"artifacts": list(artifacts)}))
+    def _list_response(*artifacts: dict, total: int | None = None) -> MagicMock:
+        payload = {
+            "artifacts": list(artifacts),
+            "total_count": len(artifacts) if total is None else total,
+        }
+        return MagicMock(returncode=0, stdout=json.dumps(payload))
 
     def test_resolve_latest_intent_sorts_numerically_not_by_api_order(self) -> None:
         """Selection must not rely on the API's undocumented list order."""
@@ -350,14 +354,14 @@ class TestPlanArtifactStore:
 
         with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
             run_mock.side_effect = [
-                self._list_response(page1_match),
-                self._list_response(page2_match),
-                self._list_response(),
+                self._list_response(page1_match, total=150),
+                self._list_response(page2_match, total=150),
             ]
             intent = store.resolve_latest_intent(self.ENV, self.SHA)
 
         assert intent is not None
         assert intent.run_id == 222
+        assert run_mock.call_count == 2
         assert "page=2" in run_mock.call_args_list[1].args[0][2]
 
     def test_resolve_latest_intent_returns_none_when_no_artifacts(self) -> None:
@@ -372,9 +376,21 @@ class TestPlanArtifactStore:
         store = PlanArtifactStore(repo="owner/repo", github_token="tok")
 
         with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
-            run_mock.return_value = self._list_response(self._artifact("unrelated"))
+            run_mock.return_value = self._list_response(self._artifact("unrelated"), total=1500)
             with pytest.raises(PlanArtifactError, match="truncated"):
                 store.resolve_latest_intent(self.ENV, self.SHA)
+
+    def test_resolve_latest_intent_completes_on_final_full_page(self) -> None:
+        """A non-empty last page within the cap is completion, not truncation."""
+        store = PlanArtifactStore(repo="owner/repo", github_token="tok")
+
+        with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
+            # total_count says exactly 10 pages exist; page 10 being non-empty
+            # must not raise (the previous heuristic falsely did).
+            run_mock.return_value = self._list_response(self._artifact("unrelated"), total=1000)
+            assert store.resolve_latest_intent(self.ENV, self.SHA) is None
+
+        assert run_mock.call_count == 10
 
     def test_resolve_latest_intent_raises_when_listing_fails(self) -> None:
         """A failed listing (e.g. missing actions: read) is not the same as no plan."""
@@ -521,6 +537,34 @@ class TestPlanArtifactStore:
             run_mock.side_effect = subprocess.TimeoutExpired(cmd=["gh"], timeout=120)
             with pytest.raises(PlanArtifactError, match="Timed out downloading"):
                 store.download_and_extract(self._candidate(), tmp_path, self.ENV)
+
+    def test_oversized_artifact_is_refused_before_download(self, tmp_path: Path) -> None:
+        """Absurdly large artifacts are rejected without downloading anything."""
+        import dataclasses
+
+        store = PlanArtifactStore(repo="owner/repo", github_token="tok")
+        huge = dataclasses.replace(self._candidate(), size_in_bytes=10**12)
+
+        with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
+            with pytest.raises(PlanArtifactError, match="safety limit"):
+                store.download_and_extract(huge, tmp_path, self.ENV)
+
+        run_mock.assert_not_called()
+
+    def test_download_and_extract_rejects_decompression_bomb(self, tmp_path: Path) -> None:
+        """A member whose uncompressed size exceeds the bound aborts the restore."""
+        store = PlanArtifactStore(repo="owner/repo", github_token="tok")
+        zip_bytes = self._zip_bytes((f"tfplan-{self.ENV}-abc12345.tfplan", b"x" * 64))
+
+        with (
+            patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock,
+            patch("tf_branch_deploy.artifacts.MAX_EXTRACTED_MEMBER_BYTES", 16),
+        ):
+            run_mock.return_value = MagicMock(returncode=0, stdout=zip_bytes)
+            with pytest.raises(PlanArtifactError, match="safety limit"):
+                store.download_and_extract(self._candidate(), tmp_path, self.ENV)
+
+        assert not (tmp_path / f"tfplan-{self.ENV}-abc12345.tfplan").exists()
 
 
 class TestIntentNameHelpers:
