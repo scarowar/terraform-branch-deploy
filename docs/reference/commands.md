@@ -47,7 +47,7 @@ A normal apply requires a saved plan. If new commits are pushed after planning, 
 
 Apply restores the latest successful saved plan for the environment and commit SHA. It does not create a fresh plan during a normal apply.
 
-Saved plan metadata is required and verified before the plan is applied. Re-plan to replace older cached plans that do not have metadata.
+Saved plan metadata is required and verified before the plan is applied. Re-plan to replace older saved plans that do not have metadata.
 
 If you run multiple successful plans for the same environment and commit, the newest successful plan is the one a later apply uses.
 
@@ -92,7 +92,7 @@ Common examples:
 - `.plan to dev | -var-file=env/dev.tfvars`: Adds a variable file inside the environment working directory.
 - `.plan to dev | -refresh=false`: Skips refresh for that plan.
 
-Extra arguments from `.plan` are part of the saved plan. A later `.apply to <env>` applies that saved plan without needing to repeat those arguments. The restored cache key and saved metadata must agree on the plan argument hash before Terraform runs.
+Extra arguments from `.plan` are part of the saved plan. A later `.apply to <env>` applies that saved plan without needing to repeat those arguments. The restored plan artifact name and saved metadata must agree on the plan argument hash before Terraform runs.
 
 PR comment `-var-file` values must be relative paths inside the environment
 working directory after symlink resolution. Absolute paths and `..` traversal

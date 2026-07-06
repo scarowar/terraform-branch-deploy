@@ -198,46 +198,52 @@ class TestCompositeRuntimeContract:
         assert execute_step["env"]["TFBD_TOOL_DIR"] == "${{ runner.temp }}/tfbd-tools/bin"
         assert 'export PATH="${TFBD_TOOL_DIR}:${PATH}"' in execute_step["run"]
 
-    def test_execute_mode_cache_restore_and_save_are_environment_and_sha_scoped(
+    def test_execute_mode_artifact_restore_and_save_are_environment_and_sha_scoped(
         self, action: dict[str, Any], action_text: str
     ) -> None:
         """A plan from another environment, SHA, or params hash must not be restored."""
-        restore_step = step_by_name(action, "[Execute] Restore Cached Plan")
-        save_step = step_by_name(action, "[Execute] Cache Plan File")
+        restore_step = step_by_name(action, "[Execute] Restore Saved Plan")
+        save_step = step_by_name(action, "[Execute] Save Plan Artifact")
         execute_step = step_by_id(action, "tf-execute")
 
-        assert "latest successful plan" in action_text
+        # Plans must never touch actions/cache: since 2026-06-26 cache tokens
+        # are read-only for issue_comment triggers and saves silently no-op.
+        assert "actions/cache" not in action_text
+        assert "provenance" in action_text
+        assert "immutable" in action_text
         assert "params hash" in action_text
+
         assert restore_step["id"] == "restore-plan"
-        assert restore_step["uses"].startswith("actions/cache/restore@")
         assert restore_step["if"] == "inputs.mode == 'execute' && env.TF_BD_OPERATION == 'apply'"
-        restore_paths = restore_step["with"]["path"].splitlines()
-        assert "**/tfplan-${{ env.TF_BD_ENVIRONMENT }}-*.tfplan" in restore_paths
-        assert "**/tfplan-${{ env.TF_BD_ENVIRONMENT }}-*.meta.json" in restore_paths
+        assert restore_step["env"]["GITHUB_TOKEN"] == "${{ inputs.github-token }}"
+        assert restore_step["env"]["GH_REPO"] == "${{ github.repository }}"
+        assert restore_step["env"]["INPUT_CONFIG_PATH"] == "${{ inputs.config-path }}"
+        restore_script = restore_step["run"]
+        assert "restore-plan" in restore_script
+        assert '--environment "${TF_BD_ENVIRONMENT}"' in restore_script
+        assert '--sha "${TF_BD_SHA}"' in restore_script
+        assert '--config "${INPUT_CONFIG_PATH}"' in restore_script
         assert (
-            restore_step["with"]["key"]
-            == "tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}-no-args-${{ github.run_id }}-${{ github.run_attempt }}"
-        )
-        assert (
-            "tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}-"
-            in restore_step["with"]["restore-keys"]
-        )
-        assert (
-            execute_step["env"]["TF_BD_PLAN_CACHE_KEY"]
-            == "${{ steps.restore-plan.outputs.cache-matched-key }}"
+            execute_step["env"]["TF_BD_PLAN_ARTIFACT_NAME"]
+            == "${{ steps.restore-plan.outputs.artifact_name }}"
         )
 
-        assert save_step["uses"].startswith("actions/cache/save@")
+        assert save_step["id"] == "save-plan"
+        assert save_step["uses"].startswith("actions/upload-artifact@")
         assert (
             save_step["if"]
             == "inputs.mode == 'execute' && env.TF_BD_OPERATION == 'plan' && steps.tf-execute.outputs.plan_params_hash != ''"
         )
         save_paths = save_step["with"]["path"].splitlines()
-        assert save_paths == restore_paths
+        assert "**/tfplan-${{ env.TF_BD_ENVIRONMENT }}-*.tfplan" in save_paths
+        assert "**/tfplan-${{ env.TF_BD_ENVIRONMENT }}-*.meta.json" in save_paths
         assert (
-            save_step["with"]["key"]
+            save_step["with"]["name"]
             == "tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}-${{ steps.tf-execute.outputs.plan_params_hash }}-${{ github.run_id }}-${{ github.run_attempt }}"
         )
+        # A plan that cannot be persisted must fail the step loudly.
+        assert save_step["with"]["if-no-files-found"] == "error"
+        assert save_step["with"]["retention-days"] == "${{ inputs.plan-retention-days }}"
 
     def test_lifecycle_completion_runs_on_success_and_failure_with_ghe_context(
         self, action: dict[str, Any]
@@ -250,6 +256,16 @@ class TestCompositeRuntimeContract:
         assert step["env"]["GH_REPO"] == "${{ github.repository }}"
         assert step["env"]["STATUS"] == "${{ steps.tf-execute.outcome }}"
         assert step["env"]["FAILURE_REASON"] == "${{ steps.tf-execute.outputs.failure_reason }}"
+        # Plan persistence and restore failures must surface in the PR comment.
+        assert step["env"]["SAVE_PLAN_OUTCOME"] == "${{ steps.save-plan.outcome }}"
+        assert (
+            step["env"]["RESTORE_FAILURE_REASON"]
+            == "${{ steps.restore-plan.outputs.failure_reason }}"
+        )
+        script = step["run"]
+        assert 'SAVE_PLAN_OUTCOME}" != "failure"' in script
+        assert "could not be uploaded as a workflow artifact" in script
+        assert 'FAILURE_REASON="${RESTORE_FAILURE_REASON}"' in script
 
     def test_execute_mode_passes_pr_comment_params_without_shell_expansion(
         self, action: dict[str, Any]

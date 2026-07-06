@@ -8,11 +8,48 @@ Replace `<terraform-branch-deploy-ref>` in the examples with the ref your reposi
 
 | Ref style | Use when |
 | --- | --- |
-| `v0.2.0` | You want the reviewed v0.2.0 release and will update deliberately. For future releases, use the current release tag you reviewed. |
+| `v0.3.0` | You want the reviewed v0.3.0 release and will update deliberately. For future releases, use the current release tag you reviewed. |
 | Full release commit SHA | You need an immutable ref for stricter supply-chain controls. |
 | `v0` | You intentionally accept the moving latest v0 release line. |
 
 For production workflows, prefer an exact release tag or the full commit SHA for the release you reviewed.
+
+## v0.2.0 to v0.3.0
+
+v0.3.0 changes how saved plans persist between the `.plan` and `.apply` runs. GitHub made the Actions cache read-only for `issue_comment`-triggered workflows on 2026-06-26 ([changelog](https://github.blog/changelog/2026-06-26-read-only-actions-cache-for-untrusted-triggers/)), which silently broke cache-based plan saves: `.plan` appeared to succeed, but `.apply` could no longer find the plan. v0.3.0 saves plans as GitHub Actions workflow artifacts instead, which are unaffected by that change, immutable once uploaded, and provenance-checked on restore.
+
+### Breaking: Add `actions: read` to Workflow Permissions
+
+The apply run lists and downloads the plan artifact saved by the plan run, which requires `actions: read` on the workflow token:
+
+```yaml
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  deployments: write
+  checks: read
+  statuses: read
+  actions: read
+```
+
+Without it, `.apply` fails with a PR comment reading "Could not list workflow artifacts".
+
+### Re-run `.plan` After Upgrading
+
+Plans saved by v0.2.x live in the Actions cache and are not restored by v0.3.0. After upgrading, run `.plan to <env>` again before `.apply to <env>` for any in-flight deployment.
+
+### New Input: `plan-retention-days`
+
+Saved plan artifacts expire after `plan-retention-days` (default `7`, matching the previous cache eviction window; valid range 1-90, capped by the repository's artifact retention setting). An expired plan means re-running `.plan`. Plan files can embed sensitive resolved values, so prefer short retention.
+
+### Plan Persistence Failures Are Now Loud
+
+If a plan cannot be uploaded as an artifact, the plan run fails and posts a PR comment instead of reporting success for a plan that a later apply could never find.
+
+### Branch Deploy v11.1.5
+
+The embedded `github/branch-deploy` is updated from v11.1.4 to v11.1.5 (dependency updates and upstream documentation hardening). No command behavior changes.
 
 ## v0.1.0 to v0.2.0
 
@@ -150,7 +187,7 @@ Normal apply uses the latest successful saved plan for the same environment and 
 .apply to prod
 ```
 
-The apply command restores and applies the saved targeted plan. It does not run a fresh untargeted apply. The restored cache key and saved metadata must agree on the plan argument hash. If you run another successful plan for the same environment and commit, that newer plan supersedes the older one.
+The apply command restores and applies the saved targeted plan. It does not run a fresh untargeted apply. The restored plan artifact name and saved metadata must agree on the plan argument hash. If you run another successful plan for the same environment and commit, that newer plan supersedes the older one.
 
 Rollback remains a direct stable-branch apply:
 

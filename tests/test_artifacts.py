@@ -1,9 +1,17 @@
 """Tests for artifacts module."""
 
+import io
 import json
+import zipfile
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from tf_branch_deploy.artifacts import (
+    PlanArtifactCandidate,
+    PlanArtifactError,
+    PlanArtifactStore,
     PlanMetadata,
     calculate_checksum,
     generate_artifact_name,
@@ -210,3 +218,202 @@ class TestPlanMetadata:
 
         assert loaded is not None
         assert loaded.extra_args == []
+
+
+class TestPlanArtifactStore:
+    """Tests for listing and downloading plan workflow artifacts."""
+
+    ENV = "int"
+    SHA = "abc12345ff0000000000000000000000000000ff"
+
+    @staticmethod
+    def _artifact(
+        name: str,
+        *,
+        artifact_id: int = 1,
+        expired: bool = False,
+        repo_id: int | None = 100,
+        head_repo_id: int | None = 100,
+        run_id: int = 555,
+        created_at: str = "2026-07-06T00:00:00Z",
+    ) -> dict:
+        return {
+            "id": artifact_id,
+            "name": name,
+            "created_at": created_at,
+            "expired": expired,
+            "size_in_bytes": 42,
+            "workflow_run": {
+                "id": run_id,
+                "repository_id": repo_id,
+                "head_repository_id": head_repo_id,
+            },
+        }
+
+    def _valid_name(self, params_hash: str = "no-args", run: str = "123-1") -> str:
+        return f"tfplan-{self.ENV}-{self.SHA}-{params_hash}-{run}"
+
+    @staticmethod
+    def _list_response(*artifacts: dict) -> MagicMock:
+        return MagicMock(returncode=0, stdout=json.dumps({"artifacts": list(artifacts)}))
+
+    def test_find_latest_returns_first_match_newest_first(self) -> None:
+        store = PlanArtifactStore(repo="owner/repo", github_token="tok")
+        newest = self._artifact(self._valid_name(run="222-1"), artifact_id=2)
+        older = self._artifact(self._valid_name(run="111-1"), artifact_id=1)
+
+        with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
+            run_mock.return_value = self._list_response(newest, older)
+            candidate = store.find_latest(self.ENV, self.SHA)
+
+        assert candidate is not None
+        assert candidate.id == 2
+        assert candidate.name == self._valid_name(run="222-1")
+        assert candidate.workflow_run_id == 555
+
+    def test_find_latest_rejects_fork_uploaded_artifacts(self) -> None:
+        """A fork-PR run can upload artifacts into the base repo — never apply those."""
+        store = PlanArtifactStore(repo="owner/repo", github_token="tok")
+        spoofed = self._artifact(self._valid_name(), head_repo_id=999)
+        missing_provenance = dict(self._artifact(self._valid_name()), workflow_run=None)
+
+        with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
+            run_mock.side_effect = [
+                self._list_response(spoofed, missing_provenance),
+                self._list_response(),
+            ]
+            assert store.find_latest(self.ENV, self.SHA) is None
+
+    def test_find_latest_skips_expired_and_malformed_names(self) -> None:
+        store = PlanArtifactStore(repo="owner/repo", github_token="tok")
+        expired = self._artifact(self._valid_name(), expired=True)
+        wrong_env = self._artifact(f"tfplan-prod-{self.SHA}-no-args-123-1")
+        malformed = self._artifact(f"tfplan-{self.ENV}-{self.SHA}-not-a-hash-123-1")
+        unrelated = self._artifact("coverage-report")
+
+        with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
+            run_mock.side_effect = [
+                self._list_response(expired, wrong_env, malformed, unrelated),
+                self._list_response(),
+            ]
+            assert store.find_latest(self.ENV, self.SHA) is None
+
+    def test_find_latest_paginates_until_match(self) -> None:
+        store = PlanArtifactStore(repo="owner/repo", github_token="tok")
+        match = self._artifact(self._valid_name())
+
+        with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
+            run_mock.side_effect = [
+                self._list_response(self._artifact("unrelated")),
+                self._list_response(match),
+            ]
+            candidate = store.find_latest(self.ENV, self.SHA)
+
+        assert candidate is not None
+        assert run_mock.call_count == 2
+        assert "page=2" in run_mock.call_args_list[1].args[0][2]
+
+    def test_find_latest_returns_none_when_no_artifacts(self) -> None:
+        store = PlanArtifactStore(repo="owner/repo", github_token="tok")
+
+        with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
+            run_mock.return_value = self._list_response()
+            assert store.find_latest(self.ENV, self.SHA) is None
+
+    def test_find_latest_raises_when_listing_fails(self) -> None:
+        """A failed listing (e.g. missing actions: read) is not the same as no plan."""
+        store = PlanArtifactStore(repo="owner/repo", github_token="tok")
+
+        with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
+            run_mock.return_value = MagicMock(
+                returncode=1, stdout="", stderr="HTTP 403: Resource not accessible"
+            )
+            with pytest.raises(PlanArtifactError, match="Failed to list workflow artifacts"):
+                store.find_latest(self.ENV, self.SHA)
+
+    def _zip_bytes(self, *members: tuple[str, bytes]) -> bytes:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as archive:
+            for name, content in members:
+                archive.writestr(name, content)
+        return buf.getvalue()
+
+    def _candidate(self) -> PlanArtifactCandidate:
+        return PlanArtifactCandidate(
+            id=7,
+            name=self._valid_name(),
+            created_at="2026-07-06T00:00:00Z",
+            expired=False,
+            size_in_bytes=42,
+            repository_id=100,
+            head_repository_id=100,
+            workflow_run_id=555,
+        )
+
+    def test_download_and_extract_restores_plan_files(self, tmp_path: Path) -> None:
+        store = PlanArtifactStore(repo="owner/repo", github_token="tok")
+        zip_bytes = self._zip_bytes(
+            (f"tfplan-{self.ENV}-abc12345.tfplan", b"plan bytes"),
+            (f"tfplan-{self.ENV}-abc12345.meta.json", b"{}"),
+        )
+
+        with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
+            run_mock.return_value = MagicMock(returncode=0, stdout=zip_bytes)
+            extracted = store.download_and_extract(self._candidate(), tmp_path, self.ENV)
+
+        assert sorted(p.name for p in extracted) == [
+            f"tfplan-{self.ENV}-abc12345.meta.json",
+            f"tfplan-{self.ENV}-abc12345.tfplan",
+        ]
+        assert (tmp_path / f"tfplan-{self.ENV}-abc12345.tfplan").read_bytes() == b"plan bytes"
+
+    def test_download_and_extract_flattens_stored_paths(self, tmp_path: Path) -> None:
+        """Stored member paths are never trusted — extraction is by basename only."""
+        store = PlanArtifactStore(repo="owner/repo", github_token="tok")
+        zip_bytes = self._zip_bytes(
+            (f"nested/dir/tfplan-{self.ENV}-abc12345.tfplan", b"plan bytes"),
+            (f"nested/dir/tfplan-{self.ENV}-abc12345.meta.json", b"{}"),
+        )
+
+        with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
+            run_mock.return_value = MagicMock(returncode=0, stdout=zip_bytes)
+            store.download_and_extract(self._candidate(), tmp_path, self.ENV)
+
+        assert (tmp_path / f"tfplan-{self.ENV}-abc12345.tfplan").exists()
+        assert not (tmp_path / "nested").exists()
+
+    @pytest.mark.parametrize(
+        "member_name",
+        [
+            "../tfplan-int-abc12345.tfplan",
+            "/tmp/tfplan-int-abc12345.tfplan",
+            "notes.txt",
+            "tfplan-prod-abc12345.tfplan",
+        ],
+    )
+    def test_download_and_extract_rejects_unsafe_members(
+        self, tmp_path: Path, member_name: str
+    ) -> None:
+        store = PlanArtifactStore(repo="owner/repo", github_token="tok")
+        zip_bytes = self._zip_bytes((member_name, b"malicious"))
+
+        with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
+            run_mock.return_value = MagicMock(returncode=0, stdout=zip_bytes)
+            with pytest.raises(PlanArtifactError):
+                store.download_and_extract(self._candidate(), tmp_path, self.ENV)
+
+    def test_download_and_extract_rejects_corrupt_zip(self, tmp_path: Path) -> None:
+        store = PlanArtifactStore(repo="owner/repo", github_token="tok")
+
+        with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
+            run_mock.return_value = MagicMock(returncode=0, stdout=b"not a zip")
+            with pytest.raises(PlanArtifactError, match="not a valid zip archive"):
+                store.download_and_extract(self._candidate(), tmp_path, self.ENV)
+
+    def test_download_failure_raises(self, tmp_path: Path) -> None:
+        store = PlanArtifactStore(repo="owner/repo", github_token="tok")
+
+        with patch("tf_branch_deploy.artifacts.subprocess.run") as run_mock:
+            run_mock.return_value = MagicMock(returncode=1, stdout=b"", stderr=b"HTTP 410: Gone")
+            with pytest.raises(PlanArtifactError, match="Failed to download plan artifact"):
+                store.download_and_extract(self._candidate(), tmp_path, self.ENV)

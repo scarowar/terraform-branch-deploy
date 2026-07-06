@@ -76,6 +76,25 @@ def test_v0_2_migration_guide_documents_removed_inputs() -> None:
     assert "upgrading.md" in nav
 
 
+def test_v0_3_migration_guide_documents_artifact_migration() -> None:
+    """The upgrade guide must cover the cache-to-artifact plan persistence change."""
+    guide = (ROOT / "docs" / "upgrading.md").read_text(encoding="utf-8")
+    markdown = _user_markdown()
+
+    assert "v0.2.0 to v0.3.0" in guide
+    assert "actions: read" in guide
+    assert "plan-retention-days" in guide
+    assert "Re-run `.plan` After Upgrading" in guide
+    assert "workflow artifacts" in markdown
+    # Current-behavior docs must not describe the retired cache-based
+    # persistence. Historical mentions live only in the upgrade guide,
+    # troubleshooting (as a v0.2.x cause), and the changelog.
+    for page in ["quickstart.md", "security.md", "index.md"]:
+        text = (ROOT / "docs" / page).read_text(encoding="utf-8")
+        assert "Actions cache" not in text, page
+        assert "cache key" not in text, page
+
+
 def test_docs_do_not_force_moving_major_action_ref() -> None:
     """Workflow examples must not make the moving v0 tag look mandatory."""
     markdown = _user_facing_text()

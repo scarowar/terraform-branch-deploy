@@ -7,7 +7,7 @@ All inputs for `scarowar/terraform-branch-deploy`.
 | Input | Description |
 | --- | --- |
 | `mode` | `trigger` parses the PR comment and exports state. `execute` runs Terraform from that state. |
-| `github-token` | Token with the permissions needed for comments, deployments, checks, and repository access. |
+| `github-token` | Token with the permissions needed for comments, deployments, checks, repository access, and reading workflow artifacts (`actions: read`). |
 
 ## Input Ownership
 
@@ -25,6 +25,7 @@ Execute mode reads the `TF_BD_*` state exported by trigger mode. Do not call exe
 | `config-path` | `.tf-branch-deploy.yml` | Path to the Terraform Branch Deploy configuration file. |
 | `terraform-version` | `latest` | Terraform CLI version used in execute mode. A matching preinstalled Terraform binary is reused when possible. |
 | `dry-run` | `false` | Print Terraform commands in execute mode without running Terraform. Trigger-mode and earlier workflow steps can still run. |
+| `plan-retention-days` | `7` | Days to keep saved plan artifacts before they expire (1-90, capped by the repository's artifact retention setting). An expired plan means re-running `.plan`. |
 
 ## Branch Deploy Command Inputs
 

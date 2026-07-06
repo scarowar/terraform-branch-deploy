@@ -4,6 +4,28 @@ All notable changes to Terraform Branch Deploy are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.0] - Unreleased
+
+### Changed
+
+- **Breaking:** Saved plans now persist between the plan and apply runs as GitHub Actions workflow artifacts instead of the Actions cache. GitHub made the Actions cache read-only for `issue_comment`-triggered workflows on 2026-06-26, which silently broke cache-based plan saves. Workflows must grant `actions: read` to the GitHub token so apply can list and download plan artifacts.
+- Plans saved by v0.2.x (Actions cache) are not restored; re-run `.plan` after upgrading.
+- Embedded `github/branch-deploy` updated from v11.1.4 to v11.1.5.
+
+### Added
+
+- `plan-retention-days` input controlling how long saved plan artifacts are kept (default 7 days, matching the previous cache eviction window).
+- `restore-plan` CLI command that locates, provenance-checks, downloads, and extracts the saved plan artifact for apply operations.
+
+### Fixed
+
+- A plan that cannot be persisted now fails the plan run with an actionable PR comment instead of silently succeeding and leaving a later apply unable to find the plan.
+
+### Security
+
+- Plan artifact restore rejects artifacts uploaded by workflow runs of fork repositories, closing a plan-spoofing vector; workflow artifacts are also immutable once uploaded, unlike cache entries.
+- Artifact extraction never trusts archive member paths: absolute paths, traversal components, and unexpected file names abort the restore.
+
 ## [0.2.0] - 2026-05-26
 
 ### Added
@@ -40,5 +62,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Initial Terraform Branch Deploy action release.
 
+[0.3.0]: https://github.com/scarowar/terraform-branch-deploy/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/scarowar/terraform-branch-deploy/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/scarowar/terraform-branch-deploy/releases/tag/v0.1.0

@@ -74,13 +74,14 @@ Terraform Branch Deploy handles the Terraform execution path after Branch Deploy
 | --- | --- |
 | Environment scope | Execute mode validates the requested environment against `.tf-branch-deploy.yml`. |
 | Normal apply | `.apply to <env>` requires the latest successful saved plan file for the environment and commit SHA. |
-| Cache miss behavior | If the saved plan is not restored, apply fails instead of running an untargeted apply. |
+| Missing artifact behavior | If the saved plan artifact is not found (never created, expired, or rejected), apply fails with an actionable PR comment instead of running an untargeted apply. |
 | Saved plan consistency | New plans include metadata with environment, commit SHA, checksum, Terraform version, extra arguments, params hash, and creation time. |
-| Metadata verification | Apply requires valid metadata, a matching cache-key params hash, and a valid checksum. Re-plan to replace older cached plans without metadata. |
+| Metadata verification | Apply requires valid metadata, a matching artifact-name params hash, and a valid checksum. Re-plan to replace older saved plans without metadata. |
+| Artifact provenance | Restore rejects plan artifacts uploaded by workflow runs of fork repositories, so a fork cannot smuggle a spoofed plan into an apply. |
 | Targeted plans | Extra plan arguments are captured in the saved plan; apply uses that saved plan. |
 | Rollback | `.apply main to <env>` is a separate stable branch apply path and does not use a PR plan. |
 
-Saved plan files and metadata are restored from GitHub Actions cache. The cache key includes the saved plan params hash, and apply refuses a restored plan if the key and metadata disagree. The cache is not an independent tamper-proof artifact store.
+Saved plan files and metadata persist across the plan and apply runs as GitHub Actions workflow artifacts, which are immutable once uploaded. The artifact name includes the saved plan params hash, and apply refuses a restored plan if the name and metadata disagree. Plan artifacts expire after the `plan-retention-days` input (default 7 days, capped by the repository's artifact retention setting); an expired plan means re-running `.plan`. A plan run fails loudly if the artifact upload fails — a plan that cannot be applied later is never reported as successful. Plan files can embed sensitive resolved values, so keep retention short and restrict who can read repository artifacts.
 
 ## Plan Before Apply
 
@@ -141,9 +142,10 @@ permissions:
   deployments: write
   checks: read
   statuses: read
+  actions: read
 ```
 
-Add `id-token: write` when cloud credential setup uses GitHub OIDC.
+`actions: read` lets the apply run list and download the plan artifact saved by the plan run. Add `id-token: write` when cloud credential setup uses GitHub OIDC.
 
 Grant admin bypass sparingly. Prefer named users or a narrowly scoped team, and protect any `admins-pat` secret.
 

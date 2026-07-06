@@ -35,6 +35,7 @@ inputs:
   deploy_message_path: {}
   sticky_locks: {}
   sticky_locks_for_noop: {}
+  disable_lock: {}
   allow_sha_deployments: {}
   disable_naked_commands: {}
   successful_deploy_labels: {}
