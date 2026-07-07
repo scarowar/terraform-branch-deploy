@@ -124,14 +124,21 @@ def test_ci_lint_keeps_fast_quality_gates() -> None:
 
 
 def test_low_signal_bot_prs_skip_expensive_duplicate_checks() -> None:
-    """Automation-only PRs should not run scanners that do not add signal."""
+    """Bot-PR skips must never break required status check reporting.
+
+    Non-matrix jobs (sonar, dependency-review, deterministic-security) may
+    skip on bot PRs: a job-level skip still reports a skipped check under the
+    job's exact name, which satisfies the ruleset's required check. The CodeQL
+    job must NOT skip: its required context "Analyze (CodeQL) (python)" comes
+    from matrix expansion, and a job-level skip prevents expansion, so the
+    required context never reports and bot PRs become permanently unmergeable.
+    """
     codeql = _load_workflow("codeql.yml")
     dependency_review = _load_workflow("dependency-review.yml")
     security = _load_workflow("security.yml")
     sonarqube = _load_workflow("sonarqube.yml")
 
-    assert "github.actor != 'dependabot[bot]'" in codeql["jobs"]["analyze"]["if"]
-    assert "github.actor != 'pre-commit-ci[bot]'" in codeql["jobs"]["analyze"]["if"]
+    assert "if" not in codeql["jobs"]["analyze"]
     assert dependency_review["jobs"]["dependency-review"]["if"] == (
         "github.actor != 'pre-commit-ci[bot]'"
     )

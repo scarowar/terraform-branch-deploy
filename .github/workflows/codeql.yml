@@ -18,12 +18,11 @@ concurrency:
 jobs:
   analyze:
     name: Analyze (CodeQL)
-    if: >
-      github.event_name != 'pull_request' ||
-      (
-        github.actor != 'dependabot[bot]' &&
-        github.actor != 'pre-commit-ci[bot]'
-      )
+    # Runs on bot PRs too: "Analyze (CodeQL) (python)" is a required status
+    # check, and a job-level skip prevents the matrix from expanding, so the
+    # required context never reports and the PR is unmergeable. CodeQL needs
+    # no repository secrets, and the explicit permissions block elevates the
+    # otherwise read-only Dependabot-event token.
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
