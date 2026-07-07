@@ -4,7 +4,7 @@ All notable changes to Terraform Branch Deploy are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.3.0] - Unreleased
+## [0.3.0] - 2026-07-07
 
 ### Changed
 
@@ -24,6 +24,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Artifact selection no longer relies on the GitHub API's undocumented list order; the latest plan intent is chosen by an explicit numeric sort of workflow run identifiers.
 - GitHub API calls during artifact listing and download now carry explicit timeouts, converting network stalls into loud failures instead of hung jobs.
 - A truncated artifact search (page cap) now fails the restore instead of reporting "no plan found"; listing completion is determined from the API-reported total count, so a short or final page is never mistaken for truncation.
+- The embedded uv setup no longer attempts to save its tool cache on untrusted triggers (`issue_comment`, `pull_request_target`), removing the "cache write denied" warning annotation from every deploy; cache restore stays enabled.
 
 ### Security
 

@@ -265,6 +265,11 @@ runs:
         version: "0.11.11"
         working-directory: ${{ github.action_path }}
         github-token: ${{ github.server_url == 'https://github.com' && inputs.github-token || '' }}
+        # GitHub made the Actions cache read-only for untrusted triggers
+        # (2026-06-26); a cache save on issue_comment runs is denied and
+        # emits a warning annotation on every deploy. Cache restore stays
+        # enabled - reads are still permitted on untrusted triggers.
+        save-cache: ${{ github.event_name != 'issue_comment' && github.event_name != 'pull_request_target' }}
 
     - name: Install tf-branch-deploy
       shell: bash

@@ -84,6 +84,12 @@ class TestCompositeRuntimeContract:
         assert "inputs.github-token" in setup_step["with"]["github-token"]
         assert "|| ''" in setup_step["with"]["github-token"]
 
+        # The Actions cache is read-only for untrusted triggers; a cache save
+        # attempt on issue_comment runs warns on every customer deploy.
+        save_cache = setup_step["with"]["save-cache"]
+        assert "github.event_name != 'issue_comment'" in save_cache
+        assert "github.event_name != 'pull_request_target'" in save_cache
+
     def test_trigger_mode_exports_state_required_by_execute_mode(
         self, action: dict[str, Any]
     ) -> None:
