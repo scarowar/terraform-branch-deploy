@@ -13,8 +13,8 @@ import pytest
 import yaml
 
 
-BRANCH_DEPLOY_VERSION = "v11.1.4"
-BRANCH_DEPLOY_SHA = "ddf8ca48e9cdb2d2c7c71dee428308b19af9313f"
+BRANCH_DEPLOY_VERSION = "v11.1.5"
+BRANCH_DEPLOY_SHA = "de4d10ee17c3117a2076aff489ba03fadf225f35"
 
 # Branch Deploy inputs that Terraform Branch Deploy controls instead of exposing.
 CONTROLLED_UPSTREAM_INPUTS = {
@@ -24,8 +24,10 @@ CONTROLLED_UPSTREAM_INPUTS = {
     "allow_forks",  # Hard-disabled until fork-aware checkout is implemented.
 }
 
-# Branch Deploy inputs intentionally not supported in v0.2.0. These all belong
-# to completion behavior bypassed by skip_completing or alternate workflow modes.
+# Branch Deploy inputs intentionally not supported. Most belong to completion
+# behavior bypassed by skip_completing or alternate workflow modes;
+# disable_lock (added in v11.1.5) bypasses deployment locking, which
+# contradicts this action's production-safety defaults.
 UNSUPPORTED_UPSTREAM_INPUTS = {
     "environment_url_in_comment",
     "merge_deploy_mode",
@@ -37,6 +39,7 @@ UNSUPPORTED_UPSTREAM_INPUTS = {
     "failed_noop_labels",
     "skip_successful_noop_labels_if_approved",
     "skip_successful_deploy_labels_if_approved",
+    "disable_lock",
 }
 
 TERRAFORM_NATIVE_INPUTS = {
@@ -44,6 +47,7 @@ TERRAFORM_NATIVE_INPUTS = {
     "config-path",
     "terraform-version",
     "dry-run",
+    "plan-retention-days",
 }
 
 # Mapping of public Terraform Branch Deploy inputs to supported Branch Deploy inputs.

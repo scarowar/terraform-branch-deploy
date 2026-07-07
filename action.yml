@@ -22,7 +22,7 @@ inputs:
 
   # === REQUIRED ===
   github-token:
-    description: "GitHub token with Branch Deploy permissions: pull-requests:write, deployments:write, contents:write, checks:read, statuses:read"
+    description: "GitHub token with Branch Deploy permissions: pull-requests:write, deployments:write, contents:write, checks:read, statuses:read, actions:read"
     required: true
 
   # === TF-BRANCH-DEPLOY SPECIFIC ===
@@ -35,6 +35,9 @@ inputs:
   dry-run:
     description: "Print commands without running"
     default: "false"
+  plan-retention-days:
+    description: "Days to keep saved plan artifacts before they expire (1-90, capped by the repository's artifact retention setting)"
+    default: "7"
 
   # === BRANCH-DEPLOY PASSTHROUGH (trigger mode only) ===
   trigger:
@@ -262,6 +265,11 @@ runs:
         version: "0.11.11"
         working-directory: ${{ github.action_path }}
         github-token: ${{ github.server_url == 'https://github.com' && inputs.github-token || '' }}
+        # GitHub made the Actions cache read-only for untrusted triggers
+        # (2026-06-26); a cache save on issue_comment runs is denied and
+        # emits a warning annotation on every deploy. Cache restore stays
+        # enabled - reads are still permitted on untrusted triggers.
+        save-cache: ${{ github.event_name != 'issue_comment' && github.event_name != 'pull_request_target' }}
 
     - name: Install tf-branch-deploy
       shell: bash
@@ -407,7 +415,7 @@ runs:
     - name: "[Trigger] IssueOps Command Dispatcher"
       id: branch-deploy
       if: inputs.mode == 'trigger'
-      uses: github/branch-deploy@ddf8ca48e9cdb2d2c7c71dee428308b19af9313f # v11.1.4
+      uses: github/branch-deploy@de4d10ee17c3117a2076aff489ba03fadf225f35 # v11.1.5
       with:
         github_token: ${{ inputs.github-token }}
         # CRITICAL: We handle lifecycle completion in execute mode
@@ -609,29 +617,77 @@ runs:
 
         echo "✅ State validated: ${TF_BD_ENVIRONMENT} / ${TF_BD_OPERATION}"
 
-    # Restore cached plan for apply operations.
-    # Uses prefix matching via restore-keys to find the latest successful plan
-    # for this environment and commit. A newer successful plan supersedes older
-    # plans for the same environment and commit. Each plan run has a unique key
-    # (params hash + run_id + run_attempt), preventing cache collision when
-    # re-planning with different PR comment arguments.
-    #
-    # ACCEPTED RISK: actions/cache is evictable (10GB repo limit) and
-    # not an independent trust domain. The CLI handles cache misses safely
-    # by aborting with "no plan file found" rather than falling through
-    # to an untargeted apply. Plan integrity is further protected by the
-    # metadata sidecar checksum and params hash verified in the CLI.
-    - name: "[Execute] Restore Cached Plan"
-      id: restore-plan
-      uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
-      if: inputs.mode == 'execute' && env.TF_BD_OPERATION == 'apply'
+    # Declare which plan this run intends to produce BEFORE Terraform runs.
+    # The intent record's name carries env/sha/params-hash/run-id, and apply
+    # resolves plans only through the newest intent — so if this plan run
+    # later fails, apply is blocked instead of silently falling back to an
+    # older, superseded plan (the incident class where a stale targeted plan
+    # was applied after a newer plan failed to persist).
+    - name: "[Execute] Declare Plan Intent"
+      id: declare-intent
+      if: inputs.mode == 'execute' && env.TF_BD_OPERATION == 'plan'
+      shell: bash
+      env:
+        TF_BD_EXTRA_ARGS: ${{ env.TF_BD_PARAMS }}
+        INPUT_CONFIG_PATH: ${{ inputs.config-path }}
+        TFBD_BIN: ${{ runner.temp }}/tf-bd-venv/bin/tf-branch-deploy
+      run: |
+        if [[ ! -x "$TFBD_BIN" ]]; then
+          echo "::error::tf-branch-deploy command not found"
+          exit 1
+        fi
+
+        "$TFBD_BIN" declare-plan-intent \
+          --environment "${TF_BD_ENVIRONMENT}" \
+          --sha "${TF_BD_SHA}" \
+          --config "${INPUT_CONFIG_PATH}"
+
+    # Persist the intent record before Terraform runs. If this upload fails,
+    # the job stops here — planning without a recorded intent would let a
+    # later apply fall back to a superseded plan.
+    - name: "[Execute] Save Plan Intent"
+      id: save-intent
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      if: inputs.mode == 'execute' && env.TF_BD_OPERATION == 'plan'
       with:
-        path: |
-          **/tfplan-${{ env.TF_BD_ENVIRONMENT }}-*.tfplan
-          **/tfplan-${{ env.TF_BD_ENVIRONMENT }}-*.meta.json
-        key: tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}-no-args-${{ github.run_id }}-${{ github.run_attempt }}
-        restore-keys: |
-          tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}-
+        name: ${{ steps.declare-intent.outputs.intent_artifact_name }}
+        path: ${{ steps.declare-intent.outputs.intent_file }}
+        if-no-files-found: error
+        retention-days: ${{ inputs.plan-retention-days }}
+
+    # Restore the saved plan for apply operations from a workflow artifact.
+    # The CLI resolves the newest plan intent record (explicit numeric sort
+    # by run id/attempt), then requires the EXACT plan artifact that intent
+    # names. Fork-uploaded and expired artifacts are rejected; a name whose
+    # embedded run id does not match its uploading run is rejected as spoofed.
+    #
+    # TRUST MODEL: workflow artifacts are immutable once uploaded and are
+    # provenance-checked here. Apply resolves the plan only through the
+    # newest intent record, so a superseded plan is never applied; a missing
+    # or failed latest plan attempt aborts the apply with an actionable PR
+    # comment rather than falling through to an older plan. Plan integrity is
+    # further protected by the metadata sidecar checksum and params hash
+    # verified in the CLI. Requires `actions: read` on the workflow token.
+    - name: "[Execute] Restore Saved Plan"
+      id: restore-plan
+      if: inputs.mode == 'execute' && env.TF_BD_OPERATION == 'apply'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        GITHUB_SERVER_URL: ${{ github.server_url }}
+        GH_REPO: ${{ github.repository }}
+        INPUT_CONFIG_PATH: ${{ inputs.config-path }}
+        TFBD_BIN: ${{ runner.temp }}/tf-bd-venv/bin/tf-branch-deploy
+      run: |
+        if [[ ! -x "$TFBD_BIN" ]]; then
+          echo "::error::tf-branch-deploy command not found"
+          exit 1
+        fi
+
+        "$TFBD_BIN" restore-plan \
+          --environment "${TF_BD_ENVIRONMENT}" \
+          --sha "${TF_BD_SHA}" \
+          --config "${INPUT_CONFIG_PATH}"
 
     - name: "[Execute] Run Terraform"
       id: tf-execute
@@ -640,7 +696,7 @@ runs:
       env:
         TFBD_GITHUB_TOKEN: ${{ inputs.github-token }}
         TF_BD_EXTRA_ARGS: ${{ env.TF_BD_PARAMS }}
-        TF_BD_PLAN_CACHE_KEY: ${{ steps.restore-plan.outputs.cache-matched-key }}
+        TF_BD_PLAN_ARTIFACT_NAME: ${{ steps.restore-plan.outputs.artifact_name }}
         INPUT_CONFIG_PATH: ${{ inputs.config-path }}
         INPUT_DRY_RUN: ${{ inputs.dry-run }}
         TFBD_BIN: ${{ runner.temp }}/tf-bd-venv/bin/tf-branch-deploy
@@ -665,17 +721,24 @@ runs:
           --config "${INPUT_CONFIG_PATH}" \
           $DRY_RUN_FLAG
 
-    # Cache plan files only after the CLI has saved the metadata sidecar.
-    # The key includes the params hash emitted by the CLI so apply can prove
-    # the restored plan matches the Terraform arguments used for planning.
-    - name: "[Execute] Cache Plan File"
-      uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+    # Upload the plan and metadata sidecar as an immutable workflow artifact
+    # only after the CLI has saved the metadata sidecar. The artifact name
+    # includes the params hash emitted by the CLI so apply can prove the
+    # restored plan matches the Terraform arguments used for planning.
+    # An upload failure fails this step loudly (if-no-files-found: error);
+    # the lifecycle step below then reports the failure on the PR — a plan
+    # that cannot be persisted must never look successful.
+    - name: "[Execute] Save Plan Artifact"
+      id: save-plan
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       if: inputs.mode == 'execute' && env.TF_BD_OPERATION == 'plan' && steps.tf-execute.outputs.plan_params_hash != ''
       with:
+        name: tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}-${{ steps.declare-intent.outputs.params_hash }}-${{ github.run_id }}-${{ github.run_attempt }}
         path: |
           **/tfplan-${{ env.TF_BD_ENVIRONMENT }}-*.tfplan
           **/tfplan-${{ env.TF_BD_ENVIRONMENT }}-*.meta.json
-        key: tfplan-${{ env.TF_BD_ENVIRONMENT }}-${{ env.TF_BD_SHA }}-${{ steps.tf-execute.outputs.plan_params_hash }}-${{ github.run_id }}-${{ github.run_attempt }}
+        if-no-files-found: error
+        retention-days: ${{ inputs.plan-retention-days }}
 
     - name: "[Execute] Complete Deployment Lifecycle"
       if: inputs.mode == 'execute' && always()
@@ -686,12 +749,32 @@ runs:
         GH_REPO: ${{ github.repository }}
         STATUS: ${{ steps.tf-execute.outcome }}
         FAILURE_REASON: ${{ steps.tf-execute.outputs.failure_reason }}
+        SAVE_PLAN_OUTCOME: ${{ steps.save-plan.outcome }}
+        SAVE_INTENT_OUTCOME: ${{ steps.save-intent.outcome }}
+        DECLARE_INTENT_FAILURE_REASON: ${{ steps.declare-intent.outputs.failure_reason }}
+        RESTORE_FAILURE_REASON: ${{ steps.restore-plan.outputs.failure_reason }}
         TFBD_BIN: ${{ runner.temp }}/tf-bd-venv/bin/tf-branch-deploy
       run: |
-        if [[ "${STATUS}" == "success" ]]; then
+        # A plan run only succeeds if Terraform succeeded AND the plan was
+        # persisted as an artifact — a plan that cannot be applied later must
+        # be reported as a failure, never silently accepted.
+        if [[ "${STATUS}" == "success" && "${SAVE_PLAN_OUTCOME}" != "failure" ]]; then
           FINAL_STATUS="success"
         else
           FINAL_STATUS="failure"
+        fi
+
+        if [[ -z "${FAILURE_REASON}" && "${SAVE_PLAN_OUTCOME}" == "failure" ]]; then
+          FAILURE_REASON="Terraform plan succeeded, but the plan file could not be uploaded as a workflow artifact, so a later apply would not find it. Check the workflow logs for the upload error, then run the plan again."
+        fi
+        if [[ -z "${FAILURE_REASON}" && -n "${DECLARE_INTENT_FAILURE_REASON}" ]]; then
+          FAILURE_REASON="${DECLARE_INTENT_FAILURE_REASON}"
+        fi
+        if [[ -z "${FAILURE_REASON}" && "${SAVE_INTENT_OUTCOME}" == "failure" ]]; then
+          FAILURE_REASON="The plan intent record could not be uploaded as a workflow artifact, so planning stopped before Terraform ran. Check the workflow logs for the upload error, then run the plan again."
+        fi
+        if [[ -z "${FAILURE_REASON}" && -n "${RESTORE_FAILURE_REASON}" ]]; then
+          FAILURE_REASON="${RESTORE_FAILURE_REASON}"
         fi
 
         "$TFBD_BIN" complete-lifecycle \

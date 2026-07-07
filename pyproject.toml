@@ -1,6 +1,6 @@
 [project]
 name = "tf-branch-deploy"
-version = "0.2.0"
+version = "0.3.0"
 description = "Terraform integrated into the Branch Deploy operating model. Plan, review, and apply infrastructure changes within Pull Requests to ensure the main branch remains stable."
 readme = "README.md"
 authors = [{ name = "scarowar", email = "skanthavar@live.com" }]

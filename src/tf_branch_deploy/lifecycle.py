@@ -26,6 +26,38 @@ def branch_deploy_lock_ref(environment: str) -> str:
     return f"{environment.replace(' ', '-')}-branch-deploy-lock"
 
 
+def github_cli_env(token: str | None) -> dict[str, str]:
+    """Build environment variables required by gh across GitHub hosts.
+
+    Supports:
+    - github.com (uses GITHUB_TOKEN)
+    - ghe.com subdomains (uses GH_TOKEN)
+    - Self-hosted GHE Server (uses GH_ENTERPRISE_TOKEN + GH_HOST)
+    """
+    env = os.environ.copy()
+    if token:
+        env["GITHUB_TOKEN"] = token  # github.com
+        env["GH_TOKEN"] = token  # ghe.com
+        env["GH_ENTERPRISE_TOKEN"] = token  # Self-hosted GHE
+
+    host = _github_enterprise_host(env)
+    if host:
+        env["GH_HOST"] = host
+    return env
+
+
+def _github_enterprise_host(env: dict[str, str]) -> str | None:
+    """Return the gh host for GitHub Enterprise Server, if configured."""
+    server_url = env.get("GITHUB_SERVER_URL")
+    if not server_url:
+        return None
+
+    from urllib.parse import urlparse
+
+    host = urlparse(server_url).netloc
+    return host if host and host != "github.com" else None
+
+
 class GitHubApiError(RuntimeError):
     """Raised when a required GitHub CLI API call fails."""
 
@@ -240,28 +272,7 @@ class LifecycleManager:
 
     def _github_cli_env(self) -> dict[str, str]:
         """Build environment variables required by gh across GitHub hosts."""
-        env = os.environ.copy()
-        if self.github_token:
-            env["GITHUB_TOKEN"] = self.github_token  # github.com
-            env["GH_TOKEN"] = self.github_token  # ghe.com
-            env["GH_ENTERPRISE_TOKEN"] = self.github_token  # Self-hosted GHE
-
-        host = self._github_enterprise_host(env)
-        if host:
-            env["GH_HOST"] = host
-        return env
-
-    @staticmethod
-    def _github_enterprise_host(env: dict[str, str]) -> str | None:
-        """Return the gh host for GitHub Enterprise Server, if configured."""
-        server_url = env.get("GITHUB_SERVER_URL")
-        if not server_url:
-            return None
-
-        from urllib.parse import urlparse
-
-        host = urlparse(server_url).netloc
-        return host if host and host != "github.com" else None
+        return github_cli_env(self.github_token)
 
     def _handle_gh_result(
         self,

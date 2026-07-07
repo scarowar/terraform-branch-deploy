@@ -74,7 +74,7 @@ For targeted plans, keep apply simple:
 .apply to prod
 ```
 
-The apply step uses the saved targeted plan. It does not create a new untargeted apply, and extra Terraform arguments are rejected on apply. The restored cache key and saved metadata must agree before Terraform runs.
+The apply step uses the saved targeted plan. It does not create a new untargeted apply, and extra Terraform arguments are rejected on apply. The restored plan artifact name and saved metadata must agree before Terraform runs.
 
 If you run another successful plan for the same environment and commit, that
 newer plan is the one a later apply uses.

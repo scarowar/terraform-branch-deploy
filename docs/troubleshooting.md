@@ -71,9 +71,13 @@ Execute mode should run against `TF_BD_REF`:
 
 Do not rely on the default checkout ref for issue comment workflows.
 
-## No Plan File Found
+## No Saved Plan Artifact Found
 
-This means apply could not find a valid saved plan for the commit and environment.
+This means apply could not find a valid saved plan for the commit and environment. Common causes:
+
+- No `.plan` ran for this commit and environment.
+- The plan artifact expired: plans are kept for the `plan-retention-days` input (default 7 days, capped by the repository's artifact retention setting).
+- The plan was created with terraform-branch-deploy v0.2.x or earlier, which saved plans to the Actions cache instead of workflow artifacts.
 
 Fix:
 
@@ -84,9 +88,20 @@ Fix:
 
 If new commits were pushed after planning, run the plan again. Plans are tied to the commit SHA. If you create another successful plan for the same commit and environment, apply uses that newer plan.
 
+## Most Recent Plan Did Not Produce an Applyable Plan
+
+This means the latest `.plan` for the environment and commit failed after starting, or is still running. Terraform Branch Deploy refuses to fall back to an older, superseded plan — applying anything other than the plan you most recently requested is how unintended infrastructure changes happen.
+
+Fix: check the failed plan run's logs, then re-run the plan and wait for it to succeed:
+
+```text
+.plan to dev
+.apply to dev
+```
+
 ## Saved Plan Parameter Mismatch
 
-This means the restored cache entry and saved plan metadata do not describe the same plan arguments.
+This means the restored plan artifact and saved plan metadata do not describe the same plan arguments.
 
 Fix:
 
@@ -111,7 +126,7 @@ Use the same simple apply command after a targeted plan:
 .apply to prod
 ```
 
-The apply should restore and apply the latest successful saved plan. If it reports no saved plan, re-run `.plan to prod | -target=module.database` and inspect the workflow logs for cache restore messages.
+The apply should restore and apply the latest successful saved plan. If it reports no saved plan, re-run `.plan to prod | -target=module.database` and inspect the workflow logs for artifact restore messages.
 
 Do not use rollback to target only part of the previous change. Rollback applies
 the stable branch directly, and Terraform does not provide a deterministic
@@ -161,7 +176,10 @@ permissions:
   deployments: write
   checks: read
   statuses: read
+  actions: read
 ```
+
+`actions: read` is required since v0.3.0 so the apply run can list and download the plan artifact saved by the plan run. Without it, apply fails with "Could not list workflow artifacts".
 
 Team-based admin checks also require `admins-pat` with access to read team membership.
 

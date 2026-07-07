@@ -12,6 +12,7 @@
 
 [![GitHub release](https://img.shields.io/github/v/release/scarowar/terraform-branch-deploy?style=flat-square)](https://github.com/scarowar/terraform-branch-deploy/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/scarowar/terraform-branch-deploy/ci.yml?style=flat-square&label=CI)](https://github.com/scarowar/terraform-branch-deploy/actions/workflows/ci.yml)
+[![Quality Gate](https://img.shields.io/sonar/quality_gate/scarowar_terraform-branch-deploy?server=https%3A%2F%2Fsonarcloud.io&style=flat-square&label=quality%20gate)](https://sonarcloud.io/summary/new_code?id=scarowar_terraform-branch-deploy)
 [![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/scarowar/terraform-branch-deploy?style=flat-square&label=scorecard)](https://securityscorecards.dev/viewer/?uri=github.com/scarowar/terraform-branch-deploy)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 
@@ -43,7 +44,7 @@ Branch Deploy's model is deploy before merge:
 3. Comment `.apply to <env>` to apply the saved plan.
 4. Merge after the environment has been applied successfully.
 
-For normal applies, the action restores the latest successful saved plan for the same environment and commit SHA. The restored cache key and saved metadata must agree on the plan argument hash before Terraform runs. Rollbacks use Branch Deploy's stable branch command shape:
+For normal applies, the action restores the latest successful saved plan for the same environment and commit SHA. The restored plan artifact name and saved metadata must agree on the plan argument hash before Terraform runs. Rollbacks use Branch Deploy's stable branch command shape:
 
 ```text
 .apply main to prod
