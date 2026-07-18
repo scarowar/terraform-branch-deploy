@@ -29,7 +29,7 @@ dev = [
     "pre-commit>=4.5.1",
     "mypy>=1.6",
     "types-PyYAML>=6.0",
-    "zensical==0.0.46",
+    "zensical==0.0.50",
     "bandit>=1.9.2",
     "pytest-cov>=7.0.0",
     "semgrep>=1.86.0",
