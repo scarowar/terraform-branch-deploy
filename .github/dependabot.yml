@@ -11,6 +11,12 @@ updates:
       branch-deploy:
         patterns:
           - "github/branch-deploy"
+      # The three codeql-action components (init/autobuild/analyze) must move
+      # as one: mixed versions fail the analysis job, so fragmented PRs are
+      # unmergeable by construction.
+      codeql-action:
+        patterns:
+          - "github/codeql-action/*"
     labels:
       - "dependencies"
       - "github-actions"
