@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -525,7 +525,7 @@ def _strip_shell_quotes(arg: str) -> str:
 
 def _load_and_validate_config(
     config_path: Path, environment: str
-) -> tuple["TerraformBranchDeployConfig", "EnvironmentConfig"]:
+) -> tuple[TerraformBranchDeployConfig, EnvironmentConfig]:
     """Load and validate config, returning config and environment config."""
     try:
         config = load_config(config_path)
@@ -680,7 +680,7 @@ def declare_plan_intent(
                 "params_hash": params_hash,
                 "run_id": int(run_id),
                 "run_attempt": int(run_attempt),
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             },
             indent=2,
         )
@@ -971,7 +971,7 @@ def execute(
 
 
 def _handle_plan(
-    executor: "TerraformExecutor",
+    executor: TerraformExecutor,
     environment: str,
     sha: str,
     plan_args: list[str],
@@ -1012,7 +1012,7 @@ def _handle_plan(
             var_files=var_files,
             terraform_version=tf_version,
             params_hash=params_hash,
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
         meta_path = save_plan_metadata(result.plan_file, metadata)
         console.print(f"[dim]📝 Plan metadata saved: {meta_path.name}[/dim]")
@@ -1022,7 +1022,7 @@ def _handle_plan(
 
 
 def _handle_apply(
-    executor: "TerraformExecutor",
+    executor: TerraformExecutor,
     environment: str,
     sha: str,
     working_dir: Path,
@@ -1093,7 +1093,7 @@ def _handle_apply(
 
 
 def _apply_with_plan(
-    executor: "TerraformExecutor",
+    executor: TerraformExecutor,
     plan_file: Path,
     environment: str,
     sha: str,
