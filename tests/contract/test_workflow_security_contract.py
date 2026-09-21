@@ -1,10 +1,9 @@
 """Security contracts for GitHub Actions workflows."""
 
-from pathlib import Path
 import re
+from pathlib import Path
 
 import yaml
-
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 WORKFLOW_FILES = sorted((REPO_ROOT / ".github" / "workflows").glob("*.yml"))
