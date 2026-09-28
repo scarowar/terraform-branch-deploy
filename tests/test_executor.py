@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from tf_branch_deploy.executor import (
-    CommandResult,
     GITHUB_TOKEN_ENV_VARS,
+    CommandResult,
     PlanResult,
     TerraformExecutor,
     _redact_args,
