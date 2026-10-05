@@ -87,8 +87,6 @@ class PlanResult(CommandResult):
 class ApplyResult(CommandResult):
     """Result of terraform apply."""
 
-    pass
-
 
 @dataclass
 class TerraformExecutor:

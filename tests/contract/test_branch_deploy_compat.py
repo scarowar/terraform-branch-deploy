@@ -12,7 +12,6 @@ from typing import Any
 import pytest
 import yaml
 
-
 BRANCH_DEPLOY_VERSION = "v11.1.5"
 BRANCH_DEPLOY_SHA = "de4d10ee17c3117a2076aff489ba03fadf225f35"
 
