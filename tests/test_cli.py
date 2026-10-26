@@ -14,8 +14,8 @@ from tf_branch_deploy.cli import (
     ALLOWED_EXTRA_ARG_FLAGS,
     BLOCKED_EXTRA_ARG_FLAGS,
     DEFAULT_CONFIG_PATH,
-    _ArgTokenizer,
     _apply_with_plan,
+    _ArgTokenizer,
     _handle_apply,
     _handle_plan,
     _load_and_validate_config,
@@ -827,8 +827,9 @@ class TestHandleApply:
 
     def test_handle_apply_rejects_artifact_metadata_params_mismatch(self, tmp_path: Path) -> None:
         """Apply refuses a restored plan when artifact name and metadata disagree."""
-        from click.exceptions import Exit as ClickExit
         from unittest.mock import MagicMock, patch
+
+        from click.exceptions import Exit as ClickExit
 
         working_dir = tmp_path / "terraform"
         working_dir.mkdir()
@@ -844,16 +845,16 @@ class TestHandleApply:
             "TF_BD_PLAN_ARTIFACT_NAME": "tfplan-int-abc12345ff-deadbeef-123-1",
         }
 
-        with patch.dict("os.environ", env_vars):
-            with pytest.raises(ClickExit):
-                _handle_apply(mock_executor, "int", "abc12345ff", working_dir)
+        with patch.dict("os.environ", env_vars), pytest.raises(ClickExit):
+            _handle_apply(mock_executor, "int", "abc12345ff", working_dir)
 
         mock_executor.apply.assert_not_called()
 
     def test_apply_rejects_extra_args(self, tmp_path: Path) -> None:
         """Normal apply must not accept fresh Terraform args from comments."""
-        from click.exceptions import Exit as ClickExit
         from unittest.mock import MagicMock, patch
+
+        from click.exceptions import Exit as ClickExit
 
         working_dir = tmp_path / "terraform"
         working_dir.mkdir()
@@ -863,33 +864,36 @@ class TestHandleApply:
 
         mock_executor = MagicMock()
 
-        with patch.dict(
-            "os.environ",
-            {"TF_BD_IS_ROLLBACK": "false", "TF_BD_EXTRA_ARGS": "-target=module.database"},
+        with (
+            patch.dict(
+                "os.environ",
+                {"TF_BD_IS_ROLLBACK": "false", "TF_BD_EXTRA_ARGS": "-target=module.database"},
+            ),
+            pytest.raises(ClickExit),
         ):
-            with pytest.raises(ClickExit):
-                _handle_apply(mock_executor, "int", "abc12345ff", working_dir)
+            _handle_apply(mock_executor, "int", "abc12345ff", working_dir)
 
         mock_executor.apply.assert_not_called()
 
     def test_rollback_rejects_extra_args(self, tmp_path: Path) -> None:
         """Rollback is a stable-branch apply, not a target-only undo."""
-        from click.exceptions import Exit as ClickExit
         from unittest.mock import MagicMock, patch
+
+        from click.exceptions import Exit as ClickExit
 
         working_dir = tmp_path / "terraform"
         working_dir.mkdir()
         mock_executor = MagicMock()
 
-        with patch.dict(
-            "os.environ",
-            {"TF_BD_IS_ROLLBACK": "true", "TF_BD_EXTRA_ARGS": "-target=module.database"},
+        with (
+            patch.dict(
+                "os.environ",
+                {"TF_BD_IS_ROLLBACK": "true", "TF_BD_EXTRA_ARGS": "-target=module.database"},
+            ),
+            pytest.raises(ClickExit),
+            patch("tf_branch_deploy.cli.set_github_output") as mock_output,
         ):
-            with (
-                pytest.raises(ClickExit),
-                patch("tf_branch_deploy.cli.set_github_output") as mock_output,
-            ):
-                _handle_apply(mock_executor, "int", "abc12345ff", working_dir)
+            _handle_apply(mock_executor, "int", "abc12345ff", working_dir)
 
         mock_executor.apply.assert_not_called()
         mock_output.assert_called_with(
@@ -980,9 +984,8 @@ class TestApplyWithPlanIntegrity:
 
         mock_executor = MagicMock()
 
-        with patch.dict("os.environ", {}, clear=False):
-            with pytest.raises(ClickExit):
-                _apply_with_plan(mock_executor, plan_file, "int", "abc12345ff")
+        with patch.dict("os.environ", {}, clear=False), pytest.raises(ClickExit):
+            _apply_with_plan(mock_executor, plan_file, "int", "abc12345ff")
 
         mock_executor.apply.assert_not_called()
 
@@ -998,15 +1001,14 @@ class TestApplyWithPlanIntegrity:
 
         mock_executor = MagicMock()
 
-        with patch.dict("os.environ", {}, clear=False):
-            with pytest.raises(ClickExit):
-                _apply_with_plan(
-                    mock_executor,
-                    plan_file,
-                    "int",
-                    "abc12345ff",
-                    expected_params_hash="deadbeef",
-                )
+        with patch.dict("os.environ", {}, clear=False), pytest.raises(ClickExit):
+            _apply_with_plan(
+                mock_executor,
+                plan_file,
+                "int",
+                "abc12345ff",
+                expected_params_hash="deadbeef",
+            )
 
         mock_executor.apply.assert_not_called()
 
@@ -1027,15 +1029,14 @@ class TestApplyWithPlanIntegrity:
         mock_executor = MagicMock()
         mock_executor.version.return_value = "1.9.8"
 
-        with patch.dict("os.environ", {}, clear=False):
-            with pytest.raises(ClickExit):
-                _apply_with_plan(
-                    mock_executor,
-                    plan_file,
-                    "int",
-                    "abc12345ff",
-                    expected_params_hash="no-args",
-                )
+        with patch.dict("os.environ", {}, clear=False), pytest.raises(ClickExit):
+            _apply_with_plan(
+                mock_executor,
+                plan_file,
+                "int",
+                "abc12345ff",
+                expected_params_hash="no-args",
+            )
 
         # apply() must NOT be called
         mock_executor.apply.assert_not_called()
@@ -1053,15 +1054,14 @@ class TestApplyWithPlanIntegrity:
         mock_executor = MagicMock()
         mock_executor.version.return_value = "1.9.8"  # Different!
 
-        with patch.dict("os.environ", {}, clear=False):
-            with pytest.raises(ClickExit):
-                _apply_with_plan(
-                    mock_executor,
-                    plan_file,
-                    "int",
-                    "abc12345ff",
-                    expected_params_hash="no-args",
-                )
+        with patch.dict("os.environ", {}, clear=False), pytest.raises(ClickExit):
+            _apply_with_plan(
+                mock_executor,
+                plan_file,
+                "int",
+                "abc12345ff",
+                expected_params_hash="no-args",
+            )
 
         mock_executor.apply.assert_not_called()
 
@@ -1100,15 +1100,14 @@ class TestApplyWithPlanIntegrity:
 
         mock_executor = MagicMock()
 
-        with patch.dict("os.environ", {}, clear=False):
-            with pytest.raises(ClickExit):
-                _apply_with_plan(
-                    mock_executor,
-                    plan_file,
-                    "int",
-                    "abc12345ff",
-                    expected_params_hash="no-args",
-                )
+        with patch.dict("os.environ", {}, clear=False), pytest.raises(ClickExit):
+            _apply_with_plan(
+                mock_executor,
+                plan_file,
+                "int",
+                "abc12345ff",
+                expected_params_hash="no-args",
+            )
 
         mock_executor.apply.assert_not_called()
 
@@ -1124,15 +1123,14 @@ class TestApplyWithPlanIntegrity:
 
         mock_executor = MagicMock()
 
-        with patch.dict("os.environ", {}, clear=False):
-            with pytest.raises(ClickExit):
-                _apply_with_plan(
-                    mock_executor,
-                    plan_file,
-                    "int",
-                    "abc12345ff",
-                    expected_params_hash="no-args",
-                )
+        with patch.dict("os.environ", {}, clear=False), pytest.raises(ClickExit):
+            _apply_with_plan(
+                mock_executor,
+                plan_file,
+                "int",
+                "abc12345ff",
+                expected_params_hash="no-args",
+            )
 
         mock_executor.apply.assert_not_called()
 
